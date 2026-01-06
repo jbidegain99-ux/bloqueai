@@ -44,7 +44,7 @@ export default function InterviewPage() {
     setStarting(true)
 
     try {
-      const response = await candidateApi.startInterview(accessToken)
+      const response = await candidateApi.startInterview(accessToken) as any
       setSession(response)
       if (response.messages) {
         setMessages(response.messages)
@@ -73,7 +73,7 @@ export default function InterviewPage() {
     setMessages(prev => [...prev, tempMessage])
 
     try {
-      const response = await candidateApi.sendMessage(accessToken, session.id, userMessage)
+      const response = await candidateApi.sendMessage(accessToken, session.id, userMessage) as any
       setSession(response)
 
       // Update with actual messages from response

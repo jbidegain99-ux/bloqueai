@@ -52,7 +52,7 @@ export default function JobDetailPage() {
     if (!accessToken) return
     setGenerating(true)
     try {
-      const data = await employerApi.generateShortlist(accessToken, jobId)
+      const data = await employerApi.generateShortlist(accessToken, jobId) as any
       setShortlist(data)
     } catch (err) {
       console.error('Error generating shortlist:', err)
