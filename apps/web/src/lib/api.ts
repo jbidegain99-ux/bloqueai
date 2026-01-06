@@ -42,11 +42,19 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
   const data = await response.json().catch(() => null)
 
   if (!response.ok) {
-    throw new ApiError(
-      data?.detail || 'An error occurred',
-      response.status,
-      data
-    )
+    // Handle FastAPI validation errors (422) which return detail as array
+    let errorMessage = 'An error occurred'
+    if (data?.detail) {
+      if (typeof data.detail === 'string') {
+        errorMessage = data.detail
+      } else if (Array.isArray(data.detail) && data.detail.length > 0) {
+        // Extract message from validation error
+        errorMessage = data.detail.map((e: any) => e.msg || e.message || JSON.stringify(e)).join(', ')
+      } else if (typeof data.detail === 'object') {
+        errorMessage = JSON.stringify(data.detail)
+      }
+    }
+    throw new ApiError(errorMessage, response.status, data)
   }
 
   return data as T
