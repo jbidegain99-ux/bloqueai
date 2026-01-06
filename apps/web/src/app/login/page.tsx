@@ -30,7 +30,17 @@ export default function LoginPage() {
       setAuth(user as any, tokens.access_token, tokens.refresh_token)
       router.push('/dashboard')
     } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión')
+      // Handle different error types
+      if (err?.message && typeof err.message === 'string') {
+        setError(err.message)
+      } else if (typeof err === 'string') {
+        setError(err)
+      } else if (err?.name === 'TypeError') {
+        setError('No se pudo conectar con el servidor. Verifique la conexión.')
+      } else {
+        setError('Error al iniciar sesión. Intente de nuevo.')
+      }
+      console.error('Login error:', err)
     } finally {
       setLoading(false)
     }
