@@ -70,7 +70,7 @@ export default function RubricsPage() {
   const loadRubrics = async () => {
     if (!accessToken) return
     try {
-      const data = await adminApi.getRubrics(accessToken)
+      const data = await adminApi.getRubrics(accessToken) as Rubric[]
       setRubrics(data)
     } catch (err) {
       console.error('Error loading rubrics:', err)

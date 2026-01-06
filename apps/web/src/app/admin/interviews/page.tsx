@@ -78,7 +78,7 @@ export default function InterviewsPage() {
   const loadInterviews = async () => {
     if (!accessToken) return
     try {
-      const data = await adminApi.getFlaggedInterviews(accessToken)
+      const data = await adminApi.getFlaggedInterviews(accessToken) as FlaggedInterview[]
       setInterviews(data)
     } catch (err) {
       console.error('Error loading interviews:', err)
