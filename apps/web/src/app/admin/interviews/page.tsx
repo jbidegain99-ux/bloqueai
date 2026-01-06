@@ -256,7 +256,6 @@ export default function InterviewsPage() {
                     <div className="flex items-center gap-6">
                       <ScoreDisplay
                         score={selectedInterview.report.overall_score}
-                        maxScore={5}
                         size="lg"
                       />
                       <div>
