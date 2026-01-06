@@ -43,7 +43,7 @@ test.describe('Smoke Tests', () => {
     await page.goto('/login')
 
     // Check that test credentials are shown
-    await expect(page.getByText(/admin@talentos.local/i)).toBeVisible()
+    await expect(page.getByText(/admin@example.com/i)).toBeVisible()
     await expect(page.getByText(/candidate1@example.com/i)).toBeVisible()
   })
 })

@@ -30,7 +30,7 @@ def seed_database():
         print("🌱 Starting database seed...")
 
         # Check if already seeded
-        if db.query(User).filter(User.email == "admin@talentos.local").first():
+        if db.query(User).filter(User.email == "admin@example.com").first():
             print("⚠️  Database already seeded. Skipping.")
             return
 
@@ -103,7 +103,7 @@ def seed_database():
         print("👤 Creating admin user...")
         admin = User(
             id=uuid4(),
-            email="admin@talentos.local",
+            email="admin@example.com",
             hashed_password=get_password_hash("Admin123!"),
             full_name="Administrador TalentOS",
             role=UserRole.ADMIN,
@@ -119,7 +119,7 @@ def seed_database():
         print("👤 Creating recruiter user...")
         recruiter = User(
             id=uuid4(),
-            email="recruiter@talentos.local",
+            email="recruiter@example.com",
             hashed_password=get_password_hash("Recruiter123!"),
             full_name="María García - Reclutadora",
             role=UserRole.RECRUITER,
@@ -135,7 +135,7 @@ def seed_database():
         print("👤 Creating employer user...")
         employer = User(
             id=uuid4(),
-            email="employer@talentos.local",
+            email="employer@example.com",
             hashed_password=get_password_hash("Employer123!"),
             full_name="Carlos López - Hiring Manager",
             role=UserRole.EMPLOYER,
@@ -347,9 +347,9 @@ Requisitos:
         db.commit()
         print("✅ Database seeded successfully!")
         print("\n📧 Test accounts created:")
-        print("  Admin: admin@talentos.local / Admin123!")
-        print("  Recruiter: recruiter@talentos.local / Recruiter123!")
-        print("  Employer: employer@talentos.local / Employer123!")
+        print("  Admin: admin@example.com / Admin123!")
+        print("  Recruiter: recruiter@example.com / Recruiter123!")
+        print("  Employer: employer@example.com / Employer123!")
         print("  Candidates: candidate1@example.com, candidate2@example.com, candidate3@example.com / Candidate123!")
 
     except Exception as e:

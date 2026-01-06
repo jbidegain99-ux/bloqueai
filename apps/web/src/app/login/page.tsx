@@ -151,9 +151,9 @@ export default function LoginPage() {
                 Cuentas de prueba:
               </p>
               <div className="text-xs text-muted-foreground space-y-1">
-                <p><strong>Admin:</strong> admin@talentos.local / Admin123!</p>
-                <p><strong>Recruiter:</strong> recruiter@talentos.local / Recruiter123!</p>
-                <p><strong>Employer:</strong> employer@talentos.local / Employer123!</p>
+                <p><strong>Admin:</strong> admin@example.com / Admin123!</p>
+                <p><strong>Recruiter:</strong> recruiter@example.com / Recruiter123!</p>
+                <p><strong>Employer:</strong> employer@example.com / Employer123!</p>
                 <p><strong>Candidate:</strong> candidate1@example.com / Candidate123!</p>
               </div>
             </div>

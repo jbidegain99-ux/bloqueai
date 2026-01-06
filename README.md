@@ -60,9 +60,9 @@ make up
 
 | Rol | Email | Contraseña |
 |-----|-------|------------|
-| Admin | admin@talentos.local | Admin123! |
-| Recruiter | recruiter@talentos.local | Recruiter123! |
-| Employer | employer@talentos.local | Employer123! |
+| Admin | admin@example.com | Admin123! |
+| Recruiter | recruiter@example.com | Recruiter123! |
+| Employer | employer@example.com | Employer123! |
 | Candidate | candidate1@example.com | Candidate123! |
 
 ## Estructura del Proyecto
