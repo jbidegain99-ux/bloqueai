@@ -14,6 +14,9 @@ class StorageService:
     """Service for file storage using MinIO/S3."""
 
     def __init__(self):
+        if not settings.storage_enabled:
+            raise RuntimeError("Storage is not configured. Set MINIO_ENDPOINT, MINIO_ACCESS_KEY, and MINIO_SECRET_KEY.")
+
         self.client = Minio(
             settings.minio_endpoint,
             access_key=settings.minio_access_key,
@@ -95,5 +98,19 @@ class StorageService:
             return None
 
 
-# Singleton instance
-storage_service = StorageService()
+# Lazy singleton - only initialized when needed
+_storage_service: Optional[StorageService] = None
+
+
+def get_storage_service() -> Optional[StorageService]:
+    """Get storage service instance (lazy initialization)."""
+    global _storage_service
+    if not settings.storage_enabled:
+        return None
+    if _storage_service is None:
+        _storage_service = StorageService()
+    return _storage_service
+
+
+# For backwards compatibility - but this should not be used at import time
+storage_service: Optional[StorageService] = None

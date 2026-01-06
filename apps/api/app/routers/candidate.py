@@ -23,7 +23,7 @@ from app.schemas.interview import (
     InterviewCompleteResponse,
 )
 from app.schemas.report import CandidateReportResponse
-from app.services.storage import storage_service
+from app.services.storage import get_storage_service
 from app.services.interview import get_interview_questions, DEFAULT_QUESTIONS
 from app.services.llm import llm_provider
 from app.services.cv_parser import mask_phone
@@ -104,15 +104,22 @@ async def upload_resume(
 
     candidate = get_candidate_or_404(db, current_user)
 
-    # Upload to storage
+    # Upload to storage (if configured)
     import io
 
-    file_path = storage_service.upload_file(
-        io.BytesIO(content),
-        file.filename,
-        content_type,
-        folder="resumes",
-    )
+    storage = get_storage_service()
+    if storage:
+        file_path = storage.upload_file(
+            io.BytesIO(content),
+            file.filename,
+            content_type,
+            folder="resumes",
+        )
+    else:
+        # No storage configured - store path as placeholder
+        from uuid import uuid4
+        ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else ""
+        file_path = f"resumes/{uuid4()}.{ext}" if ext else f"resumes/{uuid4()}"
 
     # Create resume record
     resume = Resume(

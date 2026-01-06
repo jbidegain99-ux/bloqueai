@@ -22,10 +22,10 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # MinIO (S3-compatible storage)
-    minio_endpoint: str = "localhost:9000"
-    minio_access_key: str = "minioadmin"
-    minio_secret_key: str = "minioadmin"
+    # MinIO (S3-compatible storage) - Optional
+    minio_endpoint: Optional[str] = None
+    minio_access_key: Optional[str] = None
+    minio_secret_key: Optional[str] = None
     minio_bucket: str = "talentos-uploads"
     minio_use_ssl: bool = False
 
@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     def use_stub_llm(self) -> bool:
         """Check if we should use stub LLM provider."""
         return not self.llm_api_key or self.llm_api_key.strip() == ""
+
+    @property
+    def storage_enabled(self) -> bool:
+        """Check if storage is configured."""
+        return bool(self.minio_endpoint and self.minio_access_key and self.minio_secret_key)
 
 
 @lru_cache()
