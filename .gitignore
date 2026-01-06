@@ -1,0 +1,70 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.eggs/
+*.egg-info/
+*.egg
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+*.js.map
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+.hypothesis/
+
+# Python virtual environments
+venv/
+.venv/
+env/
+
+# Turbo
+.turbo/
+
+# Docker
+.docker/
+
+# MinIO data
+minio-data/
+
+# Uploads
+uploads/
+
+# Misc
+*.bak
+*.tmp
+.cache/

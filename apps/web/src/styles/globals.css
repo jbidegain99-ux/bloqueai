@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Bloque Brand - Light Theme */
+    --background: 220 20% 97%; /* bloque-gray50 */
+    --foreground: 227 54% 23%; /* bloque-navy900 */
+
+    --card: 0 0% 100%;
+    --card-foreground: 227 54% 23%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 227 54% 23%;
+
+    /* Primary = Gold (CTAs) */
+    --primary: 47 79% 53%; /* bloque-gold500 */
+    --primary-foreground: 227 54% 23%; /* navy text on gold */
+
+    /* Secondary = Navy */
+    --secondary: 227 54% 23%; /* bloque-navy900 */
+    --secondary-foreground: 0 0% 100%; /* white text on navy */
+
+    /* Accent = Blue 600 */
+    --accent: 227 35% 31%; /* bloque-blue600 */
+    --accent-foreground: 0 0% 100%;
+
+    --muted: 228 10% 82%; /* bloque-slate200 */
+    --muted-foreground: 227 35% 31%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 228 10% 82%; /* bloque-slate200 */
+    --input: 228 10% 82%;
+    --ring: 47 79% 53%; /* gold ring */
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 227 54% 23%;
+    --foreground: 0 0% 100%;
+
+    --card: 227 35% 27%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 227 35% 27%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 47 79% 53%;
+    --primary-foreground: 227 54% 23%;
+
+    --secondary: 228 10% 82%;
+    --secondary-foreground: 227 54% 23%;
+
+    --muted: 227 35% 31%;
+    --muted-foreground: 228 10% 82%;
+
+    --accent: 47 79% 53%;
+    --accent-foreground: 227 54% 23%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 227 35% 31%;
+    --input: 227 35% 31%;
+    --ring: 47 79% 53%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Custom Bloque Styles */
+@layer components {
+  .brand-gradient {
+    @apply bg-gradient-to-br from-bloque-navy900 via-bloque-navy700 to-bloque-blue600;
+  }
+
+  .brand-card {
+    @apply bg-white border border-bloque-slate200 rounded-lg shadow-sm;
+  }
+
+  .brand-btn-primary {
+    @apply bg-bloque-gold500 text-bloque-navy900 hover:bg-yellow-400 font-semibold;
+  }
+
+  .brand-btn-secondary {
+    @apply bg-bloque-navy900 text-white hover:bg-bloque-navy700 font-semibold;
+  }
+
+  .brand-btn-outline {
+    @apply border-2 border-bloque-slate200 text-bloque-navy900 hover:bg-bloque-gray50;
+  }
+}
+
+/* Font loading */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');

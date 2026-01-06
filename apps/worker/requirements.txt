@@ -1,0 +1,21 @@
+# Worker dependencies
+redis==5.0.1
+rq==1.16.0
+
+# Shared with API
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+pydantic==2.5.3
+pydantic-settings==2.1.0
+httpx==0.26.0
+
+# File processing
+pdfplumber==0.10.3
+python-docx==1.1.0
+
+# Storage
+minio==7.2.3
+
+# Utilities
+python-dotenv==1.0.0
+structlog==24.1.0

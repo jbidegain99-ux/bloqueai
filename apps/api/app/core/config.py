@@ -1,0 +1,73 @@
+"""Application configuration with Pydantic Settings."""
+
+from functools import lru_cache
+from typing import List, Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Database
+    database_url: str = "postgresql://talentos:talentos@localhost:5432/talentos"
+
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
+
+    # MinIO (S3-compatible storage)
+    minio_endpoint: str = "localhost:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_bucket: str = "talentos-uploads"
+    minio_use_ssl: bool = False
+
+    # JWT Auth
+    jwt_secret_key: str = "your-super-secret-key-change-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 30
+    jwt_refresh_token_expire_days: int = 7
+
+    # LLM Provider
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_api_key: Optional[str] = None
+    llm_model: str = "gpt-4o-mini"
+
+    # API Settings
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
+    api_debug: bool = True
+    api_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    # Rate Limiting
+    rate_limit_per_minute: int = 60
+
+    # Logging
+    log_level: str = "INFO"
+    log_format: str = "json"
+
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """Parse CORS origins from comma-separated string."""
+        return [origin.strip() for origin in self.api_cors_origins.split(",")]
+
+    @property
+    def use_stub_llm(self) -> bool:
+        """Check if we should use stub LLM provider."""
+        return not self.llm_api_key or self.llm_api_key.strip() == ""
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    """Get cached settings instance."""
+    return Settings()
+
+
+settings = get_settings()
