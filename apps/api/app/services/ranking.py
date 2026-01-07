@@ -188,9 +188,14 @@ def rank_candidates_for_job(
     max_candidates: int = 10,
 ) -> list[dict[str, Any]]:
     """Rank all candidates for a job and return top matches."""
+    import structlog
+    logger = structlog.get_logger()
+
     # Get job requirements
     must_haves = job.must_haves or []
     nice_to_haves = job.nice_to_haves or []
+
+    logger.info("ranking_candidates", job_id=str(job.id), must_haves=must_haves, nice_to_haves=nice_to_haves)
 
     # Get rubric criteria
     rubric_criteria = []
@@ -203,17 +208,14 @@ def rank_candidates_for_job(
     if not rubric_criteria:
         rubric_criteria = get_default_criteria()
 
-    # Get all candidates with reports
-    candidates = (
-        db.query(Candidate)
-        .join(CandidateReport, CandidateReport.candidate_id == Candidate.id)
-        .filter(CandidateReport.status == "COMPLETED")
-        .all()
-    )
+    # Get ALL candidates (not just those with completed reports)
+    candidates = db.query(Candidate).all()
+
+    logger.info("found_candidates", count=len(candidates))
 
     ranked = []
     for candidate in candidates:
-        # Get latest report
+        # Get latest report (if any)
         report = (
             db.query(CandidateReport)
             .filter(CandidateReport.candidate_id == candidate.id)
@@ -222,13 +224,21 @@ def rank_candidates_for_job(
             .first()
         )
 
-        if not report:
-            continue
-
         # Calculate scores
         candidate_skills = candidate.skills or []
-        competency_scores = report.competency_scores or {}
         experience = candidate.experience or []
+
+        # Skip candidates without skills AND without report (no data to rank)
+        if not candidate_skills and not report:
+            logger.debug("skipping_candidate_no_data", candidate_id=str(candidate.id))
+            continue
+
+        # Use report competency scores if available, otherwise use candidate's stored scores
+        competency_scores = {}
+        if report:
+            competency_scores = report.competency_scores or {}
+        elif candidate.competency_scores:
+            competency_scores = candidate.competency_scores
 
         must_have_match = calculate_must_have_match(candidate_skills, must_haves)
         nice_to_have_match = calculate_nice_to_have_match(candidate_skills, nice_to_haves)
@@ -259,6 +269,8 @@ def rank_candidates_for_job(
             "top_reasons": generate_top_reasons(score_breakdown, report),
             "risks": generate_risks(score_breakdown, report),
         })
+
+    logger.info("ranked_candidates", count=len(ranked))
 
     # Sort by total score descending
     ranked.sort(key=lambda x: x["total_score"], reverse=True)

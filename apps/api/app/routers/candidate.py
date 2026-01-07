@@ -154,25 +154,28 @@ async def upload_resume(
     db.commit()
     db.refresh(resume)
 
-    # Queue background job for parsing
-    # In a real implementation, this would be queued to Redis/RQ
-    # For now, we'll do a simple inline parse
+    # Parse CV inline (for Vercel serverless compatibility)
     from app.services.cv_parser import extract_text_from_file, parse_cv_with_llm
+    import structlog
+    logger = structlog.get_logger()
 
     try:
+        logger.info("cv_parsing_started", resume_id=str(resume.id), filename=file.filename)
+
+        # Extract raw text
         raw_text = extract_text_from_file(content, resume.file_type)
         resume.raw_text = raw_text
         resume.status = ResumeStatus.PROCESSING
         db.commit()
 
-        # Parse with LLM (async)
-        import asyncio
+        logger.info("cv_text_extracted", resume_id=str(resume.id), text_length=len(raw_text))
 
-        parsed_data = asyncio.get_event_loop().run_until_complete(
-            parse_cv_with_llm(raw_text)
-        )
+        # Parse with LLM (await directly since we're in async function)
+        parsed_data = await parse_cv_with_llm(raw_text)
         resume.parsed_data = parsed_data
         resume.status = ResumeStatus.COMPLETED
+
+        logger.info("cv_parsing_completed", resume_id=str(resume.id), skills_count=len(parsed_data.get("skills", [])))
 
         # Update candidate profile from parsed data
         if parsed_data.get("skills"):
@@ -190,8 +193,12 @@ async def upload_resume(
         if parsed_data.get("location"):
             candidate.location = parsed_data["location"]
 
+        candidate.updated_at = datetime.utcnow()
         db.commit()
+
+        logger.info("candidate_profile_updated", candidate_id=str(candidate.id))
     except Exception as e:
+        logger.error("cv_parsing_failed", resume_id=str(resume.id), error=str(e))
         resume.status = ResumeStatus.FAILED
         resume.error_message = str(e)
         db.commit()
@@ -385,14 +392,18 @@ async def complete_interview(
     db.add(report)
     db.commit()
 
-    # In production, this would queue a background job
-    # For MVP, we'll generate inline
+    # Generate report inline (for Vercel serverless compatibility)
+    import structlog
+    logger = structlog.get_logger()
+
     try:
         from app.services.interview import (
             build_transcript,
             build_masked_transcript,
             generate_candidate_report,
         )
+
+        logger.info("report_generation_started", session_id=str(session.id))
 
         messages = (
             db.query(InterviewMessage)
@@ -413,6 +424,7 @@ async def complete_interview(
 
         # Generate report
         report.status = ReportStatus.GENERATING
+        db.commit()
 
         candidate_info = {
             "name": current_user.full_name,
@@ -433,11 +445,10 @@ async def complete_interview(
                     "seniority": job.seniority.value,
                 }
 
-        import asyncio
+        # Await directly since we're in async function
+        report_data = await generate_candidate_report(transcript, candidate_info, job_info)
 
-        report_data = asyncio.get_event_loop().run_until_complete(
-            generate_candidate_report(transcript, candidate_info, job_info)
-        )
+        logger.info("report_data_generated", session_id=str(session.id), overall_score=report_data.get("overall_score"))
 
         # Update report
         report.summary = report_data.get("summary")
@@ -459,10 +470,14 @@ async def complete_interview(
         candidate.ai_skills = [
             {"skill": s, "source": "interview"} for s in report.skills_detected
         ]
+        candidate.updated_at = datetime.utcnow()
 
         db.commit()
         report_status = "completed"
+
+        logger.info("report_generation_completed", session_id=str(session.id), report_id=str(report.id))
     except Exception as e:
+        logger.error("report_generation_failed", session_id=str(session.id), error=str(e))
         report.status = ReportStatus.FAILED
         db.commit()
         report_status = f"failed: {str(e)}"

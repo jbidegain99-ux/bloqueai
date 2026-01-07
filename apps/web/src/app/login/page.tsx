@@ -22,6 +22,17 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    // Manual validation
+    if (!email.trim()) {
+      setError('Por favor ingresa tu correo electrónico')
+      return
+    }
+    if (!password) {
+      setError('Por favor ingresa tu contraseña')
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -102,7 +113,7 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
               {error && (
                 <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">
                   {error}
@@ -117,7 +128,7 @@ export default function LoginPage() {
                   placeholder="tu@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  required
+                  autoComplete="email"
                 />
               </div>
 
@@ -129,7 +140,7 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required
+                  autoComplete="current-password"
                 />
               </div>
 
