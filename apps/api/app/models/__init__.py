@@ -10,6 +10,7 @@ from app.models.report import CandidateReport
 from app.models.rubric import Rubric, RubricCriteria
 from app.models.shortlist import ShortlistItem
 from app.models.audit import AuditLog
+from app.models.lead import Lead
 
 __all__ = [
     "User",
@@ -24,4 +25,5 @@ __all__ = [
     "RubricCriteria",
     "ShortlistItem",
     "AuditLog",
+    "Lead",
 ]

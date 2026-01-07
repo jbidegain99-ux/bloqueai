@@ -242,4 +242,20 @@ export const adminApi = {
     fetchApi(`/admin/audit-logs${entityType ? `?entity_type=${entityType}` : ''}`, { token }),
 }
 
+// Public API (no auth required)
+export const publicApi = {
+  submitLead: (data: {
+    name: string
+    email: string
+    company?: string
+    country?: string
+    roles_needed?: string
+    message?: string
+  }) =>
+    fetchApi('/public/leads', {
+      method: 'POST',
+      body: data,
+    }),
+}
+
 export { ApiError }

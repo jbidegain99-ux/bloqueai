@@ -32,14 +32,34 @@ from app.utils.deps import get_current_user, require_candidate
 router = APIRouter(prefix="/candidate", tags=["Candidate"])
 
 
-def get_candidate_or_404(db: Session, user: User) -> Candidate:
-    """Get candidate profile or raise 404."""
+def get_or_create_candidate(db: Session, user: User) -> Candidate:
+    """Get candidate profile or auto-create if it doesn't exist."""
     candidate = db.query(Candidate).filter(Candidate.user_id == user.id).first()
     if not candidate:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Perfil de candidato no encontrado",
+        # Auto-create candidate profile for CANDIDATE role users
+        from uuid import uuid4
+        from datetime import datetime
+        import structlog
+        logger = structlog.get_logger()
+
+        logger.info("auto_creating_candidate_profile", user_id=str(user.id), email=user.email)
+
+        candidate = Candidate(
+            id=uuid4(),
+            user_id=user.id,
+            headline="",
+            skills=[],
+            experience=[],
+            education=[],
+            languages=[],
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
         )
+        db.add(candidate)
+        db.commit()
+        db.refresh(candidate)
+
+        logger.info("candidate_profile_created", candidate_id=str(candidate.id), user_id=str(user.id))
     return candidate
 
 
@@ -49,7 +69,7 @@ async def get_profile(
     db: Session = Depends(get_db),
 ) -> Candidate:
     """Get candidate profile."""
-    return get_candidate_or_404(db, current_user)
+    return get_or_create_candidate(db, current_user)
 
 
 @router.patch("/profile", response_model=CandidateProfileResponse)
@@ -59,7 +79,7 @@ async def update_profile(
     db: Session = Depends(get_db),
 ) -> Candidate:
     """Update candidate profile."""
-    candidate = get_candidate_or_404(db, current_user)
+    candidate = get_or_create_candidate(db, current_user)
 
     update_data = update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -102,7 +122,7 @@ async def upload_resume(
             detail="El archivo excede el tamaño máximo de 10MB",
         )
 
-    candidate = get_candidate_or_404(db, current_user)
+    candidate = get_or_create_candidate(db, current_user)
 
     # Upload to storage (if configured)
     import io
@@ -186,7 +206,7 @@ async def get_resumes(
     db: Session = Depends(get_db),
 ) -> list[Resume]:
     """Get all resumes for current candidate."""
-    candidate = get_candidate_or_404(db, current_user)
+    candidate = get_or_create_candidate(db, current_user)
     return db.query(Resume).filter(Resume.candidate_id == candidate.id).all()
 
 
@@ -197,7 +217,7 @@ async def start_interview(
     db: Session = Depends(get_db),
 ) -> InterviewSession:
     """Start a new interview session."""
-    candidate = get_candidate_or_404(db, current_user)
+    candidate = get_or_create_candidate(db, current_user)
 
     # Check for existing in-progress interview
     existing = (
@@ -249,7 +269,7 @@ async def send_interview_message(
     db: Session = Depends(get_db),
 ) -> InterviewSession:
     """Send a message in the interview."""
-    candidate = get_candidate_or_404(db, current_user)
+    candidate = get_or_create_candidate(db, current_user)
 
     session = (
         db.query(InterviewSession)
@@ -335,7 +355,7 @@ async def complete_interview(
     db: Session = Depends(get_db),
 ) -> InterviewCompleteResponse:
     """Mark interview as complete and trigger report generation."""
-    candidate = get_candidate_or_404(db, current_user)
+    candidate = get_or_create_candidate(db, current_user)
 
     session = (
         db.query(InterviewSession)
@@ -462,7 +482,7 @@ async def get_interview_session(
     db: Session = Depends(get_db),
 ) -> InterviewSession:
     """Get interview session details."""
-    candidate = get_candidate_or_404(db, current_user)
+    candidate = get_or_create_candidate(db, current_user)
 
     session = (
         db.query(InterviewSession)
@@ -485,7 +505,7 @@ async def get_interviews(
     db: Session = Depends(get_db),
 ) -> list[InterviewSession]:
     """Get all interview sessions for current candidate."""
-    candidate = get_candidate_or_404(db, current_user)
+    candidate = get_or_create_candidate(db, current_user)
     return (
         db.query(InterviewSession)
         .filter(InterviewSession.candidate_id == candidate.id)
@@ -500,7 +520,7 @@ async def get_latest_report(
     db: Session = Depends(get_db),
 ) -> CandidateReport:
     """Get latest candidate report."""
-    candidate = get_candidate_or_404(db, current_user)
+    candidate = get_or_create_candidate(db, current_user)
 
     report = (
         db.query(CandidateReport)
