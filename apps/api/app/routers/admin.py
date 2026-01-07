@@ -267,14 +267,142 @@ async def simulate_rubric(
 # ============ Interview Review ============
 
 
-@router.get("/interviews/flagged", response_model=list[InterviewSessionForReview])
+def format_interview_for_review(session: InterviewSession) -> dict:
+    """Transform InterviewSession to InterviewSessionForReview format."""
+    # Build transcript from messages
+    transcript = []
+    for msg in session.messages:
+        role = "assistant" if msg.role.value in ["AI", "SYSTEM"] else "user"
+        transcript.append({
+            "role": role,
+            "content": msg.content,
+            "timestamp": msg.created_at.isoformat() if msg.created_at else None,
+        })
+
+    # Get latest report if any
+    report = None
+    if session.reports:
+        latest_report = sorted(session.reports, key=lambda r: r.created_at, reverse=True)[0]
+        report = {
+            "id": str(latest_report.id),
+            "overall_score": latest_report.overall_score,
+            "summary": latest_report.summary,
+            "confidence_score": latest_report.confidence_score,
+            "score_overridden": latest_report.score_overridden or False,
+            "original_score": latest_report.original_score,
+            "competency_scores": latest_report.competency_scores or {},
+        }
+
+    # Build candidate info
+    candidate_info = None
+    if session.candidate:
+        user_info = None
+        if session.candidate.user:
+            user_info = {
+                "full_name": session.candidate.user.full_name,
+                "email": session.candidate.user.email,
+            }
+        candidate_info = {
+            "id": str(session.candidate.id),
+            "user": user_info,
+        }
+
+    # Calculate duration in minutes
+    duration_minutes = None
+    if session.duration_seconds:
+        duration_minutes = session.duration_seconds // 60
+
+    return {
+        "id": str(session.id),
+        "candidate_id": str(session.candidate_id),
+        "job_id": str(session.job_id) if session.job_id else None,
+        "status": session.status,
+        "current_question_index": session.current_question_index,
+        "total_questions": session.total_questions,
+        "interview_type": session.interview_type,
+        "language": session.language,
+        "started_at": session.started_at,
+        "completed_at": session.completed_at,
+        "duration_seconds": session.duration_seconds,
+        "has_inconsistencies": session.has_inconsistencies,
+        "confidence_score": session.confidence_score,
+        "requires_review": session.requires_review,
+        "messages": [
+            {
+                "role": msg.role,
+                "content": msg.content,
+                "sequence": msg.sequence,
+                "question_id": msg.question_id,
+            }
+            for msg in session.messages
+        ],
+        "masked_transcript": session.masked_transcript,
+        "ai_analysis": session.ai_analysis or {},
+        "candidate_name": session.candidate.user.full_name if session.candidate and session.candidate.user else None,
+        "job_title": session.job.title if session.job else None,
+        # New fields for frontend
+        "candidate": candidate_info,
+        "report": report,
+        "transcript": transcript,
+        "total_messages": len(session.messages),
+        "duration_minutes": duration_minutes,
+    }
+
+
+@router.get("/interviews")
+async def list_interviews(
+    status_filter: Optional[str] = Query(None, description="Filter by status: COMPLETED, IN_PROGRESS, ALL"),
+    flagged_only: bool = Query(False, description="Only show flagged interviews"),
+    limit: int = Query(50, le=200),
+    current_user: User = Depends(require_recruiter),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """List all interviews with optional filters."""
+    import structlog
+    from sqlalchemy.orm import joinedload
+    logger = structlog.get_logger()
+
+    query = db.query(InterviewSession).options(
+        joinedload(InterviewSession.candidate).joinedload(Candidate.user),
+        joinedload(InterviewSession.messages),
+        joinedload(InterviewSession.reports),
+        joinedload(InterviewSession.job),
+    )
+
+    # Apply status filter
+    if status_filter and status_filter != "ALL":
+        if status_filter == "COMPLETED":
+            query = query.filter(InterviewSession.status == InterviewStatus.COMPLETED)
+        elif status_filter == "IN_PROGRESS":
+            query = query.filter(InterviewSession.status == InterviewStatus.IN_PROGRESS)
+
+    # Apply flagged filter
+    if flagged_only:
+        query = query.filter(InterviewSession.requires_review == True)
+
+    interviews = query.order_by(InterviewSession.created_at.desc()).limit(limit).all()
+
+    logger.info("admin_list_interviews", count=len(interviews), status_filter=status_filter, flagged_only=flagged_only)
+
+    return [format_interview_for_review(i) for i in interviews]
+
+
+@router.get("/interviews/flagged")
 async def get_flagged_interviews(
     current_user: User = Depends(require_recruiter),
     db: Session = Depends(get_db),
-) -> list[InterviewSession]:
+) -> list[dict]:
     """Get interviews flagged for review."""
-    return (
+    from sqlalchemy.orm import joinedload
+
+    interviews = (
         db.query(InterviewSession)
+        .options(
+            joinedload(InterviewSession.candidate).joinedload(Candidate.user),
+            joinedload(InterviewSession.messages),
+            joinedload(InterviewSession.reports),
+            joinedload(InterviewSession.job),
+        )
         .filter(InterviewSession.requires_review == True)
         .filter(InterviewSession.status == InterviewStatus.COMPLETED)
         .order_by(InterviewSession.completed_at.desc())
@@ -282,21 +410,35 @@ async def get_flagged_interviews(
         .all()
     )
 
+    return [format_interview_for_review(i) for i in interviews]
 
-@router.get("/interviews/{session_id}", response_model=InterviewSessionForReview)
+
+@router.get("/interviews/{session_id}")
 async def get_interview_for_review(
     session_id: UUID,
     current_user: User = Depends(require_recruiter),
     db: Session = Depends(get_db),
-) -> InterviewSession:
+) -> dict:
     """Get interview details for review."""
-    session = db.query(InterviewSession).filter(InterviewSession.id == session_id).first()
+    from sqlalchemy.orm import joinedload
+
+    session = (
+        db.query(InterviewSession)
+        .options(
+            joinedload(InterviewSession.candidate).joinedload(Candidate.user),
+            joinedload(InterviewSession.messages),
+            joinedload(InterviewSession.reports),
+            joinedload(InterviewSession.job),
+        )
+        .filter(InterviewSession.id == session_id)
+        .first()
+    )
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Sesión no encontrada",
         )
-    return session
+    return format_interview_for_review(session)
 
 
 # ============ Score Override ============

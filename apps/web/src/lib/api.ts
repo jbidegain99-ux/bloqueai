@@ -231,6 +231,12 @@ export const adminApi = {
   getFlaggedInterviews: (token: string) =>
     fetchApi('/admin/interviews/flagged', { token }),
 
+  getInterviews: (token: string, statusFilter?: 'COMPLETED' | 'IN_PROGRESS' | 'ALL', flaggedOnly = false) =>
+    fetchApi(`/admin/interviews?status_filter=${statusFilter || 'ALL'}&flagged_only=${flaggedOnly}`, { token }),
+
+  getInterview: (token: string, sessionId: string) =>
+    fetchApi(`/admin/interviews/${sessionId}`, { token }),
+
   overrideScore: (token: string, reportId: string, newScore: number, reason: string) =>
     fetchApi(`/admin/reports/${reportId}/override`, {
       method: 'POST',

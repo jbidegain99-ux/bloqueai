@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     llm_api_key: Optional[str] = None
     llm_model: str = "gpt-4o-mini"
 
+    # Avatar Integration (video AI avatar for interviews)
+    avatar_enabled: bool = False
+    avatar_provider: str = "mock"  # mock, heygen, or did
+    heygen_api_key: Optional[str] = None
+    did_api_key: Optional[str] = None
+
     # API Settings
     api_host: str = "0.0.0.0"
     api_port: int = 8000

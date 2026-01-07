@@ -2,8 +2,9 @@
 
 from typing import Any, Optional
 from uuid import UUID
+from datetime import datetime
 
-from pydantic import Field
+from pydantic import Field, computed_field
 
 from app.models.interview import InterviewStatus, MessageRole
 from app.schemas.base import IDSchema, BaseSchema
@@ -59,6 +60,37 @@ class InterviewCompleteResponse(BaseSchema):
     report_status: str
 
 
+# Nested schemas for admin review
+class UserForReview(BaseSchema):
+    """User info for admin review."""
+    full_name: str
+    email: str
+
+
+class CandidateForReview(BaseSchema):
+    """Candidate info for admin review."""
+    id: UUID
+    user: Optional[UserForReview] = None
+
+
+class ReportForReview(BaseSchema):
+    """Report info for admin review."""
+    id: UUID
+    overall_score: Optional[float] = None
+    summary: Optional[str] = None
+    confidence_score: Optional[int] = None
+    score_overridden: bool = False
+    original_score: Optional[float] = None
+    competency_scores: dict[str, Any] = {}
+
+
+class TranscriptMessage(BaseSchema):
+    """Message in transcript for admin review."""
+    role: str  # 'assistant' or 'user'
+    content: str
+    timestamp: Optional[str] = None
+
+
 class InterviewSessionForReview(InterviewSessionResponse):
     """Interview session with full details for recruiter review."""
 
@@ -66,3 +98,10 @@ class InterviewSessionForReview(InterviewSessionResponse):
     ai_analysis: dict[str, Any] = {}
     candidate_name: Optional[str] = None
     job_title: Optional[str] = None
+
+    # Nested objects for frontend
+    candidate: Optional[CandidateForReview] = None
+    report: Optional[ReportForReview] = None
+    transcript: list[TranscriptMessage] = []
+    total_messages: int = 0
+    duration_minutes: Optional[int] = None
