@@ -177,12 +177,28 @@ export default function JobDetailPage() {
             shortlist.items.map((item: any) => (
               <BrandCard key={item.id} hover>
                 <div className="flex gap-6">
-                  {/* Score */}
-                  <div className="flex flex-col items-center">
+                  {/* Score Section */}
+                  <div className="flex flex-col items-center min-w-[100px]">
                     <div className="text-sm text-muted-foreground mb-1">
                       #{item.rank}
                     </div>
-                    <ScoreDisplay score={item.total_score} size="md" />
+                    {/* Final Score (0-100) */}
+                    <div className="text-3xl font-bold text-bloque-navy900">
+                      {Math.round(item.final_score || item.total_score * 20)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">puntos</div>
+
+                    {/* Score breakdown */}
+                    <div className="mt-2 text-xs space-y-1 w-full">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">CV:</span>
+                        <span className="font-medium">{Math.round(item.cv_score || 0)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Entrevista:</span>
+                        <span className="font-medium">{Math.round(item.interview_score || 0)}</span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Candidate Info */}
@@ -198,7 +214,20 @@ export default function JobDetailPage() {
                           </p>
                         )}
                       </div>
-                      <Badge variant="outline">{item.status}</Badge>
+                      <div className="flex items-center gap-2">
+                        {/* Interview Status Badge */}
+                        <Badge variant={item.interview_status === 'COMPLETED' ? 'success' : 'warning'}>
+                          {item.interview_status === 'COMPLETED' ? 'Entrevista' : 'Sin entrevista'}
+                        </Badge>
+                        {/* Flags indicator */}
+                        {(item.flags_count > 0) && (
+                          <Badge variant="destructive" className="flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            {item.flags_count}
+                          </Badge>
+                        )}
+                        <Badge variant="outline">{item.status}</Badge>
+                      </div>
                     </div>
 
                     {/* Skills */}
@@ -254,8 +283,40 @@ export default function JobDetailPage() {
                       )}
                     </div>
 
-                    {/* Competency Scores */}
-                    {item.candidate?.competency_scores && (
+                    {/* Top Competencies from Shortlist */}
+                    {item.top_competencies?.length > 0 && (
+                      <div className="mt-4 pt-4 border-t">
+                        <p className="text-xs font-medium text-bloque-navy900 mb-2">
+                          Top Competencias:
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {item.top_competencies.map((comp: { name: string; score: number }, idx: number) => {
+                            const labels: Record<string, string> = {
+                              technical_skills: 'Técnicas',
+                              communication: 'Comunicación',
+                              problem_solving: 'Prob. Solving',
+                              teamwork: 'Trabajo Equipo',
+                              leadership: 'Liderazgo',
+                              adaptability: 'Adaptabilidad',
+                              cultural_fit: 'Fit Cultural',
+                            }
+                            return (
+                              <div key={idx} className="flex items-center gap-1 px-2 py-1 bg-bloque-gray50 rounded text-xs">
+                                <span className="text-muted-foreground">{labels[comp.name] || comp.name}:</span>
+                                <span className={`font-semibold ${
+                                  comp.score >= 4 ? 'text-green-600' :
+                                  comp.score >= 3 ? 'text-amber-600' :
+                                  'text-red-600'
+                                }`}>{comp.score.toFixed(1)}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Fallback to Candidate Competency Scores */}
+                    {!item.top_competencies?.length && item.candidate?.competency_scores && Object.keys(item.candidate.competency_scores).length > 0 && (
                       <div className="mt-4 pt-4 border-t">
                         <p className="text-xs font-medium text-bloque-navy900 mb-2">
                           Competencias:

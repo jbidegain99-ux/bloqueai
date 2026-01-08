@@ -220,6 +220,14 @@ Ahora, me gustaría profundizar un poco más. ¿Podrías contarme sobre un proye
                         "score": self._deterministic_score(content + "lead", 2.5, 4.2),
                         "notes": "Potencial de liderazgo identificado.",
                     },
+                    "adaptability": {
+                        "score": self._deterministic_score(content + "adapt", 3.0, 4.3),
+                        "notes": "Buena capacidad de adaptación a nuevos entornos.",
+                    },
+                    "cultural_fit": {
+                        "score": self._deterministic_score(content + "culture", 3.2, 4.4),
+                        "notes": "Buen ajuste con valores organizacionales.",
+                    },
                 },
                 "skills_detected": ["Python", "JavaScript", "SQL", "Git", "Agile"],
                 "skills_missing": [],
