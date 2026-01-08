@@ -362,6 +362,9 @@ async def complete_interview(
     db: Session = Depends(get_db),
 ) -> InterviewCompleteResponse:
     """Mark interview as complete and trigger report generation."""
+    import structlog
+    logger = structlog.get_logger()
+
     candidate = get_or_create_candidate(db, current_user)
 
     session = (
@@ -376,21 +379,54 @@ async def complete_interview(
             detail="Sesión de entrevista no encontrada",
         )
 
+    logger.info("complete_interview_called", session_id=str(session_id), candidate_id=str(candidate.id), current_status=session.status.value)
+
+    # Check for existing completed report (idempotency)
+    existing_report = (
+        db.query(CandidateReport)
+        .filter(CandidateReport.session_id == session.id)
+        .filter(CandidateReport.status == ReportStatus.COMPLETED)
+        .first()
+    )
+    if existing_report:
+        logger.info("report_already_exists", session_id=str(session_id), report_id=str(existing_report.id))
+        return InterviewCompleteResponse(
+            session_id=session.id,
+            status=session.status,
+            message="Entrevista ya completada. Tu reporte está listo.",
+            report_status="completed",
+        )
+
     # Force complete if still in progress
     if session.status == InterviewStatus.IN_PROGRESS:
         session.status = InterviewStatus.COMPLETED
         session.completed_at = datetime.utcnow().isoformat()
         db.commit()
+        logger.info("session_marked_completed", session_id=str(session_id))
 
-    # Create pending report
-    report = CandidateReport(
-        candidate_id=candidate.id,
-        session_id=session.id,
-        job_id=session.job_id,
-        status=ReportStatus.PENDING,
+    # Check for pending/generating report (avoid duplicates)
+    pending_report = (
+        db.query(CandidateReport)
+        .filter(CandidateReport.session_id == session.id)
+        .filter(CandidateReport.status.in_([ReportStatus.PENDING, ReportStatus.GENERATING]))
+        .first()
     )
-    db.add(report)
-    db.commit()
+
+    if pending_report:
+        # Use existing pending report
+        report = pending_report
+        logger.info("using_existing_pending_report", session_id=str(session_id), report_id=str(report.id))
+    else:
+        # Create new report
+        report = CandidateReport(
+            candidate_id=candidate.id,
+            session_id=session.id,
+            job_id=session.job_id,
+            status=ReportStatus.PENDING,
+        )
+        db.add(report)
+        db.commit()
+        logger.info("new_report_created", session_id=str(session_id), report_id=str(report.id))
 
     # Generate report inline (for Vercel serverless compatibility)
     import structlog
@@ -534,19 +570,21 @@ async def get_latest_report(
     current_user: User = Depends(require_candidate),
     db: Session = Depends(get_db),
 ) -> CandidateReport:
-    """Get latest candidate report."""
+    """Get latest completed candidate report."""
     candidate = get_or_create_candidate(db, current_user)
 
+    # Only return COMPLETED reports
     report = (
         db.query(CandidateReport)
         .filter(CandidateReport.candidate_id == candidate.id)
+        .filter(CandidateReport.status == ReportStatus.COMPLETED)
         .order_by(CandidateReport.created_at.desc())
         .first()
     )
     if not report:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No tienes reportes generados aún",
+            detail="No tienes reportes completados aún",
         )
 
     return report

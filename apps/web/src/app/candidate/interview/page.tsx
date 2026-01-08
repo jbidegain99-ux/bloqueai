@@ -83,9 +83,23 @@ export default function InterviewPage() {
 
       // Check if completed
       if (response.status === 'COMPLETED') {
-        setCompleted(true)
-        // Trigger report generation
-        await candidateApi.completeInterview(accessToken, session.id)
+        // Trigger report generation and wait for it
+        try {
+          const completeResponse = await candidateApi.completeInterview(accessToken, session.id) as any
+          console.log('Interview completed:', completeResponse)
+
+          if (completeResponse.report_status === 'completed' || completeResponse.report_status?.startsWith('completed')) {
+            setCompleted(true)
+          } else if (completeResponse.report_status?.startsWith('failed')) {
+            console.error('Report generation failed:', completeResponse.report_status)
+            setCompleted(true) // Still show completed - profile will indicate the issue
+          } else {
+            setCompleted(true)
+          }
+        } catch (completeErr) {
+          console.error('Error completing interview:', completeErr)
+          setCompleted(true) // Show completed anyway - user can try to regenerate from profile
+        }
       }
     } catch (err) {
       console.error('Error sending message:', err)

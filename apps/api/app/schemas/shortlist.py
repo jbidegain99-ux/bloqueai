@@ -11,6 +11,12 @@ from app.schemas.candidate import CandidateForEmployer
 from app.schemas.report import ReportForShortlist
 
 
+class CompetencyScore(BaseSchema):
+    """Individual competency score."""
+    name: str
+    score: float
+
+
 class ShortlistItemResponse(IDSchema):
     """Shortlist item response."""
 
@@ -19,6 +25,15 @@ class ShortlistItemResponse(IDSchema):
     report_id: Optional[UUID] = None
     rank: int
     total_score: float
+    # New explicit score fields
+    final_score: float = 0.0  # Combined score (0-100 scale)
+    cv_score: float = 0.0  # CV-based score (0-100 scale)
+    interview_score: float = 0.0  # Interview-based score (0-100 scale)
+    # Competencies and flags
+    top_competencies: list[CompetencyScore] = []
+    flags_count: int = 0
+    interview_status: str = "PENDING"  # COMPLETED or PENDING
+    # Existing fields
     score_breakdown: dict[str, Any] = {}
     top_reasons: list[str] = []
     risks: list[str] = []

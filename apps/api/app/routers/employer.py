@@ -221,6 +221,15 @@ async def generate_shortlist(
         candidate = entry["candidate"]
         report = entry["report"]
 
+        # Build enhanced score breakdown with new fields
+        score_breakdown = entry["score_breakdown"].copy()
+        score_breakdown["final_score"] = entry.get("final_score", entry["total_score"] * 20)
+        score_breakdown["cv_score"] = entry.get("cv_score", 0)
+        score_breakdown["interview_score"] = entry.get("interview_score", 0)
+        score_breakdown["top_competencies"] = entry.get("top_competencies", [])
+        score_breakdown["flags_count"] = entry.get("flags_count", 0)
+        score_breakdown["interview_status"] = entry.get("status", "PENDING")
+
         # Check if already in shortlist (reviewed)
         existing = (
             db.query(ShortlistItem)
@@ -233,7 +242,7 @@ async def generate_shortlist(
             if request.include_reviewed:
                 existing.rank = i
                 existing.total_score = entry["total_score"]
-                existing.score_breakdown = entry["score_breakdown"]
+                existing.score_breakdown = score_breakdown
                 existing.top_reasons = entry["top_reasons"]
                 existing.risks = entry["risks"]
                 items.append(existing)
@@ -245,7 +254,7 @@ async def generate_shortlist(
             report_id=report.id if report else None,
             rank=i,
             total_score=entry["total_score"],
-            score_breakdown=entry["score_breakdown"],
+            score_breakdown=score_breakdown,
             top_reasons=entry["top_reasons"],
             risks=entry["risks"],
             status=ShortlistStatus.PENDING,
@@ -292,6 +301,8 @@ async def get_shortlist(
 
 def _build_shortlist_item_response(db: Session, item: ShortlistItem) -> ShortlistItemResponse:
     """Build shortlist item response with candidate and report info."""
+    from app.schemas.shortlist import CompetencyScore
+
     candidate = db.query(Candidate).filter(Candidate.id == item.candidate_id).first()
     report = None
     if item.report_id:
@@ -322,6 +333,21 @@ def _build_shortlist_item_response(db: Session, item: ShortlistItem) -> Shortlis
             risks=report.risks or [],
         )
 
+    # Extract new fields from score_breakdown
+    score_breakdown = item.score_breakdown or {}
+    final_score = score_breakdown.get("final_score", item.total_score * 20)
+    cv_score = score_breakdown.get("cv_score", 0)
+    interview_score = score_breakdown.get("interview_score", 0)
+    flags_count = score_breakdown.get("flags_count", 0)
+    interview_status = score_breakdown.get("interview_status", "PENDING")
+
+    # Build top competencies
+    top_competencies_raw = score_breakdown.get("top_competencies", [])
+    top_competencies = [
+        CompetencyScore(name=c.get("name", ""), score=c.get("score", 0))
+        for c in top_competencies_raw if isinstance(c, dict)
+    ]
+
     return ShortlistItemResponse(
         id=item.id,
         job_id=item.job_id,
@@ -329,7 +355,13 @@ def _build_shortlist_item_response(db: Session, item: ShortlistItem) -> Shortlis
         report_id=item.report_id,
         rank=item.rank,
         total_score=item.total_score,
-        score_breakdown=item.score_breakdown or {},
+        final_score=final_score,
+        cv_score=cv_score,
+        interview_score=interview_score,
+        top_competencies=top_competencies,
+        flags_count=flags_count,
+        interview_status=interview_status,
+        score_breakdown=score_breakdown,
         top_reasons=item.top_reasons or [],
         risks=item.risks or [],
         match_details=item.match_details or {},
@@ -365,13 +397,18 @@ async def export_shortlist_csv(
     # Header
     writer.writerow([
         "Rank",
-        "Score",
+        "Final Score",
+        "CV Score",
+        "Interview Score",
         "Headline",
         "Location",
         "Skills",
         "Experience Years",
+        "Top Competencies",
         "Strengths",
         "Risks",
+        "Flags",
+        "Interview Status",
         "Status",
     ])
 
@@ -381,15 +418,35 @@ async def export_shortlist_csv(
         if item.report_id:
             report = db.query(CandidateReport).filter(CandidateReport.id == item.report_id).first()
 
+        # Extract new fields from score_breakdown
+        score_breakdown = item.score_breakdown or {}
+        final_score = score_breakdown.get("final_score", item.total_score * 20)
+        cv_score = score_breakdown.get("cv_score", 0)
+        interview_score = score_breakdown.get("interview_score", 0)
+        flags_count = score_breakdown.get("flags_count", 0)
+        interview_status = score_breakdown.get("interview_status", "PENDING")
+        top_competencies = score_breakdown.get("top_competencies", [])
+
+        # Format top competencies
+        comp_str = "; ".join([
+            f"{c.get('name', '')}: {c.get('score', 0):.1f}"
+            for c in top_competencies[:3] if isinstance(c, dict)
+        ])
+
         writer.writerow([
             item.rank,
-            round(item.total_score, 2),
+            round(final_score, 1),
+            round(cv_score, 1),
+            round(interview_score, 1),
             candidate.headline if candidate else "",
             candidate.location if candidate else "",
             ", ".join(candidate.skills[:5]) if candidate and candidate.skills else "",
             len(candidate.experience) if candidate and candidate.experience else 0,
+            comp_str,
             "; ".join(report.strengths[:3]) if report and report.strengths else "",
             "; ".join(item.risks[:2]) if item.risks else "",
+            flags_count,
+            interview_status,
             item.status.value,
         ])
 

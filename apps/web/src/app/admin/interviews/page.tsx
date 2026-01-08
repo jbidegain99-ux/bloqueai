@@ -57,6 +57,7 @@ export default function InterviewsPage() {
   const { accessToken, isAuthenticated } = useAuthStore()
   const [interviews, setInterviews] = useState<Interview[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [selectedInterview, setSelectedInterview] = useState<Interview | null>(null)
   const [expandedTranscript, setExpandedTranscript] = useState(false)
   const [activeTab, setActiveTab] = useState<TabValue>('completed')
@@ -84,6 +85,7 @@ export default function InterviewsPage() {
   const loadInterviews = async (tab: TabValue) => {
     if (!accessToken) return
     setLoading(true)
+    setError(null)
     try {
       let data: Interview[] = []
       if (tab === 'flagged') {
@@ -92,9 +94,12 @@ export default function InterviewsPage() {
         const statusFilter = tab === 'completed' ? 'COMPLETED' : tab === 'in_progress' ? 'IN_PROGRESS' : 'ALL'
         data = await adminApi.getInterviews(accessToken, statusFilter, false) as Interview[]
       }
-      setInterviews(data)
-    } catch (err) {
+      // Ensure data is an array
+      setInterviews(Array.isArray(data) ? data : [])
+    } catch (err: any) {
       console.error('Error loading interviews:', err)
+      setError(err?.message || 'Error al cargar entrevistas')
+      setInterviews([])
     } finally {
       setLoading(false)
     }
@@ -173,6 +178,20 @@ export default function InterviewsPage() {
       <AppShell>
         <div className="flex items-center justify-center h-64">
           <div className="animate-pulse text-muted-foreground">Cargando entrevistas...</div>
+        </div>
+      </AppShell>
+    )
+  }
+
+  if (error) {
+    return (
+      <AppShell>
+        <div className="flex flex-col items-center justify-center h-64">
+          <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button onClick={() => loadInterviews(activeTab)} variant="outline">
+            Reintentar
+          </Button>
         </div>
       </AppShell>
     )

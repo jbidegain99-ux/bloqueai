@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Logo } from '@/components/brand/Logo'
@@ -14,29 +14,37 @@ import { useAuthStore } from '@/lib/auth'
 export default function LoginPage() {
   const router = useRouter()
   const { setAuth } = useAuthStore()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Use refs to get actual input values at submit time (avoids React state race conditions)
+  const emailRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError('')
 
-    // Manual validation
-    if (!email.trim()) {
+    // Get values directly from DOM at submit time - this avoids state sync issues
+    const emailValue = emailRef.current?.value?.trim() || ''
+    const passwordValue = passwordRef.current?.value || ''
+
+    // Validate using actual DOM values
+    if (!emailValue) {
       setError('Por favor ingresa tu correo electrónico')
+      emailRef.current?.focus()
       return
     }
-    if (!password) {
+    if (!passwordValue) {
       setError('Por favor ingresa tu contraseña')
+      passwordRef.current?.focus()
       return
     }
 
     setLoading(true)
 
     try {
-      const tokens = await authApi.login(email, password)
+      const tokens = await authApi.login(emailValue, passwordValue)
       const user = await authApi.me(tokens.access_token)
       setAuth(user as any, tokens.access_token, tokens.refresh_token)
       router.push('/dashboard')
@@ -123,24 +131,26 @@ export default function LoginPage() {
               <div className="space-y-2">
                 <Label htmlFor="email">Correo electrónico</Label>
                 <Input
+                  ref={emailRef}
                   id="email"
+                  name="email"
                   type="email"
                   placeholder="tu@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
+                  disabled={loading}
                 />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="password">Contraseña</Label>
                 <Input
+                  ref={passwordRef}
                   id="password"
+                  name="password"
                   type="password"
                   placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
+                  disabled={loading}
                 />
               </div>
 

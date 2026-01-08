@@ -182,6 +182,29 @@ def generate_risks(
     return risks[:3]
 
 
+def calculate_cv_score(
+    must_have_match: float,
+    nice_to_have_match: float,
+    experience_bonus: float,
+) -> float:
+    """Calculate CV-based score (0-100 scale)."""
+    # Weighted combination of CV-derived factors
+    raw_score = (
+        must_have_match * 50  # Up to 50 points for must-haves
+        + nice_to_have_match * 25  # Up to 25 points for nice-to-haves
+        + max(0, experience_bonus + 0.5) * 25  # Up to 25 points for experience (normalized)
+    )
+    return max(0, min(100, raw_score))
+
+
+def calculate_interview_score(report: CandidateReport) -> float:
+    """Calculate interview score (0-100 scale) from report."""
+    if not report or not report.overall_score:
+        return 0.0
+    # overall_score is 1-5, convert to 0-100
+    return (report.overall_score / 5.0) * 100
+
+
 def rank_candidates_for_job(
     db: Session,
     job: Job,
@@ -189,7 +212,12 @@ def rank_candidates_for_job(
 ) -> list[dict[str, Any]]:
     """Rank all candidates for a job and return top matches."""
     import structlog
+    from app.models.report import ReportStatus
     logger = structlog.get_logger()
+
+    # Score weights (configurable)
+    CV_WEIGHT = 0.4  # 40% from CV
+    INTERVIEW_WEIGHT = 0.6  # 60% from interview
 
     # Get job requirements
     must_haves = job.must_haves or []
@@ -215,11 +243,11 @@ def rank_candidates_for_job(
 
     ranked = []
     for candidate in candidates:
-        # Get latest report (if any)
+        # Get latest COMPLETED report (if any)
         report = (
             db.query(CandidateReport)
             .filter(CandidateReport.candidate_id == candidate.id)
-            .filter(CandidateReport.status == "COMPLETED")
+            .filter(CandidateReport.status == ReportStatus.COMPLETED)
             .order_by(CandidateReport.created_at.desc())
             .first()
         )
@@ -247,33 +275,65 @@ def rank_candidates_for_job(
         )
         experience_bonus = calculate_experience_bonus(experience, job.seniority.value)
 
-        total_score = calculate_total_score(
-            must_have_match,
-            nice_to_have_match,
-            competency_weighted,
-            experience_bonus,
-        )
+        # Calculate CV and Interview scores (0-100 scale)
+        cv_score = calculate_cv_score(must_have_match, nice_to_have_match, experience_bonus)
+        interview_score = calculate_interview_score(report)
+
+        # Calculate final score as weighted average
+        # If no interview, use CV score only but penalize slightly
+        if interview_score > 0:
+            final_score = (cv_score * CV_WEIGHT) + (interview_score * INTERVIEW_WEIGHT)
+        else:
+            # No interview completed - use CV only with 20% penalty
+            final_score = cv_score * 0.8
+
+        # Get top competencies from report or candidate
+        top_competencies = []
+        if competency_scores:
+            sorted_competencies = sorted(
+                competency_scores.items(),
+                key=lambda x: (x[1].get("score", 0) if isinstance(x[1], dict) else x[1]),
+                reverse=True
+            )
+            top_competencies = [
+                {"name": k, "score": (v.get("score", 0) if isinstance(v, dict) else v)}
+                for k, v in sorted_competencies[:3]
+            ]
+
+        # Determine status
+        status = "COMPLETED" if report else "PENDING"
+
+        # Count flags
+        flags_count = len(report.flags) if report and report.flags else 0
 
         score_breakdown = {
             "must_have_match": round(must_have_match, 2),
             "nice_to_have_match": round(nice_to_have_match, 2),
             "competency_weighted": round(competency_weighted, 2),
             "experience_bonus": round(experience_bonus, 2),
+            "cv_score": round(cv_score, 1),
+            "interview_score": round(interview_score, 1),
         }
 
         ranked.append({
             "candidate": candidate,
             "report": report,
-            "total_score": round(total_score, 2),
+            "final_score": round(final_score, 1),
+            "cv_score": round(cv_score, 1),
+            "interview_score": round(interview_score, 1),
+            "total_score": round(final_score / 20, 2),  # Backwards compat: 0-5 scale
             "score_breakdown": score_breakdown,
             "top_reasons": generate_top_reasons(score_breakdown, report),
             "risks": generate_risks(score_breakdown, report),
+            "top_competencies": top_competencies,
+            "flags_count": flags_count,
+            "status": status,
         })
 
     logger.info("ranked_candidates", count=len(ranked))
 
-    # Sort by total score descending
-    ranked.sort(key=lambda x: x["total_score"], reverse=True)
+    # Sort by final_score descending
+    ranked.sort(key=lambda x: x["final_score"], reverse=True)
 
     # Return top N
     return ranked[:max_candidates]
