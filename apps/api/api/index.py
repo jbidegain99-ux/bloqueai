@@ -8,5 +8,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.main import app
 
-# Export the app for Vercel
-handler = app
+# Vercel expects 'app' as the export name for ASGI applications
+# This is the FastAPI app instance
+app = app
