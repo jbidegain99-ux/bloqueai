@@ -662,3 +662,90 @@ async def get_candidate_detail(
         } if report else None,
         "transcript": transcript,
     }
+
+
+# ============ Interview Invitations ============
+
+
+@router.post("/jobs/{job_id}/invitations", status_code=status.HTTP_201_CREATED)
+async def create_invitation(
+    job_id: UUID,
+    email: str = Query(..., description="Email del candidato a invitar"),
+    name: Optional[str] = Query(None, description="Nombre del candidato"),
+    current_user: User = Depends(require_employer),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Create an interview invitation for a candidate."""
+    import secrets
+    from datetime import datetime, timedelta
+    from app.models.invitation import InterviewInvitation, InvitationStatus
+
+    job = get_job_or_404(db, job_id, current_user)
+
+    # Generate unique token
+    token = secrets.token_urlsafe(32)
+
+    # Set expiration (7 days)
+    expires_at = datetime.utcnow() + timedelta(days=7)
+
+    # Create invitation
+    invitation = InterviewInvitation(
+        job_id=job.id,
+        candidate_email=email,
+        candidate_name=name,
+        token=token,
+        status=InvitationStatus.PENDING,
+        expires_at=expires_at,
+        created_by_id=current_user.id,
+    )
+    db.add(invitation)
+    db.commit()
+    db.refresh(invitation)
+
+    # Build invitation URL
+    # Note: In production, this would be the actual frontend URL
+    invite_url = f"/candidate/interview?token={token}&job_id={job.id}"
+
+    return {
+        "id": str(invitation.id),
+        "job_id": str(job.id),
+        "job_title": job.title,
+        "email": email,
+        "name": name,
+        "token": token,
+        "invite_url": invite_url,
+        "expires_at": expires_at.isoformat(),
+        "status": invitation.status.value,
+    }
+
+
+@router.get("/jobs/{job_id}/invitations")
+async def list_invitations(
+    job_id: UUID,
+    current_user: User = Depends(require_employer),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """List all invitations for a job."""
+    from app.models.invitation import InterviewInvitation
+
+    job = get_job_or_404(db, job_id, current_user)
+
+    invitations = (
+        db.query(InterviewInvitation)
+        .filter(InterviewInvitation.job_id == job.id)
+        .order_by(InterviewInvitation.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": str(inv.id),
+            "email": inv.candidate_email,
+            "name": inv.candidate_name,
+            "status": inv.status.value,
+            "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
+            "used_at": inv.used_at.isoformat() if inv.used_at else None,
+            "created_at": inv.created_at.isoformat() if inv.created_at else None,
+        }
+        for inv in invitations
+    ]
