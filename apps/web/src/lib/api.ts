@@ -406,27 +406,57 @@ export const applicationsApi = {
     const formData = new FormData()
     formData.append('file', file)
 
+    // DO NOT set Content-Type header - browser will set it automatically with correct boundary
     const response = await fetch(`${API_URL}/applications/${applicationId}/resume`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
+        // Note: Do NOT set 'Content-Type' for FormData - it breaks multipart boundary
       },
       body: formData,
     })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Error al subir el archivo' }))
-      throw new ApiError(error.detail || 'Upload failed', response.status, error)
+      // Robust error parsing - handle JSON, text, or empty responses
+      let errorMessage = 'No pudimos subir tu CV. Intenta de nuevo o usa PDF/DOCX menor a 10MB.'
+      let errorData: unknown = null
+
+      try {
+        const text = await response.text()
+        if (text) {
+          try {
+            errorData = JSON.parse(text)
+            if (typeof errorData === 'object' && errorData !== null && 'detail' in errorData) {
+              const detail = (errorData as { detail: unknown }).detail
+              if (typeof detail === 'string') {
+                errorMessage = detail
+              }
+            }
+          } catch {
+            // Response was not JSON, use text as debug info
+            console.debug('Upload error (non-JSON):', text.substring(0, 200))
+          }
+        }
+      } catch {
+        console.debug('Could not read error response body')
+      }
+
+      throw new ApiError(errorMessage, response.status, errorData)
     }
 
-    return response.json() as Promise<{
-      success: boolean
-      application_id: string
-      filename: string
-      file_type: string
-      file_size: number
-      status: string
-    }>
+    // Parse success response
+    try {
+      return await response.json() as {
+        success: boolean
+        application_id: string
+        filename: string
+        file_type: string
+        file_size: number
+        status: string
+      }
+    } catch {
+      throw new ApiError('Error procesando la respuesta del servidor', response.status, null)
+    }
   },
 
   analyze: (token: string, applicationId: string) =>

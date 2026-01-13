@@ -28,10 +28,10 @@ async function proxyRequest(request: NextRequest, path: string[]) {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     // Check if it's form data (for file uploads)
     if (contentType?.includes('multipart/form-data')) {
-      // For form data, we need to pass the request body as-is
-      body = await request.blob()
-      // Remove content-type header to let fetch set it with boundary
-      headers.delete('Content-Type')
+      // For multipart/form-data, pass the raw body with original Content-Type
+      // The Content-Type header includes the boundary which is REQUIRED
+      // Do NOT delete the Content-Type header - it breaks the multipart boundary
+      body = await request.arrayBuffer()
     } else {
       try {
         body = await request.text()
