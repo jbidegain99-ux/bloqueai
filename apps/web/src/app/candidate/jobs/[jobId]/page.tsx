@@ -302,9 +302,7 @@ export default function JobDetailPage() {
 
             {/* Description */}
             <BrandCard>
-              <BrandCardHeader>
-                <h2 className="text-lg font-semibold">Descripcion del puesto</h2>
-              </BrandCardHeader>
+              <BrandCardHeader title="Descripcion del puesto" />
               <div className="p-6 pt-0">
                 <div className="prose prose-sm max-w-none text-muted-foreground whitespace-pre-wrap">
                   {job.description}
@@ -315,9 +313,7 @@ export default function JobDetailPage() {
             {/* Responsibilities */}
             {job.responsibilities.length > 0 && (
               <BrandCard>
-                <BrandCardHeader>
-                  <h2 className="text-lg font-semibold">Responsabilidades</h2>
-                </BrandCardHeader>
+                <BrandCardHeader title="Responsabilidades" />
                 <div className="p-6 pt-0">
                   <ul className="space-y-2">
                     {job.responsibilities.map((resp, idx) => (
@@ -333,9 +329,7 @@ export default function JobDetailPage() {
 
             {/* Requirements */}
             <BrandCard>
-              <BrandCardHeader>
-                <h2 className="text-lg font-semibold">Requisitos</h2>
-              </BrandCardHeader>
+              <BrandCardHeader title="Requisitos" />
               <div className="p-6 pt-0 space-y-4">
                 {job.must_haves.length > 0 && (
                   <div>
@@ -374,9 +368,7 @@ export default function JobDetailPage() {
             {/* Benefits */}
             {job.benefits.length > 0 && (
               <BrandCard>
-                <BrandCardHeader>
-                  <h2 className="text-lg font-semibold">Beneficios</h2>
-                </BrandCardHeader>
+                <BrandCardHeader title="Beneficios" />
                 <div className="p-6 pt-0">
                   <div className="grid grid-cols-2 gap-2">
                     {job.benefits.map((benefit, idx) => (
@@ -447,9 +439,7 @@ export default function JobDetailPage() {
 
             {/* Company card */}
             <BrandCard>
-              <BrandCardHeader>
-                <h2 className="text-lg font-semibold">Sobre la empresa</h2>
-              </BrandCardHeader>
+              <BrandCardHeader title="Sobre la empresa" />
               <div className="p-6 pt-0 space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="h-12 w-12 rounded-lg bg-bloque-navy900 flex items-center justify-center text-white font-bold text-lg">
