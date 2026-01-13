@@ -17,22 +17,28 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Create the enum type for application status
-    application_status = sa.Enum(
-        'CREATED', 'CV_UPLOADED', 'ANALYZING', 'MATCH_PASSED',
-        'MATCH_BELOW_THRESHOLD', 'INTERVIEW_STARTED', 'INTERVIEW_COMPLETED',
-        'COMPLETED', 'WITHDRAWN', 'REJECTED',
-        name='application_status'
-    )
-
     conn = op.get_bind()
 
-    # Create enum type if it doesn't exist
+    # Create enum type if it doesn't exist (using raw SQL for idempotency)
     result = conn.execute(sa.text(
         "SELECT 1 FROM pg_type WHERE typname = 'application_status'"
     ))
     if not result.fetchone():
-        application_status.create(op.get_bind())
+        conn.execute(sa.text(
+            "CREATE TYPE application_status AS ENUM "
+            "('CREATED', 'CV_UPLOADED', 'ANALYZING', 'MATCH_PASSED', "
+            "'MATCH_BELOW_THRESHOLD', 'INTERVIEW_STARTED', 'INTERVIEW_COMPLETED', "
+            "'COMPLETED', 'WITHDRAWN', 'REJECTED')"
+        ))
+
+    # Create the enum type reference for table creation (create_type=False prevents auto-creation)
+    application_status = sa.Enum(
+        'CREATED', 'CV_UPLOADED', 'ANALYZING', 'MATCH_PASSED',
+        'MATCH_BELOW_THRESHOLD', 'INTERVIEW_STARTED', 'INTERVIEW_COMPLETED',
+        'COMPLETED', 'WITHDRAWN', 'REJECTED',
+        name='application_status',
+        create_type=False  # Important: Don't auto-create, we already handled it
+    )
 
     # Check if table exists
     result = conn.execute(sa.text(
@@ -73,10 +79,17 @@ def upgrade() -> None:
             sa.Column('recruiter_notes', sa.Text(), nullable=True),
         )
 
-        # Create index on status for filtering
+    # Create indexes if they don't exist
+    result = conn.execute(sa.text(
+        "SELECT 1 FROM pg_indexes WHERE indexname = 'ix_applications_status'"
+    ))
+    if not result.fetchone():
         op.create_index('ix_applications_status', 'applications', ['status'])
 
-        # Create composite index for candidate + job uniqueness check
+    result = conn.execute(sa.text(
+        "SELECT 1 FROM pg_indexes WHERE indexname = 'ix_applications_candidate_job'"
+    ))
+    if not result.fetchone():
         op.create_index('ix_applications_candidate_job', 'applications', ['candidate_id', 'job_id'])
 
 
