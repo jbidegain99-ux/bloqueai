@@ -8,6 +8,7 @@ interface BrandCardProps {
   className?: string
   padding?: 'sm' | 'md' | 'lg'
   hover?: boolean
+  onClick?: () => void
 }
 
 export function BrandCard({
@@ -15,6 +16,7 @@ export function BrandCard({
   className,
   padding = 'md',
   hover = false,
+  onClick,
 }: BrandCardProps) {
   const paddingClasses = {
     sm: 'p-4',
@@ -28,8 +30,10 @@ export function BrandCard({
         'bg-white border border-bloque-slate200 rounded-lg shadow-sm',
         paddingClasses[padding],
         hover && 'transition-shadow hover:shadow-md',
+        onClick && 'cursor-pointer',
         className
       )}
+      onClick={onClick}
     >
       {children}
     </div>
