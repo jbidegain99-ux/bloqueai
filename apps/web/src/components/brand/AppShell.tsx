@@ -14,6 +14,8 @@ import {
   FileText,
   MessageSquare,
   BarChart3,
+  Search,
+  ClipboardList,
 } from 'lucide-react'
 import { Logo } from './Logo'
 import { Button } from '@/components/ui/button'
@@ -62,9 +64,10 @@ export function AppShell({ children }: AppShellProps) {
   const getRoleNav = () => {
     if (isCandidate()) {
       return [
+        { label: 'Explorar Puestos', href: '/candidate/jobs', icon: Search },
         { label: 'Mi Perfil', href: '/candidate/profile', icon: User },
+        { label: 'Mis Aplicaciones', href: '/candidate/applications', icon: ClipboardList },
         { label: 'Subir CV', href: '/candidate/resume', icon: FileText },
-        { label: 'Entrevista IA', href: '/candidate/interview', icon: MessageSquare },
       ]
     }
 

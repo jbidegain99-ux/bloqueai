@@ -1,4 +1,15 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// Use relative path for browser requests (goes through Next.js API proxy)
+// This avoids CORS issues by having Next.js server make the request
+const getApiUrl = () => {
+  // Server-side: use direct URL
+  if (typeof window === 'undefined') {
+    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  }
+  // Client-side: use local proxy to avoid CORS
+  return '/api'
+}
+
+const API_URL = getApiUrl()
 
 type RequestMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
@@ -272,6 +283,50 @@ export const publicApi = {
       method: 'POST',
       body: data,
     }),
+
+  getJobs: (params?: {
+    page?: number
+    page_size?: number
+    search?: string
+    category?: string
+    seniority?: string
+    modality?: string
+    location?: string
+    salary_min?: number
+    salary_max?: number
+  }) => {
+    const queryParams = new URLSearchParams()
+    if (params?.page) queryParams.set('page', params.page.toString())
+    if (params?.page_size) queryParams.set('page_size', params.page_size.toString())
+    if (params?.search) queryParams.set('search', params.search)
+    if (params?.category) queryParams.set('category', params.category)
+    if (params?.seniority) queryParams.set('seniority', params.seniority)
+    if (params?.modality) queryParams.set('modality', params.modality)
+    if (params?.location) queryParams.set('location', params.location)
+    if (params?.salary_min) queryParams.set('salary_min', params.salary_min.toString())
+    if (params?.salary_max) queryParams.set('salary_max', params.salary_max.toString())
+
+    const queryString = queryParams.toString()
+    return fetchApi<{
+      items: any[]
+      total: number
+      page: number
+      page_size: number
+      total_pages: number
+    }>(`/public/jobs${queryString ? `?${queryString}` : ''}`)
+  },
+
+  getJob: (jobId: string) =>
+    fetchApi<any>(`/public/jobs/${jobId}`),
+
+  getJobCategories: () =>
+    fetchApi<{ categories: { value: string; label: string }[] }>('/public/jobs/categories/list'),
+
+  getSeniorityLevels: () =>
+    fetchApi<{ seniority_levels: { value: string; label: string }[] }>('/public/jobs/seniority/list'),
+
+  getModalities: () =>
+    fetchApi<{ modalities: { value: string; label: string }[] }>('/public/jobs/modality/list'),
 }
 
 export { ApiError }

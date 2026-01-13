@@ -26,6 +26,30 @@ class JobModality(str, PyEnum):
     ONSITE = "ONSITE"
 
 
+class JobCategory(str, PyEnum):
+    """Job category/industry."""
+
+    TECHNOLOGY = "TECHNOLOGY"
+    ENGINEERING = "ENGINEERING"
+    HEALTHCARE = "HEALTHCARE"
+    LEGAL = "LEGAL"
+    FINANCE = "FINANCE"
+    MANUFACTURING = "MANUFACTURING"
+    ADMINISTRATION = "ADMINISTRATION"
+    SALES = "SALES"
+    MARKETING = "MARKETING"
+    HUMAN_RESOURCES = "HUMAN_RESOURCES"
+    CUSTOMER_SERVICE = "CUSTOMER_SERVICE"
+    LOGISTICS = "LOGISTICS"
+    EDUCATION = "EDUCATION"
+    RESEARCH = "RESEARCH"
+    DENTAL = "DENTAL"
+    CONSTRUCTION = "CONSTRUCTION"
+    HOSPITALITY = "HOSPITALITY"
+    RETAIL = "RETAIL"
+    OTHER = "OTHER"
+
+
 class SeniorityLevel(str, PyEnum):
     """Seniority level for job."""
 
@@ -61,6 +85,12 @@ class Job(BaseModel):
     slug = Column(String(100), index=True, nullable=True)
     description = Column(Text, nullable=False)
     department = Column(String(100), nullable=True)
+    category = Column(
+        Enum(JobCategory, name="job_category"),
+        default=JobCategory.OTHER,
+        nullable=True,
+        index=True,
+    )
 
     # Seniority and compensation
     seniority = Column(

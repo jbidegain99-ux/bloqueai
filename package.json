@@ -11,6 +11,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "db:migrate": "cd apps/api && alembic upgrade head",
     "db:seed": "cd apps/api && python -m scripts.seed",
+    "seed:jobs": "cd apps/api && python -m scripts.seed_jobs",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f"
