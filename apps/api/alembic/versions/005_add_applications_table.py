@@ -7,7 +7,6 @@ Create Date: 2025-01-13
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers
 revision = "005"
@@ -31,70 +30,71 @@ def upgrade() -> None:
             "'COMPLETED', 'WITHDRAWN', 'REJECTED')"
         ))
 
-    # Create the enum type reference for table creation (create_type=False prevents auto-creation)
-    application_status = sa.Enum(
-        'CREATED', 'CV_UPLOADED', 'ANALYZING', 'MATCH_PASSED',
-        'MATCH_BELOW_THRESHOLD', 'INTERVIEW_STARTED', 'INTERVIEW_COMPLETED',
-        'COMPLETED', 'WITHDRAWN', 'REJECTED',
-        name='application_status',
-        create_type=False  # Important: Don't auto-create, we already handled it
-    )
-
-    # Check if table exists
+    # Check if table exists - use raw SQL to avoid SQLAlchemy's automatic enum type creation
     result = conn.execute(sa.text(
         "SELECT 1 FROM information_schema.tables WHERE table_name = 'applications'"
     ))
     if not result.fetchone():
-        op.create_table(
-            'applications',
-            sa.Column('id', UUID(as_uuid=True), primary_key=True),
-            sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
-            sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
+        # Use completely raw SQL to create the table
+        # This bypasses SQLAlchemy's automatic enum type creation behavior
+        conn.execute(sa.text("""
+            CREATE TABLE applications (
+                id UUID PRIMARY KEY,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
 
-            # Core relationships
-            sa.Column('candidate_id', UUID(as_uuid=True), sa.ForeignKey('candidates.id'), nullable=False, index=True),
-            sa.Column('job_id', UUID(as_uuid=True), sa.ForeignKey('jobs.id'), nullable=False, index=True),
+                -- Core relationships
+                candidate_id UUID NOT NULL REFERENCES candidates(id),
+                job_id UUID NOT NULL REFERENCES jobs(id),
 
-            # Status
-            sa.Column('status', application_status, nullable=False, server_default='CREATED'),
+                -- Status
+                status application_status NOT NULL DEFAULT 'CREATED',
 
-            # CV/Resume info
-            sa.Column('resume_filename', sa.String(255), nullable=True),
-            sa.Column('resume_file_type', sa.String(50), nullable=True),
-            sa.Column('resume_file_size', sa.Integer(), nullable=True),
-            sa.Column('resume_text', sa.Text(), nullable=True),
+                -- CV/Resume info
+                resume_filename VARCHAR(255),
+                resume_file_type VARCHAR(50),
+                resume_file_size INTEGER,
+                resume_text TEXT,
 
-            # CV Analysis results
-            sa.Column('match_score', sa.Float(), nullable=True),
-            sa.Column('candidate_profile', JSONB(), nullable=True),
-            sa.Column('match_reasons', JSONB(), nullable=True),
-            sa.Column('match_gaps', JSONB(), nullable=True),
-            sa.Column('recommended_job_ids', JSONB(), nullable=True),
+                -- CV Analysis results
+                match_score FLOAT,
+                candidate_profile JSONB,
+                match_reasons JSONB,
+                match_gaps JSONB,
+                recommended_job_ids JSONB,
 
-            # Interview tracking
-            sa.Column('interview_session_id', UUID(as_uuid=True), sa.ForeignKey('interview_sessions.id'), nullable=True),
+                -- Interview tracking
+                interview_session_id UUID REFERENCES interview_sessions(id),
 
-            # Notes
-            sa.Column('candidate_notes', sa.Text(), nullable=True),
-            sa.Column('recruiter_notes', sa.Text(), nullable=True),
-        )
+                -- Notes
+                candidate_notes TEXT,
+                recruiter_notes TEXT
+            )
+        """))
 
-    # Create indexes if they don't exist
+        # Create column indexes
+        conn.execute(sa.text("CREATE INDEX ix_applications_candidate_id ON applications(candidate_id)"))
+        conn.execute(sa.text("CREATE INDEX ix_applications_job_id ON applications(job_id)"))
+
+    # Create additional indexes if they don't exist
     result = conn.execute(sa.text(
         "SELECT 1 FROM pg_indexes WHERE indexname = 'ix_applications_status'"
     ))
     if not result.fetchone():
-        op.create_index('ix_applications_status', 'applications', ['status'])
+        conn.execute(sa.text("CREATE INDEX ix_applications_status ON applications(status)"))
 
     result = conn.execute(sa.text(
         "SELECT 1 FROM pg_indexes WHERE indexname = 'ix_applications_candidate_job'"
     ))
     if not result.fetchone():
-        op.create_index('ix_applications_candidate_job', 'applications', ['candidate_id', 'job_id'])
+        conn.execute(sa.text("CREATE INDEX ix_applications_candidate_job ON applications(candidate_id, job_id)"))
 
 
 def downgrade() -> None:
-    op.drop_index('ix_applications_candidate_job', table_name='applications')
-    op.drop_index('ix_applications_status', table_name='applications')
-    op.drop_table('applications')
-    sa.Enum(name='application_status').drop(op.get_bind())
+    conn = op.get_bind()
+    conn.execute(sa.text("DROP INDEX IF EXISTS ix_applications_candidate_job"))
+    conn.execute(sa.text("DROP INDEX IF EXISTS ix_applications_status"))
+    conn.execute(sa.text("DROP INDEX IF EXISTS ix_applications_job_id"))
+    conn.execute(sa.text("DROP INDEX IF EXISTS ix_applications_candidate_id"))
+    conn.execute(sa.text("DROP TABLE IF EXISTS applications"))
+    conn.execute(sa.text("DROP TYPE IF EXISTS application_status"))
