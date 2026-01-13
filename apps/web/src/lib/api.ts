@@ -194,6 +194,16 @@ export const employerApi = {
   exportShortlist: (token: string, jobId: string) => {
     window.open(`${API_URL}/employer/jobs/${jobId}/shortlist/export.csv?token=${token}`, '_blank')
   },
+
+  getCandidateDetail: (token: string, jobId: string, candidateId: string) =>
+    fetchApi(`/employer/jobs/${jobId}/candidates/${candidateId}`, { token }),
+
+  updateShortlistItem: (token: string, jobId: string, itemId: string, data: { status?: string; recruiter_notes?: string }) =>
+    fetchApi(`/employer/jobs/${jobId}/shortlist/${itemId}`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
 }
 
 // Admin API

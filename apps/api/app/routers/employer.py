@@ -538,3 +538,127 @@ async def update_shortlist_item(
     db.refresh(item)
 
     return _build_shortlist_item_response(db, item)
+
+
+@router.get("/jobs/{job_id}/candidates/{candidate_id}")
+async def get_candidate_detail(
+    job_id: UUID,
+    candidate_id: UUID,
+    current_user: User = Depends(require_employer),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get detailed candidate information for a specific job."""
+    from sqlalchemy.orm import joinedload
+    from app.models.interview import InterviewSession, InterviewMessage, InterviewStatus
+    from app.models.report import CandidateReport, ReportStatus
+
+    job = get_job_or_404(db, job_id, current_user)
+
+    # Get candidate
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Candidato no encontrado",
+        )
+
+    # Get shortlist item for this job/candidate
+    shortlist_item = (
+        db.query(ShortlistItem)
+        .filter(ShortlistItem.job_id == job.id)
+        .filter(ShortlistItem.candidate_id == candidate.id)
+        .first()
+    )
+
+    # Get interview session for this job (or general)
+    interview = (
+        db.query(InterviewSession)
+        .options(joinedload(InterviewSession.messages))
+        .filter(InterviewSession.candidate_id == candidate.id)
+        .filter(
+            (InterviewSession.job_id == job.id) |
+            (InterviewSession.job_id.is_(None))
+        )
+        .order_by(InterviewSession.created_at.desc())
+        .first()
+    )
+
+    # Get report
+    report = None
+    if interview:
+        report = (
+            db.query(CandidateReport)
+            .filter(CandidateReport.session_id == interview.id)
+            .filter(CandidateReport.status == ReportStatus.COMPLETED)
+            .first()
+        )
+
+    # Build transcript
+    transcript = []
+    if interview and interview.messages:
+        for msg in interview.messages:
+            role = "assistant" if msg.role.value in ["AI", "SYSTEM"] else "user"
+            transcript.append({
+                "role": role,
+                "content": msg.content,
+                "timestamp": msg.created_at.isoformat() if msg.created_at else None,
+            })
+
+    # Get candidate's user info
+    user_info = None
+    if candidate.user:
+        user_info = {
+            "full_name": candidate.user.full_name,
+            "email": candidate.user.email,
+        }
+
+    return {
+        "job": {
+            "id": str(job.id),
+            "title": job.title,
+        },
+        "candidate": {
+            "id": str(candidate.id),
+            "headline": candidate.headline,
+            "location": candidate.location,
+            "skills": candidate.skills or [],
+            "experience": candidate.experience or [],
+            "education": candidate.education or [],
+            "languages": candidate.languages or [],
+            "summary": candidate.summary or candidate.ai_summary,
+            "competency_scores": candidate.competency_scores or {},
+            "user": user_info,
+        },
+        "shortlist": {
+            "rank": shortlist_item.rank if shortlist_item else None,
+            "total_score": shortlist_item.total_score if shortlist_item else None,
+            "status": shortlist_item.status.value if shortlist_item else None,
+            "top_reasons": shortlist_item.top_reasons if shortlist_item else [],
+            "risks": shortlist_item.risks if shortlist_item else [],
+            "recruiter_notes": shortlist_item.recruiter_notes if shortlist_item else None,
+            "score_breakdown": shortlist_item.score_breakdown if shortlist_item else {},
+        } if shortlist_item else None,
+        "interview": {
+            "id": str(interview.id),
+            "status": interview.status.value,
+            "started_at": interview.started_at,
+            "completed_at": interview.completed_at,
+            "duration_seconds": interview.duration_seconds,
+            "total_messages": len(interview.messages) if interview.messages else 0,
+        } if interview else None,
+        "report": {
+            "id": str(report.id),
+            "summary": report.summary,
+            "overall_score": report.overall_score,
+            "confidence_score": report.confidence_score,
+            "competency_scores": report.competency_scores or {},
+            "strengths": report.strengths or [],
+            "weaknesses": report.weaknesses or [],
+            "risks": report.risks or [],
+            "recommendations": report.recommendations or [],
+            "flags": report.flags or [],
+            "score_overridden": report.score_overridden or False,
+            "original_score": report.original_score,
+        } if report else None,
+        "transcript": transcript,
+    }

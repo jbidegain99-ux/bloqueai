@@ -2,12 +2,92 @@
 
 import hashlib
 import json
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Optional
+from uuid import UUID
 
 import httpx
+import structlog
 
 from app.core.config import settings
+
+logger = structlog.get_logger()
+
+
+# Context for logging (set before making LLM calls)
+class LLMContext:
+    """Context for LLM logging."""
+
+    session_id: Optional[UUID] = None
+    job_id: Optional[UUID] = None
+    user_id: Optional[UUID] = None
+    operation: Optional[str] = None
+
+    @classmethod
+    def set(
+        cls,
+        session_id: Optional[UUID] = None,
+        job_id: Optional[UUID] = None,
+        user_id: Optional[UUID] = None,
+        operation: Optional[str] = None,
+    ):
+        cls.session_id = session_id
+        cls.job_id = job_id
+        cls.user_id = user_id
+        cls.operation = operation
+
+    @classmethod
+    def clear(cls):
+        cls.session_id = None
+        cls.job_id = None
+        cls.user_id = None
+        cls.operation = None
+
+
+async def log_llm_call(
+    endpoint: str,
+    model: str,
+    latency_ms: int,
+    status: str,
+    prompt_hash: Optional[str] = None,
+    response_hash: Optional[str] = None,
+    tokens_in: Optional[int] = None,
+    tokens_out: Optional[int] = None,
+    error_message: Optional[str] = None,
+    metadata: Optional[dict] = None,
+):
+    """Log an LLM call to the database."""
+    try:
+        from app.core.database import SessionLocal
+        from app.models.llm_log import LLMLog
+
+        db = SessionLocal()
+        try:
+            log_entry = LLMLog(
+                session_id=LLMContext.session_id,
+                job_id=LLMContext.job_id,
+                user_id=LLMContext.user_id,
+                endpoint=endpoint,
+                model=model,
+                operation=LLMContext.operation,
+                latency_ms=latency_ms,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                total_tokens=(tokens_in or 0) + (tokens_out or 0) if tokens_in or tokens_out else None,
+                status=status,
+                error_message=error_message,
+                prompt_hash=prompt_hash,
+                response_hash=response_hash,
+                metadata_=metadata or {},
+            )
+            db.add(log_entry)
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        # Don't let logging failures break the main flow
+        logger.warning("llm_logging_failed", error=str(e))
 
 
 class LLMProvider(ABC):
@@ -41,6 +121,10 @@ class OpenAIProvider(LLMProvider):
         self.api_key = settings.llm_api_key
         self.model = settings.llm_model
 
+    def _estimate_tokens(self, text: str) -> int:
+        """Rough estimation of tokens (approx 4 chars per token)."""
+        return len(text) // 4
+
     async def complete(
         self,
         messages: list[dict[str, str]],
@@ -48,23 +132,79 @@ class OpenAIProvider(LLMProvider):
         max_tokens: int = 2000,
     ) -> str:
         """Generate completion from messages."""
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                },
+        start_time = time.time()
+        prompt_content = json.dumps(messages)
+        prompt_hash = hashlib.sha256(prompt_content.encode()).hexdigest()[:16]
+        tokens_in = self._estimate_tokens(prompt_content)
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                result = data["choices"][0]["message"]["content"]
+
+                # Log successful call
+                latency_ms = int((time.time() - start_time) * 1000)
+                response_hash = hashlib.sha256(result.encode()).hexdigest()[:16]
+                tokens_out = self._estimate_tokens(result)
+
+                # Use actual token counts if available
+                if "usage" in data:
+                    tokens_in = data["usage"].get("prompt_tokens", tokens_in)
+                    tokens_out = data["usage"].get("completion_tokens", tokens_out)
+
+                await log_llm_call(
+                    endpoint="chat/completions",
+                    model=self.model,
+                    latency_ms=latency_ms,
+                    status="success",
+                    prompt_hash=prompt_hash,
+                    response_hash=response_hash,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                )
+
+                logger.info(
+                    "openai_call_success",
+                    model=self.model,
+                    latency_ms=latency_ms,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    operation=LLMContext.operation,
+                )
+
+                return result
+        except Exception as e:
+            latency_ms = int((time.time() - start_time) * 1000)
+            await log_llm_call(
+                endpoint="chat/completions",
+                model=self.model,
+                latency_ms=latency_ms,
+                status="error",
+                prompt_hash=prompt_hash,
+                error_message=str(e)[:500],
             )
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
+            logger.error(
+                "openai_call_failed",
+                model=self.model,
+                latency_ms=latency_ms,
+                error=str(e),
+                operation=LLMContext.operation,
+            )
+            raise
 
     async def complete_json(
         self,

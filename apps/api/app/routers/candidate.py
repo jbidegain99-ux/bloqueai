@@ -223,43 +223,79 @@ async def start_interview(
     current_user: User = Depends(require_candidate),
     db: Session = Depends(get_db),
 ) -> InterviewSession:
-    """Start a new interview session."""
+    """Start a new interview session with dynamic AI questions."""
+    import structlog
+    logger = structlog.get_logger()
+
     candidate = get_or_create_candidate(db, current_user)
 
-    # Check for existing in-progress interview
-    existing = (
+    # Check for existing in-progress interview for this job
+    existing_query = (
         db.query(InterviewSession)
         .filter(InterviewSession.candidate_id == candidate.id)
         .filter(InterviewSession.status == InterviewStatus.IN_PROGRESS)
-        .first()
     )
+    if request.job_id:
+        existing_query = existing_query.filter(InterviewSession.job_id == request.job_id)
+
+    existing = existing_query.first()
     if existing:
         # Return existing session
         return existing
 
-    # Get questions
-    questions = get_interview_questions(request.job_id)
+    # Determine total questions (dynamic interviews typically 8-12 questions)
+    total_questions = 10
 
     # Create session
     session = InterviewSession(
         candidate_id=candidate.id,
         job_id=request.job_id,
         status=InterviewStatus.IN_PROGRESS,
-        total_questions=len(questions),
-        language=request.language,
+        total_questions=total_questions,
+        language=request.language or "es",
+        interview_type="dynamic" if request.job_id else "general",
         started_at=datetime.utcnow().isoformat(),
     )
     db.add(session)
     db.flush()
 
+    logger.info("interview_session_created", session_id=str(session.id), job_id=str(request.job_id) if request.job_id else None)
+
+    # Use Interview Orchestrator for dynamic first question
+    try:
+        from app.services.interview_orchestrator import create_orchestrator_for_session
+
+        orchestrator = await create_orchestrator_for_session(
+            session_id=session.id,
+            job_id=request.job_id,
+            candidate_id=candidate.id,
+            db=db,
+        )
+
+        first_response = await orchestrator.generate_first_question()
+        first_message_content = first_response.get("message", "")
+
+        # Store phase info in session metadata
+        session.ai_analysis = {
+            "current_phase": first_response.get("phase", "introduction"),
+            "dynamic_mode": True,
+        }
+
+        logger.info("dynamic_first_question_generated", session_id=str(session.id))
+    except Exception as e:
+        logger.error("dynamic_question_failed_using_fallback", error=str(e))
+        # Fallback to static questions
+        questions = get_interview_questions(request.job_id)
+        first_message_content = questions[0]["question"]
+        session.ai_analysis = {"dynamic_mode": False, "fallback_reason": str(e)}
+
     # Add first AI message
-    first_question = questions[0]
     first_message = InterviewMessage(
         session_id=session.id,
         role=MessageRole.AI,
-        content=first_question["question"],
+        content=first_message_content,
         sequence=0,
-        question_id=first_question["id"],
+        question_id="intro",
     )
     db.add(first_message)
 
@@ -275,7 +311,10 @@ async def send_interview_message(
     current_user: User = Depends(require_candidate),
     db: Session = Depends(get_db),
 ) -> InterviewSession:
-    """Send a message in the interview."""
+    """Send a message in the interview with dynamic AI responses."""
+    import structlog
+    logger = structlog.get_logger()
+
     candidate = get_or_create_candidate(db, current_user)
 
     session = (
@@ -287,7 +326,7 @@ async def send_interview_message(
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Sesión de entrevista no encontrada",
+            detail="Sesion de entrevista no encontrada",
         )
 
     if session.status != InterviewStatus.IN_PROGRESS:
@@ -313,42 +352,145 @@ async def send_interview_message(
     db.add(candidate_msg)
     db.flush()
 
-    # Determine next question
-    questions = get_interview_questions(session.job_id)
     current_q_index = session.current_question_index
 
-    if current_q_index + 1 < len(questions):
-        # Get next question
-        next_question = questions[current_q_index + 1]
-        session.current_question_index = current_q_index + 1
+    # Check if we should use dynamic mode
+    ai_analysis = session.ai_analysis or {}
+    use_dynamic = ai_analysis.get("dynamic_mode", False)
 
-        ai_msg = InterviewMessage(
-            session_id=session.id,
-            role=MessageRole.AI,
-            content=next_question["question"],
-            sequence=message_count + 1,
-            question_id=next_question["id"],
-        )
-        db.add(ai_msg)
+    if use_dynamic and current_q_index + 1 < session.total_questions:
+        # Use Interview Orchestrator for dynamic next question
+        try:
+            from app.services.interview_orchestrator import create_orchestrator_for_session
+
+            orchestrator = await create_orchestrator_for_session(
+                session_id=session.id,
+                job_id=session.job_id,
+                candidate_id=candidate.id,
+                db=db,
+            )
+
+            # Build conversation history
+            messages = (
+                db.query(InterviewMessage)
+                .filter(InterviewMessage.session_id == session.id)
+                .order_by(InterviewMessage.sequence)
+                .all()
+            )
+            conversation_history = [
+                {"role": "assistant" if m.role == MessageRole.AI else "user", "content": m.content}
+                for m in messages
+            ]
+
+            current_phase = ai_analysis.get("current_phase", "experience")
+
+            # Generate next question
+            next_response = await orchestrator.generate_next_question(
+                conversation_history=conversation_history,
+                current_phase=current_phase,
+                question_number=current_q_index + 1,
+                total_questions=session.total_questions,
+            )
+
+            next_message_content = next_response.get("message", "")
+            should_end = next_response.get("should_end", False)
+
+            # Update session metadata
+            ai_analysis["current_phase"] = next_response.get("phase", current_phase)
+            if next_response.get("internal_notes"):
+                ai_analysis["last_evaluation"] = next_response.get("internal_notes", {}).get("evaluation", {})
+            session.ai_analysis = ai_analysis
+
+            session.current_question_index = current_q_index + 1
+
+            if should_end or current_q_index + 1 >= session.total_questions - 1:
+                # Generate closing message
+                closing_message = await orchestrator.generate_closing_message()
+                session.status = InterviewStatus.COMPLETED
+                session.completed_at = datetime.utcnow().isoformat()
+
+                if session.started_at:
+                    start = datetime.fromisoformat(session.started_at)
+                    end = datetime.utcnow()
+                    session.duration_seconds = int((end - start).total_seconds())
+
+                ai_msg = InterviewMessage(
+                    session_id=session.id,
+                    role=MessageRole.AI,
+                    content=closing_message,
+                    sequence=message_count + 1,
+                )
+            else:
+                ai_msg = InterviewMessage(
+                    session_id=session.id,
+                    role=MessageRole.AI,
+                    content=next_message_content,
+                    sequence=message_count + 1,
+                    question_id=f"dynamic_{current_q_index + 1}",
+                )
+
+            db.add(ai_msg)
+            logger.info("dynamic_question_generated", session_id=str(session.id), question_num=current_q_index + 1)
+
+        except Exception as e:
+            logger.error("dynamic_question_failed", error=str(e), session_id=str(session.id))
+            # Fallback to static questions
+            questions = get_interview_questions(session.job_id)
+            if current_q_index + 1 < len(questions):
+                next_question = questions[current_q_index + 1]
+                session.current_question_index = current_q_index + 1
+                ai_msg = InterviewMessage(
+                    session_id=session.id,
+                    role=MessageRole.AI,
+                    content=next_question["question"],
+                    sequence=message_count + 1,
+                    question_id=next_question["id"],
+                )
+                db.add(ai_msg)
+            else:
+                # End interview
+                session.status = InterviewStatus.COMPLETED
+                session.completed_at = datetime.utcnow().isoformat()
+                ai_msg = InterviewMessage(
+                    session_id=session.id,
+                    role=MessageRole.AI,
+                    content="Muchas gracias por tu tiempo! Hemos completado la entrevista.",
+                    sequence=message_count + 1,
+                )
+                db.add(ai_msg)
     else:
-        # End of interview
-        session.status = InterviewStatus.COMPLETED
-        session.completed_at = datetime.utcnow().isoformat()
+        # Use static questions (fallback mode)
+        questions = get_interview_questions(session.job_id)
 
-        # Calculate duration
-        if session.started_at:
-            start = datetime.fromisoformat(session.started_at)
-            end = datetime.utcnow()
-            session.duration_seconds = int((end - start).total_seconds())
+        if current_q_index + 1 < len(questions):
+            next_question = questions[current_q_index + 1]
+            session.current_question_index = current_q_index + 1
 
-        # Add closing message
-        ai_msg = InterviewMessage(
-            session_id=session.id,
-            role=MessageRole.AI,
-            content="¡Muchas gracias por tu tiempo! Hemos completado la entrevista. Tu perfil será evaluado y recibirás noticias pronto.",
-            sequence=message_count + 1,
-        )
-        db.add(ai_msg)
+            ai_msg = InterviewMessage(
+                session_id=session.id,
+                role=MessageRole.AI,
+                content=next_question["question"],
+                sequence=message_count + 1,
+                question_id=next_question["id"],
+            )
+            db.add(ai_msg)
+        else:
+            # End of interview
+            session.status = InterviewStatus.COMPLETED
+            session.completed_at = datetime.utcnow().isoformat()
+
+            if session.started_at:
+                start = datetime.fromisoformat(session.started_at)
+                end = datetime.utcnow()
+                session.duration_seconds = int((end - start).total_seconds())
+
+            ai_msg = InterviewMessage(
+                session_id=session.id,
+                role=MessageRole.AI,
+                content="Muchas gracias por tu tiempo! Hemos completado la entrevista. Tu perfil sera evaluado y recibiras noticias pronto.",
+                sequence=message_count + 1,
+            )
+            db.add(ai_msg)
 
     db.commit()
     db.refresh(session)
