@@ -399,9 +399,7 @@ export default function ApplyPage() {
 
             {/* Skills match */}
             <BrandCard>
-              <BrandCardHeader>
-                <h3 className="font-semibold">Analisis de habilidades</h3>
-              </BrandCardHeader>
+              <BrandCardHeader title="Analisis de habilidades" />
               <div className="p-6 pt-0 space-y-4">
                 {matchResult.matching_skills.length > 0 && (
                   <div>
@@ -440,9 +438,7 @@ export default function ApplyPage() {
             {/* Recommendations */}
             {matchResult.recommendations.length > 0 && (
               <BrandCard>
-                <BrandCardHeader>
-                  <h3 className="font-semibold">Recomendaciones</h3>
-                </BrandCardHeader>
+                <BrandCardHeader title="Recomendaciones" />
                 <div className="p-6 pt-0">
                   <ul className="space-y-2">
                     {matchResult.recommendations.map((rec, idx) => (
