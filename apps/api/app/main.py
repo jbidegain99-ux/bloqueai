@@ -20,6 +20,7 @@ from app.routers import (
     admin_router,
     health_router,
     public_router,
+    applications_router,
 )
 
 # Configure structured logging
@@ -229,6 +230,7 @@ app.include_router(candidate_router)
 app.include_router(employer_router)
 app.include_router(admin_router)
 app.include_router(public_router)
+app.include_router(applications_router)
 
 
 # Root endpoint

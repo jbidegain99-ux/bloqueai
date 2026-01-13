@@ -13,6 +13,7 @@ from app.models.audit import AuditLog
 from app.models.lead import Lead
 from app.models.llm_log import LLMLog
 from app.models.invitation import InterviewInvitation
+from app.models.application import Application, ApplicationStatus
 
 __all__ = [
     "User",
@@ -30,4 +31,6 @@ __all__ = [
     "Lead",
     "LLMLog",
     "InterviewInvitation",
+    "Application",
+    "ApplicationStatus",
 ]

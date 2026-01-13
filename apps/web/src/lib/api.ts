@@ -329,4 +329,133 @@ export const publicApi = {
     fetchApi<{ modalities: { value: string; label: string }[] }>('/public/jobs/modality/list'),
 }
 
+// Applications API (new wizard flow)
+export const applicationsApi = {
+  create: (token: string, jobId: string) =>
+    fetchApi<{
+      id: string
+      candidate_id: string
+      job_id: string
+      status: string
+      created_at: string
+    }>('/applications', {
+      method: 'POST',
+      body: { job_id: jobId },
+      token,
+    }),
+
+  list: (token: string, statusFilter?: string) =>
+    fetchApi<Array<{
+      id: string
+      candidate_id: string
+      job_id: string
+      status: string
+      match_score: number | null
+      resume_filename: string | null
+      job: {
+        id: string
+        title: string
+        company: { id: string; name: string }
+        location: string | null
+        modality: string | null
+      } | null
+      created_at: string
+    }>>(`/applications${statusFilter ? `?status_filter=${statusFilter}` : ''}`, { token }),
+
+  get: (token: string, applicationId: string) =>
+    fetchApi<{
+      id: string
+      candidate_id: string
+      job_id: string
+      status: string
+      resume_filename: string | null
+      resume_file_type: string | null
+      resume_file_size: number | null
+      match_score: number | null
+      candidate_profile: Record<string, unknown> | null
+      match_reasons: string[] | null
+      match_gaps: string[] | null
+      recommended_job_ids: Array<{
+        id: string
+        title: string
+        company_name: string
+        match_score: number
+        location: string | null
+        modality: string | null
+      }> | null
+      interview_session_id: string | null
+      job: {
+        id: string
+        title: string
+        description: string
+        company: { id: string; name: string; industry: string | null }
+        location: string | null
+        modality: string | null
+        seniority: string | null
+        must_haves: string[]
+        nice_to_haves: string[]
+        salary_min: number | null
+        salary_max: number | null
+        salary_currency: string | null
+      } | null
+      created_at: string
+      updated_at: string
+    }>(`/applications/${applicationId}`, { token }),
+
+  uploadResume: async (token: string, applicationId: string, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await fetch(`${API_URL}/applications/${applicationId}/resume`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Error al subir el archivo' }))
+      throw new ApiError(error.detail || 'Upload failed', response.status, error)
+    }
+
+    return response.json() as Promise<{
+      success: boolean
+      application_id: string
+      filename: string
+      file_type: string
+      file_size: number
+      status: string
+    }>
+  },
+
+  analyze: (token: string, applicationId: string) =>
+    fetchApi<{
+      success: boolean
+      application_id: string
+      match_score: number
+      status: string
+      candidate_profile: Record<string, unknown>
+      match_reasons: string[]
+      match_gaps: string[]
+      recommended_jobs: Array<{
+        id: string
+        title: string
+        company_name: string
+        match_score: number
+        location: string | null
+        modality: string | null
+      }> | null
+    }>(`/applications/${applicationId}/analyze`, {
+      method: 'POST',
+      token,
+    }),
+
+  withdraw: (token: string, applicationId: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/applications/${applicationId}/withdraw`, {
+      method: 'POST',
+      token,
+    }),
+}
+
 export { ApiError }

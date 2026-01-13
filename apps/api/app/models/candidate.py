@@ -50,6 +50,7 @@ class Candidate(BaseModel):
     interview_sessions = relationship("InterviewSession", back_populates="candidate")
     reports = relationship("CandidateReport", back_populates="candidate")
     shortlist_items = relationship("ShortlistItem", back_populates="candidate")
+    applications = relationship("Application", back_populates="candidate")
 
     def __repr__(self) -> str:
         return f"<Candidate {self.user_id}>"

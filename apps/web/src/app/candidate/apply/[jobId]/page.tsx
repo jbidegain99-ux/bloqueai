@@ -7,7 +7,7 @@ import { BrandCard, BrandCardHeader } from '@/components/brand/BrandCard'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { publicApi, candidateApi } from '@/lib/api'
+import { publicApi, applicationsApi, candidateApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/auth'
 import {
   ArrowLeft,
@@ -21,6 +21,9 @@ import {
   X,
   Building2,
   RefreshCw,
+  XCircle,
+  MapPin,
+  Briefcase,
 } from 'lucide-react'
 
 interface Job {
@@ -28,33 +31,51 @@ interface Job {
   title: string
   company: {
     name: string
+    industry?: string
   }
   must_haves: string[]
   nice_to_haves: string[]
+  location?: string
+  modality?: string
 }
 
-interface MatchResult {
-  score: number
-  matching_skills: string[]
-  missing_skills: string[]
-  recommendations: string[]
+interface Application {
+  id: string
+  status: string
+  match_score: number | null
+  candidate_profile: Record<string, unknown> | null
+  match_reasons: string[] | null
+  match_gaps: string[] | null
+  recommended_job_ids: Array<{
+    id: string
+    title: string
+    company_name: string
+    match_score: number
+    location: string | null
+    modality: string | null
+  }> | null
+  resume_filename: string | null
 }
 
-type ApplyStep = 'upload' | 'analyzing' | 'results' | 'ready'
+type ApplyStep = 'upload' | 'analyzing' | 'results'
+
+const MATCH_THRESHOLD = 70
 
 export default function ApplyPage() {
   const router = useRouter()
   const params = useParams()
   const jobId = params.jobId as string
 
-  const { isAuthenticated, accessToken, user } = useAuthStore()
+  const { isAuthenticated, accessToken } = useAuthStore()
   const [job, setJob] = useState<Job | null>(null)
+  const [application, setApplication] = useState<Application | null>(null)
   const [step, setStep] = useState<ApplyStep>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [matchResult, setMatchResult] = useState<MatchResult | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -63,18 +84,39 @@ export default function ApplyPage() {
     }
   }, [isAuthenticated, router, jobId])
 
-  // Load job info
+  // Load job info and create/get application
   useEffect(() => {
-    const loadJob = async () => {
+    const initialize = async () => {
+      if (!accessToken) return
+
       try {
+        // Load job details
         const jobData = await publicApi.getJob(jobId)
         setJob(jobData)
-      } catch (err) {
-        console.error('Error loading job:', err)
+
+        // Create or get existing application
+        const appData = await applicationsApi.create(accessToken, jobId)
+        setApplication(appData as any)
+
+        // Set step based on application status
+        if (appData.status === 'CV_UPLOADED') {
+          setStep('upload') // Allow re-upload or proceed to analyze
+        } else if (['MATCH_PASSED', 'MATCH_BELOW_THRESHOLD'].includes(appData.status)) {
+          // Already analyzed, show results
+          const fullApp = await applicationsApi.get(accessToken, appData.id)
+          setApplication(fullApp as any)
+          setStep('results')
+        }
+      } catch (err: any) {
+        console.error('Error initializing:', err)
+        setError(err?.message || 'Error al cargar la aplicacion')
+      } finally {
+        setLoading(false)
       }
     }
-    loadJob()
-  }, [jobId])
+
+    initialize()
+  }, [jobId, accessToken])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -113,116 +155,99 @@ export default function ApplyPage() {
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     ]
-    return validTypes.includes(f.type)
+    const ext = f.name.toLowerCase().split('.').pop()
+    return validTypes.includes(f.type) || ['pdf', 'docx'].includes(ext || '')
   }
 
   const handleUpload = async () => {
-    if (!file || !accessToken) return
+    if (!file || !accessToken || !application) return
 
     setUploading(true)
     setError(null)
-    setStep('analyzing')
 
     try {
-      // Upload CV
-      const uploadResult = await candidateApi.uploadResume(accessToken, file) as any
-      console.log('Upload result:', uploadResult)
+      // Upload CV to this application
+      await applicationsApi.uploadResume(accessToken, application.id, file)
 
-      // Simulate matching analysis (in real implementation, backend would do this)
-      // For now, we generate a mock match based on parsed skills
-      const parsedSkills = uploadResult.parsed_data?.skills || []
-      const jobMustHaves = job?.must_haves || []
-      const jobNiceToHaves = job?.nice_to_haves || []
+      // Now analyze the CV
+      setStep('analyzing')
+      setAnalyzing(true)
 
-      const matchingMustHaves = jobMustHaves.filter((skill: string) =>
-        parsedSkills.some((ps: string) =>
-          ps.toLowerCase().includes(skill.toLowerCase()) ||
-          skill.toLowerCase().includes(ps.toLowerCase())
-        )
-      )
+      const analysisResult = await applicationsApi.analyze(accessToken, application.id)
 
-      const matchingNiceToHaves = jobNiceToHaves.filter((skill: string) =>
-        parsedSkills.some((ps: string) =>
-          ps.toLowerCase().includes(skill.toLowerCase()) ||
-          skill.toLowerCase().includes(ps.toLowerCase())
-        )
-      )
-
-      const missingMustHaves = jobMustHaves.filter((skill: string) => !matchingMustHaves.includes(skill))
-      const missingNiceToHaves = jobNiceToHaves.filter((skill: string) => !matchingNiceToHaves.includes(skill))
-
-      // Calculate score (weighted: must haves = 70%, nice to haves = 30%)
-      const mustHaveScore = jobMustHaves.length > 0
-        ? (matchingMustHaves.length / jobMustHaves.length) * 70
-        : 70
-      const niceToHaveScore = jobNiceToHaves.length > 0
-        ? (matchingNiceToHaves.length / jobNiceToHaves.length) * 30
-        : 30
-      const totalScore = Math.round(mustHaveScore + niceToHaveScore)
-
-      const recommendations: string[] = []
-      if (missingMustHaves.length > 0) {
-        recommendations.push(`Considera destacar experiencia con: ${missingMustHaves.slice(0, 3).join(', ')}`)
-      }
-      if (totalScore < 70) {
-        recommendations.push('Tu perfil podria beneficiarse de mas experiencia en las tecnologias requeridas')
-      }
-      if (totalScore >= 70) {
-        recommendations.push('Tu perfil cumple con los requisitos principales del puesto')
-      }
-
-      setMatchResult({
-        score: totalScore,
-        matching_skills: [...matchingMustHaves, ...matchingNiceToHaves],
-        missing_skills: [...missingMustHaves, ...missingNiceToHaves.slice(0, 3)],
-        recommendations,
+      // Update application with results
+      setApplication({
+        ...application,
+        status: analysisResult.status,
+        match_score: analysisResult.match_score,
+        candidate_profile: analysisResult.candidate_profile,
+        match_reasons: analysisResult.match_reasons,
+        match_gaps: analysisResult.match_gaps,
+        recommended_job_ids: analysisResult.recommended_jobs || null,
       })
 
       setStep('results')
     } catch (err: any) {
-      console.error('Error uploading CV:', err)
-      setError(err?.message || 'Error al subir el CV. Intenta de nuevo.')
+      console.error('Error uploading/analyzing CV:', err)
+      setError(err?.message || 'Error al procesar el CV. Intenta de nuevo.')
       setStep('upload')
     } finally {
       setUploading(false)
+      setAnalyzing(false)
     }
   }
 
-  const handleProceedToInterview = async () => {
-    setStep('ready')
+  const handleStartInterview = async () => {
+    if (!accessToken || !application) return
 
     try {
       // Start interview with job context
-      await candidateApi.startInterview(accessToken!, jobId)
+      await candidateApi.startInterview(accessToken, jobId)
       router.push(`/candidate/interview?job_id=${jobId}`)
     } catch (err: any) {
       console.error('Error starting interview:', err)
       setError(err?.message || 'Error al iniciar la entrevista')
-      setStep('results')
     }
   }
 
+  const handleApplyToRecommended = async (recommendedJobId: string) => {
+    router.push(`/candidate/apply/${recommendedJobId}`)
+  }
+
   const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-green-600'
-    if (score >= 60) return 'text-yellow-600'
+    if (score >= MATCH_THRESHOLD) return 'text-green-600'
+    if (score >= 50) return 'text-yellow-600'
     return 'text-red-600'
   }
 
   const getScoreBg = (score: number) => {
-    if (score >= 80) return 'bg-green-100'
-    if (score >= 60) return 'bg-yellow-100'
+    if (score >= MATCH_THRESHOLD) return 'bg-green-100'
+    if (score >= 50) return 'bg-yellow-100'
     return 'bg-red-100'
   }
 
+  const canProceedToInterview = application?.status === 'MATCH_PASSED' ||
+    (application?.match_score !== null && application.match_score >= MATCH_THRESHOLD)
+
   if (!isAuthenticated) return null
+
+  if (loading) {
+    return (
+      <AppShell>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="h-8 w-8 animate-spin text-bloque-gold500" />
+        </div>
+      </AppShell>
+    )
+  }
 
   return (
     <AppShell>
       <div className="max-w-2xl mx-auto">
         {/* Back button */}
-        <Button variant="ghost" onClick={() => router.back()} className="mb-6">
+        <Button variant="ghost" onClick={() => router.push('/candidate/jobs')} className="mb-6">
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Volver
+          Volver a puestos
         </Button>
 
         {/* Header */}
@@ -244,28 +269,28 @@ export default function ApplyPage() {
             <div className={`flex items-center gap-2 ${step === 'upload' ? 'text-bloque-navy900' : 'text-muted-foreground'}`}>
               <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium ${
                 step === 'upload' ? 'bg-bloque-navy900 text-white' :
-                ['analyzing', 'results', 'ready'].includes(step) ? 'bg-green-500 text-white' : 'bg-gray-200'
+                ['analyzing', 'results'].includes(step) ? 'bg-green-500 text-white' : 'bg-gray-200'
               }`}>
-                {['analyzing', 'results', 'ready'].includes(step) ? <CheckCircle2 className="h-4 w-4" /> : '1'}
+                {['analyzing', 'results'].includes(step) ? <CheckCircle2 className="h-4 w-4" /> : '1'}
               </div>
               <span className="text-sm font-medium">Subir CV</span>
             </div>
             <div className="flex-1 h-0.5 bg-gray-200 mx-4" />
-            <div className={`flex items-center gap-2 ${step === 'analyzing' ? 'text-bloque-navy900' : step === 'results' || step === 'ready' ? 'text-green-600' : 'text-muted-foreground'}`}>
+            <div className={`flex items-center gap-2 ${step === 'analyzing' ? 'text-bloque-navy900' : step === 'results' ? 'text-green-600' : 'text-muted-foreground'}`}>
               <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium ${
                 step === 'analyzing' ? 'bg-bloque-navy900 text-white' :
-                step === 'results' || step === 'ready' ? 'bg-green-500 text-white' : 'bg-gray-200'
+                step === 'results' ? 'bg-green-500 text-white' : 'bg-gray-200'
               }`}>
-                {step === 'results' || step === 'ready' ? <CheckCircle2 className="h-4 w-4" /> : '2'}
+                {step === 'results' ? <CheckCircle2 className="h-4 w-4" /> : '2'}
               </div>
-              <span className="text-sm font-medium">Analisis</span>
+              <span className="text-sm font-medium">Analisis IA</span>
             </div>
             <div className="flex-1 h-0.5 bg-gray-200 mx-4" />
-            <div className={`flex items-center gap-2 ${step === 'ready' ? 'text-green-600' : 'text-muted-foreground'}`}>
+            <div className={`flex items-center gap-2 ${canProceedToInterview ? 'text-bloque-navy900' : 'text-muted-foreground'}`}>
               <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                step === 'ready' ? 'bg-green-500 text-white' : 'bg-gray-200'
+                canProceedToInterview ? 'bg-bloque-gold500 text-white' : 'bg-gray-200'
               }`}>
-                {step === 'ready' ? <CheckCircle2 className="h-4 w-4" /> : '3'}
+                3
               </div>
               <span className="text-sm font-medium">Entrevista</span>
             </div>
@@ -279,7 +304,7 @@ export default function ApplyPage() {
               <FileText className="h-12 w-12 text-bloque-navy900 mx-auto mb-3" />
               <h2 className="text-xl font-semibold mb-2">Sube tu CV</h2>
               <p className="text-muted-foreground">
-                Analizaremos tu CV para compararlo con los requisitos del puesto
+                Analizaremos tu CV con IA para compararlo con los requisitos del puesto
               </p>
             </div>
 
@@ -366,85 +391,61 @@ export default function ApplyPage() {
         {step === 'analyzing' && (
           <BrandCard className="p-8 text-center">
             <Loader2 className="h-16 w-16 text-bloque-gold500 mx-auto mb-4 animate-spin" />
-            <h2 className="text-xl font-semibold mb-2">Analizando tu perfil</h2>
+            <h2 className="text-xl font-semibold mb-2">Analizando tu perfil con IA</h2>
             <p className="text-muted-foreground mb-6">
-              Estamos comparando tu CV con los requisitos del puesto...
+              Estamos comparando tu CV con los requisitos del puesto usando OpenAI...
             </p>
             <Progress value={65} className="max-w-xs mx-auto" />
+            <p className="text-xs text-muted-foreground mt-4">
+              Esto puede tomar unos segundos
+            </p>
           </BrandCard>
         )}
 
-        {step === 'results' && matchResult && (
+        {step === 'results' && application && (
           <div className="space-y-6">
             {/* Score card */}
             <BrandCard className="p-6">
               <div className="flex items-center gap-4">
-                <div className={`h-20 w-20 rounded-full flex items-center justify-center ${getScoreBg(matchResult.score)}`}>
-                  <span className={`text-3xl font-bold ${getScoreColor(matchResult.score)}`}>
-                    {matchResult.score}%
+                <div className={`h-20 w-20 rounded-full flex items-center justify-center ${getScoreBg(application.match_score || 0)}`}>
+                  <span className={`text-3xl font-bold ${getScoreColor(application.match_score || 0)}`}>
+                    {application.match_score || 0}%
                   </span>
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold">
-                    {matchResult.score >= 80 ? 'Excelente match!' :
-                     matchResult.score >= 60 ? 'Buen match' :
-                     'Match parcial'}
+                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                    {canProceedToInterview ? (
+                      <>
+                        <CheckCircle2 className="h-5 w-5 text-green-500" />
+                        Excelente match!
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="h-5 w-5 text-amber-500" />
+                        Match por debajo del umbral
+                      </>
+                    )}
                   </h2>
                   <p className="text-muted-foreground">
-                    Tu perfil tiene un {matchResult.score}% de compatibilidad con el puesto
+                    {canProceedToInterview
+                      ? `Tu perfil tiene un ${application.match_score}% de compatibilidad. Puedes continuar a la entrevista.`
+                      : `Tu perfil tiene un ${application.match_score}% de compatibilidad. Se requiere minimo ${MATCH_THRESHOLD}% para la entrevista.`
+                    }
                   </p>
                 </div>
               </div>
             </BrandCard>
 
-            {/* Skills match */}
-            <BrandCard>
-              <BrandCardHeader title="Analisis de habilidades" />
-              <div className="p-6 pt-0 space-y-4">
-                {matchResult.matching_skills.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium text-green-700 mb-2 flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4" />
-                      Habilidades que coinciden
-                    </h4>
-                    <div className="flex flex-wrap gap-2">
-                      {matchResult.matching_skills.map((skill, idx) => (
-                        <Badge key={idx} className="bg-green-100 text-green-700">
-                          {skill}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {matchResult.missing_skills.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium text-amber-700 mb-2 flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4" />
-                      Habilidades a desarrollar
-                    </h4>
-                    <div className="flex flex-wrap gap-2">
-                      {matchResult.missing_skills.map((skill, idx) => (
-                        <Badge key={idx} variant="outline" className="text-amber-700 border-amber-300">
-                          {skill}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </BrandCard>
-
-            {/* Recommendations */}
-            {matchResult.recommendations.length > 0 && (
+            {/* Match reasons */}
+            {application.match_reasons && application.match_reasons.length > 0 && (
               <BrandCard>
-                <BrandCardHeader title="Recomendaciones" />
+                <BrandCardHeader title="Por que haces match" />
                 <div className="p-6 pt-0">
                   <ul className="space-y-2">
-                    {matchResult.recommendations.map((rec, idx) => (
-                      <li key={idx} className="flex items-start gap-2 text-sm text-muted-foreground">
-                        <Sparkles className="h-4 w-4 text-bloque-gold500 mt-0.5 flex-shrink-0" />
-                        {rec}
+                    {application.match_reasons.map((reason, idx) => (
+                      <li key={idx} className="flex items-start gap-2 text-sm">
+                        <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                        {reason}
                       </li>
                     ))}
                   </ul>
@@ -452,7 +453,69 @@ export default function ApplyPage() {
               </BrandCard>
             )}
 
-            {/* Action */}
+            {/* Gaps */}
+            {application.match_gaps && application.match_gaps.length > 0 && (
+              <BrandCard>
+                <BrandCardHeader title="Areas de mejora" />
+                <div className="p-6 pt-0">
+                  <ul className="space-y-2">
+                    {application.match_gaps.map((gap, idx) => (
+                      <li key={idx} className="flex items-start gap-2 text-sm text-amber-700">
+                        <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                        {gap}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </BrandCard>
+            )}
+
+            {/* Recommended jobs if match < 70 */}
+            {!canProceedToInterview && application.recommended_job_ids && application.recommended_job_ids.length > 0 && (
+              <BrandCard>
+                <BrandCardHeader
+                  title="Puestos recomendados para ti"
+                  description="Basado en tu perfil, estos puestos podrian ser un mejor match"
+                />
+                <div className="p-6 pt-0 space-y-3">
+                  {application.recommended_job_ids.map((recJob) => (
+                    <div
+                      key={recJob.id}
+                      className="flex items-center justify-between p-4 bg-bloque-gray50 rounded-lg"
+                    >
+                      <div>
+                        <h4 className="font-medium text-bloque-navy900">{recJob.title}</h4>
+                        <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+                          <span className="flex items-center gap-1">
+                            <Building2 className="h-3 w-3" />
+                            {recJob.company_name}
+                          </span>
+                          {recJob.location && (
+                            <span className="flex items-center gap-1">
+                              <MapPin className="h-3 w-3" />
+                              {recJob.location}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Badge className={`${getScoreBg(recJob.match_score)} ${getScoreColor(recJob.match_score)}`}>
+                          {recJob.match_score}% match
+                        </Badge>
+                        <Button
+                          size="sm"
+                          onClick={() => handleApplyToRecommended(recJob.id)}
+                        >
+                          Aplicar
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </BrandCard>
+            )}
+
+            {/* Actions */}
             <div className="flex gap-4">
               <Button
                 variant="outline"
@@ -462,32 +525,44 @@ export default function ApplyPage() {
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Subir otro CV
               </Button>
-              <Button
-                onClick={handleProceedToInterview}
-                className="flex-1"
-                size="lg"
-              >
-                Continuar a entrevista
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </Button>
+
+              {canProceedToInterview ? (
+                <Button
+                  onClick={handleStartInterview}
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  size="lg"
+                >
+                  Iniciar entrevista
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              ) : (
+                <Button
+                  disabled
+                  variant="secondary"
+                  className="flex-1"
+                  size="lg"
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Entrevista no disponible
+                </Button>
+              )}
             </div>
 
-            {matchResult.score < 70 && (
+            {!canProceedToInterview && (
+              <div className="p-4 bg-amber-50 rounded-lg">
+                <p className="text-sm text-amber-800 text-center">
+                  <strong>Nota:</strong> Tu perfil no alcanza el umbral minimo de {MATCH_THRESHOLD}% para este puesto.
+                  Te recomendamos aplicar a los puestos sugeridos arriba o mejorar tu CV con las habilidades indicadas.
+                </p>
+              </div>
+            )}
+
+            {canProceedToInterview && (
               <p className="text-sm text-muted-foreground text-center">
-                Aunque el match no es perfecto, la entrevista te permite demostrar tus habilidades
+                La entrevista con IA tomara aproximadamente 15-20 minutos
               </p>
             )}
           </div>
-        )}
-
-        {step === 'ready' && (
-          <BrandCard className="p-8 text-center">
-            <Loader2 className="h-16 w-16 text-bloque-gold500 mx-auto mb-4 animate-spin" />
-            <h2 className="text-xl font-semibold mb-2">Preparando tu entrevista</h2>
-            <p className="text-muted-foreground">
-              En un momento comenzaras tu entrevista con IA...
-            </p>
-          </BrandCard>
         )}
       </div>
     </AppShell>

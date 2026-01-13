@@ -138,6 +138,7 @@ class Job(BaseModel):
     rubric = relationship("Rubric", back_populates="jobs")
     interview_sessions = relationship("InterviewSession", back_populates="job")
     shortlist_items = relationship("ShortlistItem", back_populates="job")
+    applications = relationship("Application", back_populates="job")
 
     def __repr__(self) -> str:
         return f"<Job {self.title} at {self.company_id}>"

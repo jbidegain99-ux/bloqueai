@@ -7,7 +7,7 @@ import { BrandCard, BrandCardHeader } from '@/components/brand/BrandCard'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { candidateApi, publicApi } from '@/lib/api'
+import { applicationsApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/auth'
 import {
   Briefcase,
@@ -20,66 +20,115 @@ import {
   Building2,
   Calendar,
   XCircle,
+  Upload,
+  Sparkles,
+  Target,
+  Trash2,
 } from 'lucide-react'
 
-interface InterviewSession {
+interface Application {
   id: string
-  job_id: string | null
-  status: 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
-  current_question_index: number
-  total_questions: number
-  started_at: string | null
-  completed_at: string | null
+  candidate_id: string
+  job_id: string
+  status: string
+  match_score: number | null
+  resume_filename: string | null
+  job: {
+    id: string
+    title: string
+    company: { id: string; name: string }
+    location: string | null
+    modality: string | null
+  } | null
   created_at: string
 }
 
-interface Application {
-  session: InterviewSession
-  job?: {
-    id: string
-    title: string
-    company: {
-      name: string
-    }
-  }
-}
-
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-  IN_PROGRESS: {
-    label: 'En progreso',
+  CREATED: {
+    label: 'CV pendiente',
+    color: 'bg-gray-100 text-gray-700',
+    icon: <Upload className="h-3.5 w-3.5" />,
+  },
+  CV_UPLOADED: {
+    label: 'CV subido',
     color: 'bg-blue-100 text-blue-700',
-    icon: <PlayCircle className="h-4 w-4" />,
+    icon: <FileText className="h-3.5 w-3.5" />,
+  },
+  ANALYZING: {
+    label: 'Analizando',
+    color: 'bg-yellow-100 text-yellow-700',
+    icon: <Sparkles className="h-3.5 w-3.5 animate-pulse" />,
+  },
+  MATCH_PASSED: {
+    label: 'Match aceptado',
+    color: 'bg-green-100 text-green-700',
+    icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+  },
+  MATCH_BELOW_THRESHOLD: {
+    label: 'Match bajo',
+    color: 'bg-amber-100 text-amber-700',
+    icon: <Target className="h-3.5 w-3.5" />,
+  },
+  INTERVIEW_STARTED: {
+    label: 'En entrevista',
+    color: 'bg-purple-100 text-purple-700',
+    icon: <PlayCircle className="h-3.5 w-3.5" />,
+  },
+  INTERVIEW_COMPLETED: {
+    label: 'Entrevista completada',
+    color: 'bg-indigo-100 text-indigo-700',
+    icon: <CheckCircle2 className="h-3.5 w-3.5" />,
   },
   COMPLETED: {
     label: 'Completada',
     color: 'bg-green-100 text-green-700',
-    icon: <CheckCircle2 className="h-4 w-4" />,
+    icon: <CheckCircle2 className="h-3.5 w-3.5" />,
   },
-  CANCELLED: {
-    label: 'Cancelada',
-    color: 'bg-gray-100 text-gray-700',
-    icon: <XCircle className="h-4 w-4" />,
+  WITHDRAWN: {
+    label: 'Retirada',
+    color: 'bg-gray-100 text-gray-500',
+    icon: <XCircle className="h-3.5 w-3.5" />,
+  },
+  REJECTED: {
+    label: 'Rechazada',
+    color: 'bg-red-100 text-red-700',
+    icon: <XCircle className="h-3.5 w-3.5" />,
   },
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '-'
+function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
   return date.toLocaleDateString('es-MX', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
   })
+}
+
+function getActionLabel(status: string): string {
+  switch (status) {
+    case 'CREATED':
+      return 'Subir CV'
+    case 'CV_UPLOADED':
+      return 'Analizar CV'
+    case 'MATCH_PASSED':
+      return 'Iniciar entrevista'
+    case 'INTERVIEW_STARTED':
+      return 'Continuar entrevista'
+    case 'MATCH_BELOW_THRESHOLD':
+      return 'Ver recomendaciones'
+    default:
+      return 'Ver detalles'
+  }
 }
 
 export default function ApplicationsPage() {
   const router = useRouter()
-  const { isAuthenticated, accessToken, user } = useAuthStore()
+  const { isAuthenticated, accessToken } = useAuthStore()
   const [applications, setApplications] = useState<Application[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [withdrawing, setWithdrawing] = useState<string | null>(null)
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -97,30 +146,8 @@ export default function ApplicationsPage() {
       setError(null)
 
       try {
-        // Get all interview sessions
-        const sessions = await candidateApi.getInterviews(accessToken) as InterviewSession[]
-
-        // Load job details for each session that has a job_id
-        const appsWithJobs: Application[] = await Promise.all(
-          sessions.map(async (session) => {
-            if (session.job_id) {
-              try {
-                const job = await publicApi.getJob(session.job_id)
-                return { session, job }
-              } catch {
-                return { session }
-              }
-            }
-            return { session }
-          })
-        )
-
-        // Sort by created_at desc
-        appsWithJobs.sort((a, b) =>
-          new Date(b.session.created_at).getTime() - new Date(a.session.created_at).getTime()
-        )
-
-        setApplications(appsWithJobs)
+        const apps = await applicationsApi.list(accessToken)
+        setApplications(apps)
       } catch (err: any) {
         console.error('Error loading applications:', err)
         setError(err?.message || 'Error al cargar las aplicaciones')
@@ -132,19 +159,37 @@ export default function ApplicationsPage() {
     loadApplications()
   }, [accessToken])
 
-  const handleContinueInterview = (sessionId: string, jobId?: string) => {
-    if (jobId) {
-      router.push(`/candidate/interview?job_id=${jobId}`)
-    } else {
-      router.push('/candidate/interview')
+  const handleAction = (app: Application) => {
+    // Navigate to the apply page for this job, which will load the existing application
+    router.push(`/candidate/apply/${app.job_id}`)
+  }
+
+  const handleWithdraw = async (applicationId: string) => {
+    if (!accessToken) return
+
+    setWithdrawing(applicationId)
+    try {
+      await applicationsApi.withdraw(accessToken, applicationId)
+      // Update local state
+      setApplications(apps =>
+        apps.map(app =>
+          app.id === applicationId
+            ? { ...app, status: 'WITHDRAWN' }
+            : app
+        )
+      )
+    } catch (err: any) {
+      console.error('Error withdrawing application:', err)
+      setError(err?.message || 'Error al retirar la aplicacion')
+    } finally {
+      setWithdrawing(null)
     }
   }
 
-  const handleViewReport = () => {
-    router.push('/candidate/profile')
-  }
-
   if (!isAuthenticated) return null
+
+  const activeApps = applications.filter(a => !['WITHDRAWN', 'REJECTED', 'COMPLETED'].includes(a.status))
+  const completedApps = applications.filter(a => ['WITHDRAWN', 'REJECTED', 'COMPLETED'].includes(a.status))
 
   return (
     <AppShell>
@@ -153,7 +198,7 @@ export default function ApplicationsPage() {
           <div>
             <h1 className="text-2xl font-bold text-bloque-navy900">Mis Aplicaciones</h1>
             <p className="text-muted-foreground mt-1">
-              Historial de entrevistas y aplicaciones
+              Gestiona tus aplicaciones a puestos de trabajo
             </p>
           </div>
           <Button onClick={() => router.push('/candidate/jobs')}>
@@ -197,136 +242,206 @@ export default function ApplicationsPage() {
             </Button>
           </BrandCard>
         ) : (
-          <div className="space-y-4">
-            {applications.map((app) => {
-              const status = STATUS_CONFIG[app.session.status]
-              const progress = app.session.total_questions > 0
-                ? Math.round((app.session.current_question_index / app.session.total_questions) * 100)
-                : 0
+          <div className="space-y-8">
+            {/* Active Applications */}
+            {activeApps.length > 0 && (
+              <div>
+                <h2 className="text-lg font-semibold text-bloque-navy900 mb-4">
+                  Aplicaciones activas ({activeApps.length})
+                </h2>
+                <div className="space-y-4">
+                  {activeApps.map((app) => {
+                    const status = STATUS_CONFIG[app.status] || STATUS_CONFIG.CREATED
 
-              return (
-                <BrandCard key={app.session.id} className="p-6">
-                  <div className="flex gap-4">
-                    {/* Icon */}
-                    <div className="h-12 w-12 rounded-lg bg-bloque-navy900 flex items-center justify-center text-white flex-shrink-0">
-                      {app.job ? (
-                        <span className="font-bold text-lg">
-                          {app.job.company.name.charAt(0)}
-                        </span>
-                      ) : (
-                        <FileText className="h-6 w-6" />
-                      )}
-                    </div>
+                    return (
+                      <BrandCard key={app.id} className="p-6">
+                        <div className="flex gap-4">
+                          {/* Icon */}
+                          <div className="h-12 w-12 rounded-lg bg-bloque-navy900 flex items-center justify-center text-white flex-shrink-0">
+                            {app.job ? (
+                              <span className="font-bold text-lg">
+                                {app.job.company.name.charAt(0)}
+                              </span>
+                            ) : (
+                              <Briefcase className="h-6 w-6" />
+                            )}
+                          </div>
 
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <h3 className="font-semibold text-bloque-navy900">
-                            {app.job ? app.job.title : 'Entrevista General'}
-                          </h3>
-                          {app.job && (
-                            <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-0.5">
-                              <Building2 className="h-3.5 w-3.5" />
-                              <span>{app.job.company.name}</span>
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <h3 className="font-semibold text-bloque-navy900">
+                                  {app.job?.title || 'Puesto desconocido'}
+                                </h3>
+                                {app.job && (
+                                  <div className="flex items-center gap-3 text-sm text-muted-foreground mt-0.5">
+                                    <span className="flex items-center gap-1">
+                                      <Building2 className="h-3.5 w-3.5" />
+                                      {app.job.company.name}
+                                    </span>
+                                    {app.job.location && (
+                                      <span>{app.job.location}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                {app.match_score !== null && (
+                                  <Badge
+                                    className={
+                                      app.match_score >= 70
+                                        ? 'bg-green-100 text-green-700'
+                                        : 'bg-amber-100 text-amber-700'
+                                    }
+                                  >
+                                    {app.match_score}% match
+                                  </Badge>
+                                )}
+                                <Badge className={status.color}>
+                                  {status.icon}
+                                  <span className="ml-1">{status.label}</span>
+                                </Badge>
+                              </div>
                             </div>
-                          )}
-                        </div>
 
-                        <Badge className={status.color}>
-                          {status.icon}
-                          <span className="ml-1">{status.label}</span>
-                        </Badge>
-                      </div>
+                            {/* Meta info */}
+                            <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="h-3.5 w-3.5" />
+                                <span>Aplicado: {formatDate(app.created_at)}</span>
+                              </div>
+                              {app.resume_filename && (
+                                <div className="flex items-center gap-1.5">
+                                  <FileText className="h-3.5 w-3.5" />
+                                  <span>{app.resume_filename}</span>
+                                </div>
+                              )}
+                            </div>
 
-                      {/* Progress for in-progress interviews */}
-                      {app.session.status === 'IN_PROGRESS' && (
-                        <div className="mt-3">
-                          <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                            <span>Progreso de la entrevista</span>
-                            <span>{app.session.current_question_index} / {app.session.total_questions}</span>
+                            {/* Actions */}
+                            <div className="mt-4 flex gap-2">
+                              {app.status !== 'WITHDRAWN' && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleAction(app)}
+                                >
+                                  {getActionLabel(app.status)}
+                                  <ArrowRight className="h-4 w-4 ml-1" />
+                                </Button>
+                              )}
+                              {app.job && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => router.push(`/candidate/jobs/${app.job!.id}`)}
+                                >
+                                  Ver puesto
+                                </Button>
+                              )}
+                              {!['COMPLETED', 'WITHDRAWN', 'REJECTED'].includes(app.status) && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  onClick={() => handleWithdraw(app.id)}
+                                  disabled={withdrawing === app.id}
+                                >
+                                  {withdrawing === app.id ? (
+                                    <Clock className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <Trash2 className="h-4 w-4 mr-1" />
+                                      Retirar
+                                    </>
+                                  )}
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-bloque-gold500 transition-all"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
                         </div>
-                      )}
+                      </BrandCard>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
-                      {/* Meta info */}
-                      <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-muted-foreground">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className="h-3.5 w-3.5" />
-                          <span>Iniciada: {formatDate(app.session.started_at || app.session.created_at)}</span>
-                        </div>
-                        {app.session.completed_at && (
-                          <div className="flex items-center gap-1.5">
-                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                            <span>Completada: {formatDate(app.session.completed_at)}</span>
+            {/* Completed/Withdrawn Applications */}
+            {completedApps.length > 0 && (
+              <div>
+                <h2 className="text-lg font-semibold text-bloque-navy900 mb-4">
+                  Historial ({completedApps.length})
+                </h2>
+                <div className="space-y-3">
+                  {completedApps.map((app) => {
+                    const status = STATUS_CONFIG[app.status] || STATUS_CONFIG.COMPLETED
+
+                    return (
+                      <BrandCard key={app.id} className="p-4 opacity-75">
+                        <div className="flex items-center gap-4">
+                          <div className="h-10 w-10 rounded-lg bg-gray-200 flex items-center justify-center text-gray-600 flex-shrink-0">
+                            {app.job ? (
+                              <span className="font-bold">
+                                {app.job.company.name.charAt(0)}
+                              </span>
+                            ) : (
+                              <Briefcase className="h-5 w-5" />
+                            )}
                           </div>
-                        )}
-                      </div>
 
-                      {/* Actions */}
-                      <div className="mt-4 flex gap-2">
-                        {app.session.status === 'IN_PROGRESS' && (
-                          <Button
-                            size="sm"
-                            onClick={() => handleContinueInterview(app.session.id, app.session.job_id || undefined)}
-                          >
-                            Continuar entrevista
-                            <ArrowRight className="h-4 w-4 ml-1" />
-                          </Button>
-                        )}
-                        {app.session.status === 'COMPLETED' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={handleViewReport}
-                          >
-                            Ver mi perfil
-                          </Button>
-                        )}
-                        {app.job && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => router.push(`/candidate/jobs/${app.job!.id}`)}
-                          >
-                            Ver puesto
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </BrandCard>
-              )
-            })}
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium text-bloque-navy900">
+                              {app.job?.title || 'Puesto desconocido'}
+                            </h3>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              {app.job && <span>{app.job.company.name}</span>}
+                              <span>•</span>
+                              <span>{formatDate(app.created_at)}</span>
+                            </div>
+                          </div>
+
+                          <Badge className={status.color}>
+                            {status.icon}
+                            <span className="ml-1">{status.label}</span>
+                          </Badge>
+                        </div>
+                      </BrandCard>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* Summary stats */}
         {!loading && applications.length > 0 && (
-          <div className="grid grid-cols-3 gap-4 mt-8">
+          <div className="grid grid-cols-4 gap-4 mt-8">
             <BrandCard className="p-4 text-center">
               <div className="text-2xl font-bold text-bloque-navy900">
                 {applications.length}
               </div>
-              <div className="text-sm text-muted-foreground">Total aplicaciones</div>
+              <div className="text-sm text-muted-foreground">Total</div>
             </BrandCard>
             <BrandCard className="p-4 text-center">
               <div className="text-2xl font-bold text-green-600">
-                {applications.filter((a) => a.session.status === 'COMPLETED').length}
+                {applications.filter((a) => a.status === 'MATCH_PASSED').length}
               </div>
-              <div className="text-sm text-muted-foreground">Completadas</div>
+              <div className="text-sm text-muted-foreground">Match alto</div>
             </BrandCard>
             <BrandCard className="p-4 text-center">
-              <div className="text-2xl font-bold text-blue-600">
-                {applications.filter((a) => a.session.status === 'IN_PROGRESS').length}
+              <div className="text-2xl font-bold text-purple-600">
+                {applications.filter((a) => ['INTERVIEW_STARTED', 'INTERVIEW_COMPLETED'].includes(a.status)).length}
               </div>
-              <div className="text-sm text-muted-foreground">En progreso</div>
+              <div className="text-sm text-muted-foreground">En entrevista</div>
+            </BrandCard>
+            <BrandCard className="p-4 text-center">
+              <div className="text-2xl font-bold text-amber-600">
+                {applications.filter((a) => a.status === 'MATCH_BELOW_THRESHOLD').length}
+              </div>
+              <div className="text-sm text-muted-foreground">Match bajo</div>
             </BrandCard>
           </div>
         )}
