@@ -61,8 +61,13 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        """Parse CORS origins from comma-separated string."""
-        return [origin.strip() for origin in self.api_cors_origins.split(",")]
+        """Parse CORS origins from comma-separated string.
+
+        Supports wildcard patterns like *.vercel.app for Vercel preview URLs.
+        """
+        origins = [origin.strip() for origin in self.api_cors_origins.split(",")]
+        # Check if we have a Vercel wildcard pattern - if so, we'll handle it in middleware
+        return origins
 
     @property
     def use_stub_llm(self) -> bool:
