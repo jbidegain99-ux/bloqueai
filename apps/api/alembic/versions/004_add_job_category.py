@@ -25,8 +25,9 @@ def upgrade() -> None:
         name='job_category'
     )
 
-    # Create enum type if it doesn't exist
     conn = op.get_bind()
+
+    # Create enum type if it doesn't exist
     result = conn.execute(sa.text(
         "SELECT 1 FROM pg_type WHERE typname = 'job_category'"
     ))
@@ -39,11 +40,17 @@ def upgrade() -> None:
         "WHERE table_name = 'jobs' AND column_name = 'category'"
     ))
     if not result.fetchone():
+        # Add column without index=True to avoid duplicate index creation
         op.add_column(
             'jobs',
-            sa.Column('category', job_category, nullable=True, index=True)
+            sa.Column('category', job_category, nullable=True)
         )
-        # Create index
+
+    # Check if index exists before creating
+    result = conn.execute(sa.text(
+        "SELECT 1 FROM pg_indexes WHERE indexname = 'ix_jobs_category'"
+    ))
+    if not result.fetchone():
         op.create_index('ix_jobs_category', 'jobs', ['category'])
 
 
