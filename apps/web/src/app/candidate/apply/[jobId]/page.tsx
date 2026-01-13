@@ -227,7 +227,7 @@ export default function ApplyPage() {
   }
 
   const canProceedToInterview = application?.status === 'MATCH_PASSED' ||
-    (application?.match_score !== null && application.match_score >= MATCH_THRESHOLD)
+    (application?.match_score !== null && application?.match_score !== undefined && application.match_score >= MATCH_THRESHOLD)
 
   if (!isAuthenticated) return null
 
