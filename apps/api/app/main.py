@@ -49,10 +49,95 @@ logger = structlog.get_logger()
 limiter = Limiter(key_func=get_remote_address)
 
 
+def run_seed_on_startup():
+    """Run seed script on startup to ensure base data exists."""
+    from app.core.database import SessionLocal
+    from app.models.user import User, UserRole
+    from app.models.rubric import Rubric, RubricCriteria
+    from app.core.security import get_password_hash
+    from uuid import uuid4
+    from datetime import datetime
+
+    db = SessionLocal()
+    try:
+        # Check if default rubric exists
+        rubric = db.query(Rubric).filter(Rubric.is_default == True).first()
+        if not rubric:
+            logger.info("Creating default rubric...")
+            rubric = Rubric(
+                id=uuid4(),
+                name="Rubrica Estandar de Evaluacion",
+                description="Rubrica por defecto para evaluacion de candidatos",
+                is_default=True,
+                is_active=True,
+                min_score_threshold=3.0,
+                max_candidates_shortlist=10,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            db.add(rubric)
+            db.flush()
+
+            # Add criteria
+            criteria_data = [
+                ("Habilidades Tecnicas", "technical_skills", 1.5, "Dominio de tecnologias y herramientas requeridas"),
+                ("Comunicacion", "communication", 1.0, "Claridad y efectividad en la comunicacion"),
+                ("Resolucion de Problemas", "problem_solving", 1.2, "Capacidad analitica y creatividad"),
+                ("Trabajo en Equipo", "teamwork", 0.8, "Colaboracion y habilidades interpersonales"),
+                ("Liderazgo", "leadership", 0.5, "Capacidad de liderar y mentorear"),
+                ("Adaptabilidad", "adaptability", 0.5, "Flexibilidad ante cambios"),
+                ("Fit Cultural", "cultural_fit", 0.5, "Alineacion con valores de la empresa"),
+            ]
+            for i, (name, key, weight, desc) in enumerate(criteria_data):
+                criteria = RubricCriteria(
+                    id=uuid4(),
+                    rubric_id=rubric.id,
+                    name=name,
+                    key=key,
+                    weight=weight,
+                    description=desc,
+                    order=i,
+                    min_score=1,
+                    max_score=5,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                db.add(criteria)
+            db.commit()
+            logger.info("Default rubric created successfully")
+
+        # Check if admin user exists
+        admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
+        if not admin:
+            logger.info("Creating admin user...")
+            admin = User(
+                id=uuid4(),
+                email="admin@bloqueai.com",
+                hashed_password=get_password_hash("Admin123!"),
+                full_name="Administrador TalentOS",
+                role=UserRole.ADMIN,
+                is_active=True,
+                is_verified=True,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            db.add(admin)
+            db.commit()
+            logger.info("Admin user created: admin@bloqueai.com / Admin123!")
+
+    except Exception as e:
+        logger.error("seed_startup_error", error=str(e))
+        db.rollback()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info("Starting TalentOS API", version="1.0.0")
+    # Run seed on startup
+    run_seed_on_startup()
     yield
     logger.info("Shutting down TalentOS API")
 

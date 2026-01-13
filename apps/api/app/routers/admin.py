@@ -618,3 +618,171 @@ async def get_audit_logs(
         }
         for log in logs
     ]
+
+
+# ============ Data Seeding ============
+
+
+@router.post("/seed/jobs")
+async def seed_jobs(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Seed the database with sample jobs. Admin only."""
+    import structlog
+    from app.models.company import Company
+    from app.models.rubric import Rubric
+    from app.core.security import get_password_hash
+    from uuid import uuid4
+    from datetime import datetime
+    import random
+
+    logger = structlog.get_logger()
+    logger.info("admin_seed_jobs_started", user_id=str(current_user.id))
+
+    # Check if default rubric exists
+    rubric = db.query(Rubric).filter(Rubric.is_default == True).first()
+    if not rubric:
+        return {"success": False, "message": "No default rubric found. Run seed.py first."}
+
+    # Import job templates from seed script
+    from app.models.job import JobStatus, JobModality, SeniorityLevel, JobCategory
+
+    # Sample companies
+    COMPANIES = [
+        {"name": "TechNova Solutions", "slug": "technova-solutions", "industry": "Tecnologia", "description": "Empresa lider en desarrollo de software.", "size": "201-500"},
+        {"name": "MediCare Plus", "slug": "medicare-plus", "industry": "Salud", "description": "Red de clinicas y hospitales.", "size": "501-1000"},
+        {"name": "Legal Partners International", "slug": "legal-partners", "industry": "Legal", "description": "Firma de abogados corporativos.", "size": "51-200"},
+        {"name": "IndustriaMex", "slug": "industriamex", "industry": "Manufactura", "description": "Fabricante de componentes automotrices.", "size": "1001-5000"},
+        {"name": "Banco Financiero Central", "slug": "banco-financiero", "industry": "Finanzas", "description": "Institucion financiera.", "size": "1001-5000"},
+        {"name": "Sonrisas Dental Group", "slug": "sonrisas-dental", "industry": "Dental", "description": "Red de clinicas dentales.", "size": "51-200"},
+    ]
+
+    # Sample job templates
+    JOB_TEMPLATES = [
+        {"title": "Desarrollador Full Stack", "category": JobCategory.TECHNOLOGY, "salary": (45000, 90000), "must_haves": ["JavaScript", "React", "Node.js"]},
+        {"title": "Desarrollador Backend Python", "category": JobCategory.TECHNOLOGY, "salary": (50000, 95000), "must_haves": ["Python", "FastAPI", "PostgreSQL"]},
+        {"title": "Data Engineer", "category": JobCategory.TECHNOLOGY, "salary": (55000, 100000), "must_haves": ["Python", "SQL", "ETL"]},
+        {"title": "Medico General", "category": JobCategory.HEALTHCARE, "salary": (50000, 90000), "must_haves": ["Titulo de medicina", "Cedula profesional"]},
+        {"title": "Enfermero/a Registrado/a", "category": JobCategory.HEALTHCARE, "salary": (30000, 55000), "must_haves": ["Licenciatura en enfermeria"]},
+        {"title": "Abogado Corporativo", "category": JobCategory.LEGAL, "salary": (50000, 100000), "must_haves": ["Titulo de abogado", "Derecho corporativo"]},
+        {"title": "Contador Publico", "category": JobCategory.FINANCE, "salary": (35000, 65000), "must_haves": ["Titulo de contador", "Contabilidad"]},
+        {"title": "Ingeniero de Produccion", "category": JobCategory.MANUFACTURING, "salary": (40000, 75000), "must_haves": ["Ingenieria industrial", "Lean Manufacturing"]},
+        {"title": "Dentista General", "category": JobCategory.DENTAL, "salary": (40000, 80000), "must_haves": ["Titulo de odontologo", "Cedula profesional"]},
+        {"title": "Ortodoncista", "category": JobCategory.DENTAL, "salary": (70000, 130000), "must_haves": ["Especialidad en ortodoncia"]},
+        {"title": "Ejecutivo de Ventas", "category": JobCategory.SALES, "salary": (25000, 50000), "must_haves": ["Ventas", "Negociacion"]},
+        {"title": "Gerente de Marketing", "category": JobCategory.MARKETING, "salary": (60000, 100000), "must_haves": ["Estrategia de marketing", "Presupuestos"]},
+        {"title": "Reclutador/a", "category": JobCategory.HUMAN_RESOURCES, "salary": (25000, 45000), "must_haves": ["Reclutamiento", "Entrevistas"]},
+        {"title": "Coordinador de Logistica", "category": JobCategory.LOGISTICS, "salary": (30000, 50000), "must_haves": ["Logistica", "Supply chain"]},
+        {"title": "Ingeniero Mecanico", "category": JobCategory.ENGINEERING, "salary": (40000, 75000), "must_haves": ["Ingenieria mecanica", "AutoCAD"]},
+    ]
+
+    LOCATIONS = [
+        ("Ciudad de Mexico, CDMX", "Mexico"),
+        ("Guadalajara, Jalisco", "Mexico"),
+        ("Monterrey, Nuevo Leon", "Mexico"),
+        ("Remote - Mexico", "Mexico"),
+        ("Remote - LATAM", "LATAM"),
+    ]
+
+    jobs_created = 0
+
+    try:
+        # Create companies and employers
+        for comp_data in COMPANIES:
+            company = db.query(Company).filter(Company.slug == comp_data["slug"]).first()
+            if not company:
+                company = Company(
+                    id=uuid4(),
+                    name=comp_data["name"],
+                    slug=comp_data["slug"],
+                    description=comp_data["description"],
+                    industry=comp_data["industry"],
+                    size=comp_data["size"],
+                    website=f"https://{comp_data['slug']}.com",
+                    is_active=True,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                db.add(company)
+                db.flush()
+
+            # Create employer for company
+            email = f"hr@{comp_data['slug']}.com"
+            employer = db.query(User).filter(User.email == email).first()
+            if not employer:
+                employer = User(
+                    id=uuid4(),
+                    email=email,
+                    hashed_password=get_password_hash("Employer123!"),
+                    full_name=f"HR Manager - {comp_data['name']}",
+                    role=UserRole.EMPLOYER,
+                    company_id=company.id,
+                    is_active=True,
+                    is_verified=True,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                db.add(employer)
+                db.flush()
+
+            # Create jobs for this company
+            for template in JOB_TEMPLATES:
+                for _ in range(random.randint(2, 4)):
+                    seniority = random.choice([SeniorityLevel.JUNIOR, SeniorityLevel.MID, SeniorityLevel.SENIOR])
+                    modality = random.choice([JobModality.REMOTE, JobModality.HYBRID, JobModality.ONSITE])
+                    location_data = random.choice(LOCATIONS)
+
+                    # Check if job exists
+                    existing = db.query(Job).filter(
+                        Job.company_id == company.id,
+                        Job.title == template["title"],
+                        Job.seniority == seniority,
+                        Job.location == location_data[0]
+                    ).first()
+
+                    if existing:
+                        continue
+
+                    job = Job(
+                        id=uuid4(),
+                        company_id=company.id,
+                        created_by_id=employer.id,
+                        title=template["title"],
+                        slug=f"{template['title'].lower().replace(' ', '-')}-{str(uuid4())[:8]}",
+                        description=f"Buscamos {template['title']} para unirse a nuestro equipo en {company.name}.",
+                        department=template["category"].value.replace("_", " ").title(),
+                        category=template["category"],
+                        seniority=seniority,
+                        salary_min=template["salary"][0],
+                        salary_max=template["salary"][1],
+                        salary_currency="USD",
+                        modality=modality,
+                        location=location_data[0],
+                        country=location_data[1],
+                        must_haves=template["must_haves"],
+                        nice_to_haves=[],
+                        responsibilities=[],
+                        benefits=["Trabajo remoto", "Seguro de gastos medicos", "Bono anual"],
+                        status=JobStatus.ACTIVE,
+                        is_featured=random.random() > 0.9,
+                        rubric_id=rubric.id,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                    )
+                    db.add(job)
+                    jobs_created += 1
+
+        db.commit()
+        logger.info("admin_seed_jobs_completed", jobs_created=jobs_created)
+
+        return {
+            "success": True,
+            "message": f"Seed completado. {jobs_created} trabajos creados.",
+            "jobs_created": jobs_created,
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error("admin_seed_jobs_error", error=str(e))
+        return {"success": False, "message": f"Error: {str(e)}"}
