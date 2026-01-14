@@ -423,10 +423,9 @@ async def analyze_cv(
         )
 
     # Call OpenAI for analysis
-    import openai
     from app.core.config import settings
 
-    # Config uses llm_api_key, not openai_api_key
+    # Config uses llm_api_key
     api_key = settings.llm_api_key
     if not api_key or api_key.strip() == "":
         logger.error("analyze_cv_no_api_key", application_id=str(application_id))
@@ -454,7 +453,9 @@ Modalidad: {job.modality.value if job.modality else 'No especificado'}
 
         cv_text = application.resume_text or "CV sin texto extraido"
 
-        openai.api_key = api_key
+        # OpenAI SDK v1.x requires client instantiation
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
 
         system_prompt = """Eres un experto en reclutamiento y analisis de CVs. Tu tarea es analizar
 un CV contra los requisitos de un puesto de trabajo y proporcionar:
@@ -488,7 +489,7 @@ Responde SIEMPRE en JSON valido con esta estructura exacta:
 Proporciona tu analisis en formato JSON."""
         start_time = datetime.utcnow()
 
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -595,41 +596,10 @@ Proporciona tu analisis en formato JSON."""
             recommended_jobs=recommended_jobs
         )
 
-    except openai.AuthenticationError as e:
-        logger.error("cv_analysis_auth_error", error=str(e), application_id=str(application_id))
-        application.status = ApplicationStatus.CV_UPLOADED
-        db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Error de autenticacion con el servicio de IA. Contacta al administrador."
-        )
-
-    except openai.RateLimitError as e:
-        logger.error("cv_analysis_rate_limit", error=str(e), application_id=str(application_id))
-        application.status = ApplicationStatus.CV_UPLOADED
-        db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Servicio de IA temporalmente no disponible. Intenta de nuevo en unos minutos."
-        )
-
     except Exception as e:
-        logger.error("cv_analysis_error", error=str(e), error_type=type(e).__name__, application_id=str(application_id))
-
-        # Log failed attempt
-        try:
-            llm_log = LLMLog(
-                id=uuid4(),
-                user_id=current_user.id,
-                model="gpt-4o-mini",
-                status="error",
-                error_message=str(e)[:500],  # Limit error message length
-                endpoint="cv_analysis",
-                created_at=datetime.utcnow(),
-            )
-            db.add(llm_log)
-        except Exception:
-            pass  # Don't fail if logging fails
+        error_class = type(e).__name__
+        error_msg = str(e)
+        logger.error("cv_analysis_error", error=error_msg, error_type=error_class, application_id=str(application_id))
 
         # Revert status
         try:
@@ -638,19 +608,43 @@ Proporciona tu analisis en formato JSON."""
         except Exception:
             db.rollback()
 
-        # Provide user-friendly error message
-        error_msg = str(e)
-        if "api_key" in error_msg.lower() or "authentication" in error_msg.lower():
-            detail = "Error de configuracion del servicio de IA. Contacta al administrador."
-        elif "timeout" in error_msg.lower():
-            detail = "El analisis tardo demasiado. Intenta de nuevo."
-        else:
-            detail = f"Error al analizar el CV. Intenta de nuevo. ({type(e).__name__})"
+        # Log failed attempt
+        try:
+            llm_log = LLMLog(
+                id=uuid4(),
+                user_id=current_user.id,
+                model="gpt-4o-mini",
+                status="error",
+                error_message=error_msg[:500],
+                endpoint="cv_analysis",
+                created_at=datetime.utcnow(),
+            )
+            db.add(llm_log)
+            db.commit()
+        except Exception:
+            pass
 
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=detail
-        )
+        # Determine error message based on error type
+        if error_class == "AuthenticationError" or "api_key" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Error de autenticacion con el servicio de IA. Contacta al administrador."
+            )
+        elif error_class == "RateLimitError":
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Servicio de IA temporalmente no disponible. Intenta de nuevo en unos minutos."
+            )
+        elif "timeout" in error_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="El analisis tardo demasiado. Intenta de nuevo."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error al analizar el CV. Intenta de nuevo. ({error_class})"
+            )
 
 
 @router.post("/{application_id}/withdraw")
