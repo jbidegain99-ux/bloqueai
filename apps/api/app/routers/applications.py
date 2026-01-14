@@ -415,9 +415,29 @@ async def analyze_cv(
 
     # Prepare job context for OpenAI
     job = application.job
-    job_context = f"""
-Puesto: {job.title}
-Descripcion: {job.description}
+    if not job:
+        logger.error("analyze_cv_no_job", application_id=str(application_id))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se encontro el puesto asociado a esta aplicacion"
+        )
+
+    # Call OpenAI for analysis
+    import openai
+    from app.core.config import settings
+
+    if not settings.openai_api_key:
+        logger.error("analyze_cv_no_api_key", application_id=str(application_id))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de analisis no disponible. Contacta al administrador."
+        )
+
+    try:
+        # Build job context - inside try block to catch any attribute errors
+        job_context = f"""
+Puesto: {job.title or 'Sin titulo'}
+Descripcion: {job.description or 'Sin descripcion'}
 
 Requisitos obligatorios:
 {chr(10).join(f'- {req}' for req in (job.must_haves or []))}
@@ -430,15 +450,11 @@ Ubicacion: {job.location or 'No especificado'}
 Modalidad: {job.modality.value if job.modality else 'No especificado'}
 """
 
-    cv_text = application.resume_text or "CV sin texto extraido"
+        cv_text = application.resume_text or "CV sin texto extraido"
 
-    # Call OpenAI for analysis
-    import openai
-    from app.core.config import settings
+        openai.api_key = settings.openai_api_key
 
-    openai.api_key = settings.openai_api_key
-
-    system_prompt = """Eres un experto en reclutamiento y analisis de CVs. Tu tarea es analizar
+        system_prompt = """Eres un experto en reclutamiento y analisis de CVs. Tu tarea es analizar
 un CV contra los requisitos de un puesto de trabajo y proporcionar:
 1. Un score de match del 0 al 100
 2. Un perfil del candidato extraido del CV
@@ -459,7 +475,7 @@ Responde SIEMPRE en JSON valido con esta estructura exacta:
   "gaps": ["gap1", "gap2"]
 }"""
 
-    user_prompt = f"""Analiza este CV contra el puesto de trabajo:
+        user_prompt = f"""Analiza este CV contra el puesto de trabajo:
 
 === PUESTO ===
 {job_context}
@@ -468,8 +484,6 @@ Responde SIEMPRE en JSON valido con esta estructura exacta:
 {cv_text}
 
 Proporciona tu analisis en formato JSON."""
-
-    try:
         start_time = datetime.utcnow()
 
         response = openai.chat.completions.create(
@@ -579,28 +593,61 @@ Proporciona tu analisis en formato JSON."""
             recommended_jobs=recommended_jobs
         )
 
-    except Exception as e:
-        logger.error("cv_analysis_error", error=str(e), application_id=str(application_id))
-
-        # Log failed attempt
-        llm_log = LLMLog(
-            id=uuid4(),
-            user_id=current_user.id,
-            model="gpt-4o-mini",
-            status="error",
-            error_message=str(e),
-            endpoint="cv_analysis",
-            created_at=datetime.utcnow(),
-        )
-        db.add(llm_log)
-
-        # Revert status
+    except openai.AuthenticationError as e:
+        logger.error("cv_analysis_auth_error", error=str(e), application_id=str(application_id))
         application.status = ApplicationStatus.CV_UPLOADED
         db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error de autenticacion con el servicio de IA. Contacta al administrador."
+        )
+
+    except openai.RateLimitError as e:
+        logger.error("cv_analysis_rate_limit", error=str(e), application_id=str(application_id))
+        application.status = ApplicationStatus.CV_UPLOADED
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Servicio de IA temporalmente no disponible. Intenta de nuevo en unos minutos."
+        )
+
+    except Exception as e:
+        logger.error("cv_analysis_error", error=str(e), error_type=type(e).__name__, application_id=str(application_id))
+
+        # Log failed attempt
+        try:
+            llm_log = LLMLog(
+                id=uuid4(),
+                user_id=current_user.id,
+                model="gpt-4o-mini",
+                status="error",
+                error_message=str(e)[:500],  # Limit error message length
+                endpoint="cv_analysis",
+                created_at=datetime.utcnow(),
+            )
+            db.add(llm_log)
+        except Exception:
+            pass  # Don't fail if logging fails
+
+        # Revert status
+        try:
+            application.status = ApplicationStatus.CV_UPLOADED
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # Provide user-friendly error message
+        error_msg = str(e)
+        if "api_key" in error_msg.lower() or "authentication" in error_msg.lower():
+            detail = "Error de configuracion del servicio de IA. Contacta al administrador."
+        elif "timeout" in error_msg.lower():
+            detail = "El analisis tardo demasiado. Intenta de nuevo."
+        else:
+            detail = f"Error al analizar el CV. Intenta de nuevo. ({type(e).__name__})"
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al analizar el CV: {str(e)}"
+            detail=detail
         )
 
 
