@@ -513,12 +513,13 @@ Proporciona tu analisis en formato JSON."""
             id=uuid4(),
             user_id=current_user.id,
             model="gpt-4o-mini",
-            prompt_tokens=response.usage.prompt_tokens if response.usage else 0,
-            completion_tokens=response.usage.completion_tokens if response.usage else 0,
+            tokens_in=response.usage.prompt_tokens if response.usage else 0,
+            tokens_out=response.usage.completion_tokens if response.usage else 0,
             total_tokens=response.usage.total_tokens if response.usage else 0,
-            latency_ms=latency_ms,
+            latency_ms=int(latency_ms),
             status="success",
             endpoint="cv_analysis",
+            operation="cv_analysis",
             created_at=datetime.utcnow(),
         )
         db.add(llm_log)
