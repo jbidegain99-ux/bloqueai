@@ -426,7 +426,9 @@ async def analyze_cv(
     import openai
     from app.core.config import settings
 
-    if not settings.openai_api_key:
+    # Config uses llm_api_key, not openai_api_key
+    api_key = settings.llm_api_key
+    if not api_key or api_key.strip() == "":
         logger.error("analyze_cv_no_api_key", application_id=str(application_id))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -452,7 +454,7 @@ Modalidad: {job.modality.value if job.modality else 'No especificado'}
 
         cv_text = application.resume_text or "CV sin texto extraido"
 
-        openai.api_key = settings.openai_api_key
+        openai.api_key = api_key
 
         system_prompt = """Eres un experto en reclutamiento y analisis de CVs. Tu tarea es analizar
 un CV contra los requisitos de un puesto de trabajo y proporcionar:
