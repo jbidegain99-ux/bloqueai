@@ -37,6 +37,7 @@ interface Job {
   nice_to_haves: string[]
   location?: string
   modality?: string
+  match_threshold?: number
 }
 
 interface Application {
@@ -57,9 +58,10 @@ interface Application {
   resume_filename: string | null
 }
 
-type ApplyStep = 'upload' | 'analyzing' | 'results'
+type ApplyStep = 'pre-upload' | 'upload' | 'analyzing' | 'results'
 
-const MATCH_THRESHOLD = 70
+// System default threshold - will be overridden by job.match_threshold if available
+const SYSTEM_DEFAULT_THRESHOLD = 70
 
 export default function ApplyPage() {
   const router = useRouter()
@@ -69,13 +71,14 @@ export default function ApplyPage() {
   const { isAuthenticated, accessToken } = useAuthStore()
   const [job, setJob] = useState<Job | null>(null)
   const [application, setApplication] = useState<Application | null>(null)
-  const [step, setStep] = useState<ApplyStep>('upload')
+  const [step, setStep] = useState<ApplyStep>('pre-upload')
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [showExampleCV, setShowExampleCV] = useState(false)
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -99,8 +102,12 @@ export default function ApplyPage() {
         setApplication(appData as any)
 
         // Set step based on application status
-        if (appData.status === 'CV_UPLOADED') {
-          setStep('upload') // Allow re-upload or proceed to analyze
+        if (appData.status === 'CREATED') {
+          // New application, show pre-upload step
+          setStep('pre-upload')
+        } else if (appData.status === 'CV_UPLOADED') {
+          // CV already uploaded, go to upload step to allow re-upload or analyze
+          setStep('upload')
         } else if (['MATCH_PASSED', 'MATCH_BELOW_THRESHOLD'].includes(appData.status)) {
           // Already analyzed, show results
           const fullApp = await applicationsApi.get(accessToken, appData.id)
@@ -200,10 +207,18 @@ export default function ApplyPage() {
   const handleStartInterview = async () => {
     if (!accessToken || !application) return
 
+    setError(null)
+
     try {
-      // Start interview with job context
-      await candidateApi.startInterview(accessToken, jobId)
-      router.push(`/candidate/interview?job_id=${jobId}`)
+      // Start interview with job context and get session ID
+      const session = await candidateApi.startInterview(accessToken, jobId)
+
+      if (!session?.id) {
+        throw new Error('No se pudo crear la sesion de entrevista')
+      }
+
+      // Redirect to the real interview UI with session ID
+      router.push(`/candidate/interview/${session.id}`)
     } catch (err: any) {
       console.error('Error starting interview:', err)
       setError(err?.message || 'Error al iniciar la entrevista')
@@ -214,20 +229,23 @@ export default function ApplyPage() {
     router.push(`/candidate/apply/${recommendedJobId}`)
   }
 
+  // Get effective threshold from job or use system default
+  const matchThreshold = job?.match_threshold ?? SYSTEM_DEFAULT_THRESHOLD
+
   const getScoreColor = (score: number) => {
-    if (score >= MATCH_THRESHOLD) return 'text-green-600'
+    if (score >= matchThreshold) return 'text-green-600'
     if (score >= 50) return 'text-yellow-600'
     return 'text-red-600'
   }
 
   const getScoreBg = (score: number) => {
-    if (score >= MATCH_THRESHOLD) return 'bg-green-100'
+    if (score >= matchThreshold) return 'bg-green-100'
     if (score >= 50) return 'bg-yellow-100'
     return 'bg-red-100'
   }
 
   const canProceedToInterview = application?.status === 'MATCH_PASSED' ||
-    (application?.match_score !== null && application?.match_score !== undefined && application.match_score >= MATCH_THRESHOLD)
+    (application?.match_score !== null && application?.match_score !== undefined && application.match_score >= matchThreshold)
 
   if (!isAuthenticated) return null
 
@@ -266,38 +284,214 @@ export default function ApplyPage() {
         {/* Progress steps */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
+            {/* Step 1: Preparacion */}
+            <div className={`flex items-center gap-2 ${step === 'pre-upload' ? 'text-bloque-navy900' : 'text-muted-foreground'}`}>
+              <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                step === 'pre-upload' ? 'bg-bloque-navy900 text-white' :
+                ['upload', 'analyzing', 'results'].includes(step) ? 'bg-green-500 text-white' : 'bg-gray-200'
+              }`}>
+                {['upload', 'analyzing', 'results'].includes(step) ? <CheckCircle2 className="h-4 w-4" /> : '1'}
+              </div>
+              <span className="text-sm font-medium hidden sm:inline">Preparacion</span>
+            </div>
+            <div className="flex-1 h-0.5 bg-gray-200 mx-2 sm:mx-4" />
+            {/* Step 2: Subir CV */}
             <div className={`flex items-center gap-2 ${step === 'upload' ? 'text-bloque-navy900' : 'text-muted-foreground'}`}>
               <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium ${
                 step === 'upload' ? 'bg-bloque-navy900 text-white' :
                 ['analyzing', 'results'].includes(step) ? 'bg-green-500 text-white' : 'bg-gray-200'
               }`}>
-                {['analyzing', 'results'].includes(step) ? <CheckCircle2 className="h-4 w-4" /> : '1'}
+                {['analyzing', 'results'].includes(step) ? <CheckCircle2 className="h-4 w-4" /> : '2'}
               </div>
-              <span className="text-sm font-medium">Subir CV</span>
+              <span className="text-sm font-medium hidden sm:inline">Subir CV</span>
             </div>
-            <div className="flex-1 h-0.5 bg-gray-200 mx-4" />
+            <div className="flex-1 h-0.5 bg-gray-200 mx-2 sm:mx-4" />
+            {/* Step 3: Analisis */}
             <div className={`flex items-center gap-2 ${step === 'analyzing' ? 'text-bloque-navy900' : step === 'results' ? 'text-green-600' : 'text-muted-foreground'}`}>
               <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium ${
                 step === 'analyzing' ? 'bg-bloque-navy900 text-white' :
                 step === 'results' ? 'bg-green-500 text-white' : 'bg-gray-200'
               }`}>
-                {step === 'results' ? <CheckCircle2 className="h-4 w-4" /> : '2'}
+                {step === 'results' ? <CheckCircle2 className="h-4 w-4" /> : '3'}
               </div>
-              <span className="text-sm font-medium">Analisis IA</span>
+              <span className="text-sm font-medium hidden sm:inline">Analisis IA</span>
             </div>
-            <div className="flex-1 h-0.5 bg-gray-200 mx-4" />
+            <div className="flex-1 h-0.5 bg-gray-200 mx-2 sm:mx-4" />
+            {/* Step 4: Entrevista */}
             <div className={`flex items-center gap-2 ${canProceedToInterview ? 'text-bloque-navy900' : 'text-muted-foreground'}`}>
               <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium ${
                 canProceedToInterview ? 'bg-bloque-gold500 text-white' : 'bg-gray-200'
               }`}>
-                3
+                4
               </div>
-              <span className="text-sm font-medium">Entrevista</span>
+              <span className="text-sm font-medium hidden sm:inline">Entrevista</span>
             </div>
           </div>
         </div>
 
         {/* Content based on step */}
+
+        {/* Pre-upload step: CV preparation message */}
+        {step === 'pre-upload' && (
+          <BrandCard className="p-8">
+            <div className="text-center mb-6">
+              <FileText className="h-12 w-12 text-bloque-gold500 mx-auto mb-3" />
+              <h2 className="text-xl font-semibold mb-2">Preparate para aplicar</h2>
+              <p className="text-muted-foreground mb-6">
+                Antes de subir tu CV, asegurate de que este actualizado y optimizado para este puesto
+              </p>
+            </div>
+
+            {/* Tips card */}
+            <div className="bg-bloque-gray50 rounded-lg p-6 mb-6">
+              <h3 className="font-medium text-bloque-navy900 mb-4">Consejos para tu CV:</h3>
+              <ul className="space-y-3 text-sm text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <span>Incluye las habilidades clave mencionadas en la descripcion del puesto</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <span>Destaca logros cuantificables en tus experiencias previas</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <span>Asegurate de que tu informacion de contacto este correcta</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  <span>Usa formato PDF o DOCX para mejor compatibilidad</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Requirements preview */}
+            {job && (job.must_haves?.length > 0 || job.nice_to_haves?.length > 0) && (
+              <div className="border border-bloque-slate200 rounded-lg p-6 mb-6">
+                <h3 className="font-medium text-bloque-navy900 mb-4">Requisitos del puesto:</h3>
+                {job.must_haves?.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-sm font-medium text-bloque-navy900 mb-2">Requeridos:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {job.must_haves.map((skill, idx) => (
+                        <Badge key={idx} variant="outline">{skill}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {job.nice_to_haves?.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground mb-2">Deseables:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {job.nice_to_haves.map((skill, idx) => (
+                        <Badge key={idx} variant="secondary" className="bg-gray-100 text-gray-700">{skill}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowExampleCV(true)}
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                Ver ejemplo de CV
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => setStep('upload')}
+              >
+                Continuar
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </div>
+          </BrandCard>
+        )}
+
+        {/* Example CV Modal */}
+        {showExampleCV && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Ejemplo de CV para {job?.title || 'este puesto'}</h3>
+                  <Button variant="ghost" size="sm" onClick={() => setShowExampleCV(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="border border-gray-200 rounded-lg p-6 bg-gray-50">
+                  <div className="space-y-4 text-sm">
+                    <div>
+                      <h4 className="font-semibold text-bloque-navy900">JUAN PEREZ GARCIA</h4>
+                      <p className="text-muted-foreground">Ciudad de Mexico | juan.perez@email.com | +52 55 1234 5678</p>
+                    </div>
+
+                    <div>
+                      <h5 className="font-medium text-bloque-navy900 border-b pb-1 mb-2">PERFIL PROFESIONAL</h5>
+                      <p className="text-muted-foreground">
+                        Profesional con X anos de experiencia en [area relevante al puesto].
+                        Especializado en {job?.must_haves?.slice(0, 2).join(', ') || 'habilidades clave'}.
+                        Orientado a resultados con capacidad demostrada para [logro relevante].
+                      </p>
+                    </div>
+
+                    <div>
+                      <h5 className="font-medium text-bloque-navy900 border-b pb-1 mb-2">EXPERIENCIA LABORAL</h5>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="font-medium">Cargo Anterior | Empresa ABC</p>
+                          <p className="text-xs text-muted-foreground">Ene 2020 - Presente</p>
+                          <ul className="list-disc list-inside text-muted-foreground mt-1">
+                            <li>Logro cuantificable #1 (ej: "Aumente las ventas en 30%")</li>
+                            <li>Responsabilidad relacionada con {job?.must_haves?.[0] || 'habilidad clave'}</li>
+                            <li>Implementacion de mejoras en procesos</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h5 className="font-medium text-bloque-navy900 border-b pb-1 mb-2">HABILIDADES</h5>
+                      <div className="flex flex-wrap gap-2">
+                        {(job?.must_haves || ['Habilidad 1', 'Habilidad 2', 'Habilidad 3']).map((skill, idx) => (
+                          <Badge key={idx} variant="outline">{skill}</Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h5 className="font-medium text-bloque-navy900 border-b pb-1 mb-2">EDUCACION</h5>
+                      <p className="text-muted-foreground">
+                        Licenciatura/Ingenieria en [Campo Relevante]<br />
+                        Universidad XYZ | 2015 - 2019
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    <strong>Tip:</strong> Adapta tu CV para destacar las habilidades que coinciden
+                    con los requisitos del puesto. Los CVs personalizados tienen mejor match.
+                  </p>
+                </div>
+
+                <div className="mt-4 flex justify-end">
+                  <Button onClick={() => setShowExampleCV(false)}>
+                    Entendido
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {step === 'upload' && (
           <BrandCard className="p-8">
             <div className="text-center mb-6">
@@ -429,7 +623,7 @@ export default function ApplyPage() {
                   <p className="text-muted-foreground">
                     {canProceedToInterview
                       ? `Tu perfil tiene un ${application.match_score}% de compatibilidad. Puedes continuar a la entrevista.`
-                      : `Tu perfil tiene un ${application.match_score}% de compatibilidad. Se requiere minimo ${MATCH_THRESHOLD}% para la entrevista.`
+                      : `Tu perfil tiene un ${application.match_score}% de compatibilidad. Se requiere minimo ${matchThreshold}% para la entrevista.`
                     }
                   </p>
                 </div>
@@ -551,7 +745,7 @@ export default function ApplyPage() {
             {!canProceedToInterview && (
               <div className="p-4 bg-amber-50 rounded-lg">
                 <p className="text-sm text-amber-800 text-center">
-                  <strong>Nota:</strong> Tu perfil no alcanza el umbral minimo de {MATCH_THRESHOLD}% para este puesto.
+                  <strong>Nota:</strong> Tu perfil no alcanza el umbral minimo de {matchThreshold}% para este puesto.
                   Te recomendamos aplicar a los puestos sugeridos arriba o mejorar tu CV con las habilidades indicadas.
                 </p>
               </div>

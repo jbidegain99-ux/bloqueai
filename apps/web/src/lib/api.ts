@@ -131,24 +131,54 @@ export const candidateApi = {
     fetchApi('/candidate/resumes', { token }),
 
   startInterview: (token: string, jobId?: string) =>
-    fetchApi('/candidate/interview/start', {
+    fetchApi<{
+      id: string
+      status: string
+      current_question_index: number
+      total_questions: number
+      messages: Array<{ role: string; content: string; sequence: number }>
+      job_id?: string
+      started_at?: string
+    }>('/candidate/interview/start', {
       method: 'POST',
       body: { job_id: jobId },
       token,
     }),
 
   sendMessage: (token: string, sessionId: string, content: string) =>
-    fetchApi(`/candidate/interview/${sessionId}/message`, {
+    fetchApi<{
+      id: string
+      status: string
+      current_question_index: number
+      total_questions: number
+      messages: Array<{ role: string; content: string; sequence: number }>
+    }>(`/candidate/interview/${sessionId}/message`, {
       method: 'POST',
       body: { content },
       token,
     }),
 
   completeInterview: (token: string, sessionId: string) =>
-    fetchApi(`/candidate/interview/${sessionId}/complete`, {
+    fetchApi<{
+      session_id: string
+      status: string
+      message: string
+      report_status: string
+    }>(`/candidate/interview/${sessionId}/complete`, {
       method: 'POST',
       token,
     }),
+
+  getInterviewSession: (token: string, sessionId: string) =>
+    fetchApi<{
+      id: string
+      status: string
+      current_question_index: number
+      total_questions: number
+      messages: Array<{ role: string; content: string; sequence: number }>
+      job_id?: string
+      started_at?: string
+    }>(`/candidate/interview/${sessionId}`, { token }),
 
   getInterviews: (token: string) =>
     fetchApi('/candidate/interviews', { token }),
@@ -202,8 +232,43 @@ export const employerApi = {
       token,
     }),
 
-  exportShortlist: (token: string, jobId: string) => {
-    window.open(`${API_URL}/employer/jobs/${jobId}/shortlist/export.csv?token=${token}`, '_blank')
+  exportShortlist: async (token: string, jobId: string) => {
+    // Use fetch with proper Authorization header instead of window.open with query token
+    const response = await fetch(`${API_URL}/employer/jobs/${jobId}/shortlist/export.csv`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null)
+      throw new ApiError(
+        errorData?.detail || 'Error al exportar shortlist',
+        response.status,
+        errorData
+      )
+    }
+
+    // Get filename from Content-Disposition header or use default
+    const contentDisposition = response.headers.get('Content-Disposition')
+    let filename = `shortlist-${jobId}.csv`
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+      if (filenameMatch && filenameMatch[1]) {
+        filename = filenameMatch[1].replace(/['"]/g, '')
+      }
+    }
+
+    // Create blob and trigger download
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   },
 
   getCandidateDetail: (token: string, jobId: string, candidateId: string) =>
@@ -292,6 +357,7 @@ export const publicApi = {
     seniority?: string
     modality?: string
     location?: string
+    country?: string
     salary_min?: number
     salary_max?: number
   }) => {
@@ -303,6 +369,7 @@ export const publicApi = {
     if (params?.seniority) queryParams.set('seniority', params.seniority)
     if (params?.modality) queryParams.set('modality', params.modality)
     if (params?.location) queryParams.set('location', params.location)
+    if (params?.country) queryParams.set('country', params.country)
     if (params?.salary_min) queryParams.set('salary_min', params.salary_min.toString())
     if (params?.salary_max) queryParams.set('salary_max', params.salary_max.toString())
 
@@ -327,6 +394,12 @@ export const publicApi = {
 
   getModalities: () =>
     fetchApi<{ modalities: { value: string; label: string }[] }>('/public/jobs/modality/list'),
+
+  getLocations: () =>
+    fetchApi<{
+      countries: { value: string; label: string }[]
+      locations: { value: string; label: string }[]
+    }>('/public/jobs/locations/list'),
 }
 
 // Applications API (new wizard flow)

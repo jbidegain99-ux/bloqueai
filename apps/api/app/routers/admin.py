@@ -316,7 +316,7 @@ def format_interview_for_review(session: InterviewSession) -> dict:
         "id": str(session.id),
         "candidate_id": str(session.candidate_id),
         "job_id": str(session.job_id) if session.job_id else None,
-        "status": session.status,
+        "status": session.status.value if hasattr(session.status, 'value') else str(session.status),
         "current_question_index": session.current_question_index,
         "total_questions": session.total_questions,
         "interview_type": session.interview_type,
@@ -329,7 +329,7 @@ def format_interview_for_review(session: InterviewSession) -> dict:
         "requires_review": session.requires_review,
         "messages": [
             {
-                "role": msg.role,
+                "role": msg.role.value if hasattr(msg.role, 'value') else str(msg.role),
                 "content": msg.content,
                 "sequence": msg.sequence,
                 "question_id": msg.question_id,
