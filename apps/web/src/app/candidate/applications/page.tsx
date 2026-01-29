@@ -33,7 +33,7 @@ interface Application {
   status: string
   match_score: number | null
   resume_filename: string | null
-  interview_session_id: string | null
+  interview_session_id?: string | null
   job: {
     id: string
     title: string
