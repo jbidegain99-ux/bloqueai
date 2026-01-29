@@ -295,7 +295,7 @@ export default function CandidateProfilePage() {
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Overall Score */}
-          {hasInterview && (
+          {hasCompletedInterview && (
             <BrandCard className="text-center">
               <h3 className="text-lg font-semibold text-bloque-navy900 mb-4">
                 Puntuacion General
