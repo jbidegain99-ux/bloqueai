@@ -530,15 +530,19 @@ Proporciona tu analisis en formato JSON."""
         match_reasons = analysis.get("match_reasons", [])
         gaps = analysis.get("gaps", [])
 
-        # Determine status based on match score
-        if match_score >= 70:
+        # Get threshold from job or use system default (70)
+        SYSTEM_DEFAULT_THRESHOLD = 70
+        match_threshold = job.match_threshold if job.match_threshold is not None else SYSTEM_DEFAULT_THRESHOLD
+
+        # Determine status based on match score vs threshold
+        if match_score >= match_threshold:
             new_status = ApplicationStatus.MATCH_PASSED
         else:
             new_status = ApplicationStatus.MATCH_BELOW_THRESHOLD
 
         # If low match, find recommended jobs
         recommended_jobs = None
-        if match_score < 70:
+        if match_score < match_threshold:
             # Find similar jobs with potentially better match
             similar_jobs = db.query(Job).filter(
                 Job.status == JobStatus.ACTIVE,

@@ -104,7 +104,8 @@ async def list_jobs(
     category: Optional[str] = Query(None, description="Filter by category"),
     seniority: Optional[str] = Query(None, description="Filter by seniority level"),
     modality: Optional[str] = Query(None, description="Filter by work modality"),
-    location: Optional[str] = Query(None, description="Filter by location"),
+    location: Optional[str] = Query(None, description="Filter by location/city"),
+    country: Optional[str] = Query(None, description="Filter by country"),
     salary_min: Optional[int] = Query(None, description="Minimum salary"),
     salary_max: Optional[int] = Query(None, description="Maximum salary"),
     db: Session = Depends(get_db),
@@ -159,6 +160,10 @@ async def list_jobs(
     if location:
         query = query.filter(Job.location.ilike(f"%{location}%"))
 
+    # Apply country filter
+    if country:
+        query = query.filter(Job.country.ilike(f"%{country}%"))
+
     # Apply salary filters
     if salary_min is not None:
         query = query.filter(Job.salary_max >= salary_min)
@@ -178,7 +183,7 @@ async def list_jobs(
         .all()
     )
 
-    # Format response
+    # Format response - hide real company name from candidates
     return {
         "items": [
             {
@@ -201,7 +206,7 @@ async def list_jobs(
                 "is_featured": job.is_featured,
                 "company": {
                     "id": str(job.company.id),
-                    "name": job.company.name,
+                    "name": getattr(job, 'display_company_name', None) or "Bloque Internacional",
                     "slug": job.company.slug,
                     "industry": job.company.industry,
                     "logo_url": job.company.logo_url,
@@ -236,6 +241,13 @@ async def get_job_detail(
             detail="Puesto no encontrado",
         )
 
+    # Get threshold (job-specific or system default)
+    SYSTEM_DEFAULT_THRESHOLD = 70
+    effective_threshold = job.match_threshold if job.match_threshold is not None else SYSTEM_DEFAULT_THRESHOLD
+
+    # Get display name (hide real company from candidates)
+    display_name = getattr(job, 'display_company_name', None) or "Bloque Internacional"
+
     return {
         "id": str(job.id),
         "title": job.title,
@@ -256,14 +268,15 @@ async def get_job_detail(
         "responsibilities": job.responsibilities or [],
         "benefits": job.benefits or [],
         "is_featured": job.is_featured,
+        "match_threshold": effective_threshold,
         "company": {
             "id": str(job.company.id),
-            "name": job.company.name,
+            "name": display_name,  # Always show display name to candidates
             "slug": job.company.slug,
             "description": job.company.description,
             "industry": job.company.industry,
             "size": job.company.size,
-            "website": job.company.website,
+            "website": None,  # Hide website from candidates
             "logo_url": job.company.logo_url,
         },
         "created_at": job.created_at.isoformat() if job.created_at else None,
@@ -316,4 +329,35 @@ async def list_modalities():
             {"value": mod.value, "label": labels.get(mod.value, mod.value)}
             for mod in JobModality
         ]
+    }
+
+
+@router.get("/jobs/locations/list")
+async def list_locations(
+    db: Session = Depends(get_db),
+):
+    """Get available countries and cities from active jobs."""
+    # Query distinct countries from active jobs
+    countries_query = (
+        db.query(Job.country)
+        .filter(Job.status == JobStatus.ACTIVE)
+        .filter(Job.country.isnot(None))
+        .distinct()
+        .all()
+    )
+    countries = sorted([c[0] for c in countries_query if c[0]])
+
+    # Query distinct locations (cities) from active jobs
+    locations_query = (
+        db.query(Job.location)
+        .filter(Job.status == JobStatus.ACTIVE)
+        .filter(Job.location.isnot(None))
+        .distinct()
+        .all()
+    )
+    locations = sorted([l[0] for l in locations_query if l[0]])
+
+    return {
+        "countries": [{"value": c, "label": c} for c in countries],
+        "locations": [{"value": l, "label": l} for l in locations],
     }

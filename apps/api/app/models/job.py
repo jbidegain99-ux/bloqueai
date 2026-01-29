@@ -129,6 +129,12 @@ class Job(BaseModel):
     )
     is_featured = Column(Boolean, default=False, nullable=False)
 
+    # Match threshold for this job (NULL = use system default of 70)
+    match_threshold = Column(Integer, nullable=True)
+
+    # Display name for candidates (always shows this instead of real company name)
+    display_company_name = Column(String(255), default="Bloque Internacional", nullable=True)
+
     # Rubric association
     rubric_id = Column(UUID(as_uuid=True), ForeignKey("rubrics.id"), nullable=True)
 

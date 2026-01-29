@@ -10,14 +10,26 @@ import { ScoreDisplay, CompetencyScores } from '@/components/brand/ScoreDisplay'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/lib/auth'
-import { candidateApi } from '@/lib/api'
-import { MapPin, Briefcase, GraduationCap, Star, AlertCircle, FileText, MessageSquare, Upload, ArrowRight, CheckCircle } from 'lucide-react'
+import { candidateApi, applicationsApi } from '@/lib/api'
+import { MapPin, Briefcase, GraduationCap, Star, AlertCircle, FileText, MessageSquare, Upload, ArrowRight, CheckCircle, Play } from 'lucide-react'
+
+interface ApplicationForGating {
+  id: string
+  status: string
+  match_score: number | null
+  job_id: string
+  job?: {
+    id: string
+    title: string
+  } | null
+}
 
 export default function CandidateProfilePage() {
   const router = useRouter()
   const { accessToken, isAuthenticated, user } = useAuthStore()
   const [profile, setProfile] = useState<any>(null)
   const [report, setReport] = useState<any>(null)
+  const [applications, setApplications] = useState<ApplicationForGating[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -30,12 +42,14 @@ export default function CandidateProfilePage() {
       if (!accessToken) return
 
       try {
-        const [profileData, reportData] = await Promise.all([
+        const [profileData, reportData, appsData] = await Promise.all([
           candidateApi.getProfile(accessToken),
           candidateApi.getReport(accessToken).catch(() => null),
+          applicationsApi.list(accessToken).catch(() => []),
         ])
         setProfile(profileData)
         setReport(reportData)
+        setApplications(appsData || [])
       } catch (err) {
         console.error('Error loading profile:', err)
       } finally {
@@ -59,8 +73,20 @@ export default function CandidateProfilePage() {
   }
 
   const hasCV = profile?.skills?.length > 0 || profile?.experience?.length > 0
-  const hasInterview = report?.overall_score !== undefined && report?.overall_score !== null
+
+  // Check for actual completed interview report (not just any report)
+  const hasCompletedInterview = report?.overall_score !== undefined && report?.overall_score !== null
   const hasCompetencies = report?.competency_scores && Object.keys(report.competency_scores).length > 0
+
+  // Gating: Check if candidate has an approved application to enable interview
+  const approvedStatuses = ['MATCH_PASSED', 'INTERVIEW_STARTED', 'INTERVIEW_COMPLETED']
+  const approvedApplication = applications.find(app => approvedStatuses.includes(app.status))
+  const canAccessInterview = !!approvedApplication
+
+  // Find application that's ready for interview (MATCH_PASSED but not yet started)
+  const interviewReadyApp = applications.find(app => app.status === 'MATCH_PASSED')
+  // Find application with interview in progress
+  const interviewInProgressApp = applications.find(app => app.status === 'INTERVIEW_STARTED')
 
   return (
     <AppShell>
@@ -100,33 +126,71 @@ export default function CandidateProfilePage() {
           </div>
         </BrandCard>
 
-        <BrandCard className={hasInterview ? 'border-green-200 bg-green-50/50' : 'border-yellow-200 bg-yellow-50/50'}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-full ${hasInterview ? 'bg-green-100' : 'bg-yellow-100'}`}>
-                {hasInterview ? (
-                  <CheckCircle className="h-5 w-5 text-green-600" />
-                ) : (
-                  <MessageSquare className="h-5 w-5 text-yellow-600" />
-                )}
+        {/* Interview Card - Only show if candidate has an approved application (gating) */}
+        {canAccessInterview ? (
+          <BrandCard className={hasCompletedInterview ? 'border-green-200 bg-green-50/50' : 'border-blue-200 bg-blue-50/50'}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-full ${hasCompletedInterview ? 'bg-green-100' : 'bg-blue-100'}`}>
+                  {hasCompletedInterview ? (
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                  ) : (
+                    <Play className="h-5 w-5 text-blue-600" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-medium text-bloque-navy900">Entrevista IA</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {hasCompletedInterview
+                      ? 'Entrevista completada'
+                      : interviewInProgressApp
+                        ? 'Entrevista en progreso - continua donde lo dejaste'
+                        : `Tienes una aplicacion aprobada${interviewReadyApp?.job?.title ? ` para ${interviewReadyApp.job.title}` : ''}`
+                    }
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-medium text-bloque-navy900">Entrevista IA</h3>
-                <p className="text-sm text-muted-foreground">
-                  {hasInterview ? 'Entrevista completada' : 'Completa una entrevista para evaluar tus competencias'}
-                </p>
-              </div>
+              {!hasCompletedInterview && interviewReadyApp && (
+                <Link href={`/candidate/apply/${interviewReadyApp.job_id}`}>
+                  <Button size="sm" variant="outline">
+                    <Play className="h-4 w-4 mr-1" />
+                    Iniciar entrevista
+                  </Button>
+                </Link>
+              )}
+              {!hasCompletedInterview && interviewInProgressApp && (
+                <Link href={`/candidate/apply/${interviewInProgressApp.job_id}`}>
+                  <Button size="sm" variant="outline">
+                    <ArrowRight className="h-4 w-4 mr-1" />
+                    Continuar
+                  </Button>
+                </Link>
+              )}
             </div>
-            {!hasInterview && (
-              <Link href="/candidate/interview">
+          </BrandCard>
+        ) : (
+          <BrandCard className="border-gray-200 bg-gray-50/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-full bg-gray-100">
+                  <MessageSquare className="h-5 w-5 text-gray-400" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-bloque-navy900">Entrevista IA</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Aplica a un puesto y alcanza el umbral de match para acceder a la entrevista
+                  </p>
+                </div>
+              </div>
+              <Link href="/candidate/jobs">
                 <Button size="sm" variant="outline">
-                  <ArrowRight className="h-4 w-4 mr-1" />
-                  Iniciar
+                  <Briefcase className="h-4 w-4 mr-1" />
+                  Ver puestos
                 </Button>
               </Link>
-            )}
-          </div>
-        </BrandCard>
+            </div>
+          </BrandCard>
+        )}
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6 mt-6">
@@ -243,18 +307,34 @@ export default function CandidateProfilePage() {
             </BrandCard>
           )}
 
-          {/* No Interview Message */}
-          {!hasInterview && hasCV && (
+          {/* Interview CTA - Only show if CV uploaded but interview not completed, and has approved application */}
+          {!hasCompletedInterview && hasCV && canAccessInterview && interviewReadyApp && (
             <BrandCard className="text-center">
-              <MessageSquare className="h-10 w-10 text-bloque-slate200 mx-auto mb-3" />
+              <Play className="h-10 w-10 text-blue-500 mx-auto mb-3" />
               <h3 className="font-medium text-bloque-navy900 mb-2">
-                Completa tu entrevista
+                Listo para tu entrevista
               </h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Responde algunas preguntas para evaluar tus competencias
+                Tu aplicacion fue aprobada. Completa la entrevista con IA para avanzar en el proceso.
               </p>
-              <Link href="/candidate/interview">
+              <Link href={`/candidate/apply/${interviewReadyApp.job_id}`}>
                 <Button size="sm">Iniciar entrevista</Button>
+              </Link>
+            </BrandCard>
+          )}
+
+          {/* No approved application - guide to apply */}
+          {!hasCompletedInterview && hasCV && !canAccessInterview && (
+            <BrandCard className="text-center">
+              <Briefcase className="h-10 w-10 text-bloque-slate200 mx-auto mb-3" />
+              <h3 className="font-medium text-bloque-navy900 mb-2">
+                Aplica a un puesto
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Explora puestos disponibles y aplica para acceder a la entrevista con IA
+              </p>
+              <Link href="/candidate/jobs">
+                <Button size="sm">Ver puestos</Button>
               </Link>
             </BrandCard>
           )}

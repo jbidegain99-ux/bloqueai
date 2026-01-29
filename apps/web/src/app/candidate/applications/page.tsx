@@ -33,6 +33,7 @@ interface Application {
   status: string
   match_score: number | null
   resume_filename: string | null
+  interview_session_id: string | null
   job: {
     id: string
     title: string
@@ -160,7 +161,13 @@ export default function ApplicationsPage() {
   }, [accessToken])
 
   const handleAction = (app: Application) => {
-    // Navigate to the apply page for this job, which will load the existing application
+    // If interview is in progress and we have a session ID, go directly to interview
+    if (app.status === 'INTERVIEW_STARTED' && app.interview_session_id) {
+      router.push(`/candidate/interview/${app.interview_session_id}`)
+      return
+    }
+
+    // Otherwise, navigate to the apply page for this job
     router.push(`/candidate/apply/${app.job_id}`)
   }
 

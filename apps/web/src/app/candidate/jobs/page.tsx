@@ -124,25 +124,29 @@ export default function CandidateJobsPage() {
   const [category, setCategory] = useState(searchParams.get('category') || '')
   const [seniority, setSeniority] = useState(searchParams.get('seniority') || '')
   const [modality, setModality] = useState(searchParams.get('modality') || '')
+  const [country, setCountry] = useState(searchParams.get('country') || '')
   const [showFilters, setShowFilters] = useState(false)
 
   // Filter options
   const [categories, setCategories] = useState<FilterOption[]>([])
   const [seniorityLevels, setSeniorityLevels] = useState<FilterOption[]>([])
   const [modalities, setModalities] = useState<FilterOption[]>([])
+  const [countries, setCountries] = useState<FilterOption[]>([])
 
   // Load filter options
   useEffect(() => {
     const loadFilters = async () => {
       try {
-        const [catRes, senRes, modRes] = await Promise.all([
+        const [catRes, senRes, modRes, locRes] = await Promise.all([
           publicApi.getJobCategories(),
           publicApi.getSeniorityLevels(),
           publicApi.getModalities(),
+          publicApi.getLocations(),
         ])
         setCategories(catRes.categories)
         setSeniorityLevels(senRes.seniority_levels)
         setModalities(modRes.modalities)
+        setCountries(locRes.countries || [])
       } catch (err) {
         console.error('Error loading filters:', err)
       }
@@ -163,6 +167,7 @@ export default function CandidateJobsPage() {
         category: category || undefined,
         seniority: seniority || undefined,
         modality: modality || undefined,
+        country: country || undefined,
       })
 
       setJobs(response.items)
@@ -174,7 +179,7 @@ export default function CandidateJobsPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentPage, search, category, seniority, modality])
+  }, [currentPage, search, category, seniority, modality, country])
 
   useEffect(() => {
     loadJobs()
@@ -193,12 +198,13 @@ export default function CandidateJobsPage() {
     setCategory('')
     setSeniority('')
     setModality('')
+    setCountry('')
     setCurrentPage(1)
   }
 
-  const hasActiveFilters = search || category || seniority || modality
+  const hasActiveFilters = search || category || seniority || modality || country
 
-  const activeFilterCount = [search, category, seniority, modality].filter(Boolean).length
+  const activeFilterCount = [search, category, seniority, modality, country].filter(Boolean).length
 
   return (
     <AppShell>
@@ -284,6 +290,20 @@ export default function CandidateJobsPage() {
                   {modalities.map((mod) => (
                     <SelectItem key={mod.value} value={mod.value}>
                       {mod.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={country} onValueChange={(v) => { setCountry(v === 'all' ? '' : v); setCurrentPage(1) }}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Pais" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los paises</SelectItem>
+                  {countries.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {c.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
