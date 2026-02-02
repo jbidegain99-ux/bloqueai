@@ -280,6 +280,69 @@ export const employerApi = {
       body: data,
       token,
     }),
+
+  // Job Copilot AI
+  copilotSuggestDescription: (token: string, data: {
+    title: string
+    category: string
+    seniority: string
+    company_context?: string
+    partial_description?: string
+  }) =>
+    fetchApi<{
+      description?: string
+      suggestions?: string[]
+      error?: string
+    }>('/employer/copilot/suggest-description', {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  copilotSuggestRequirements: (token: string, data: {
+    title: string
+    category: string
+    seniority: string
+    description?: string
+  }) =>
+    fetchApi<{
+      must_haves?: string[]
+      nice_to_haves?: string[]
+      reasoning?: string
+      error?: string
+    }>('/employer/copilot/suggest-requirements', {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  copilotSuggestQuestions: (token: string, data: {
+    title: string
+    category: string
+    seniority: string
+    must_haves?: string[]
+    description?: string
+  }) =>
+    fetchApi<{
+      questions?: Array<{ question: string; type: string; evaluates: string }>
+      notes?: string
+      error?: string
+    }>('/employer/copilot/suggest-questions', {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  getCategoryFields: (token: string, category: string) =>
+    fetchApi<{
+      fields: Array<{
+        key: string
+        label: string
+        type: string
+        required?: boolean
+        options?: string[]
+      }>
+    }>(`/employer/copilot/category-fields/${category}`, { token }),
 }
 
 // Admin API
@@ -332,6 +395,115 @@ export const adminApi = {
 
   getAuditLogs: (token: string, entityType?: string) =>
     fetchApi(`/admin/audit-logs${entityType ? `?entity_type=${entityType}` : ''}`, { token }),
+
+  // System Settings
+  getSettings: (token: string) =>
+    fetchApi<Array<{
+      id: string
+      key: string
+      value: string | null
+      value_int: number | null
+      value_bool: boolean | null
+      value_json: Record<string, unknown> | null
+      description: string | null
+      category: string
+      is_editable: boolean
+      created_at: string
+      updated_at: string
+    }>>('/admin/settings', { token }),
+
+  updateSetting: (token: string, key: string, data: {
+    value?: string | null
+    value_int?: number | null
+    value_bool?: boolean | null
+    value_json?: Record<string, unknown> | null
+  }) =>
+    fetchApi(`/admin/settings/${key}`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+
+  // Dashboard with filters
+  getDashboardMetrics: (token: string, params?: {
+    client_id?: string
+    job_id?: string
+    category?: string
+    location?: string
+    date_from?: string
+    date_to?: string
+    status?: string
+  }) => {
+    const queryParams = new URLSearchParams()
+    if (params?.client_id) queryParams.set('client_id', params.client_id)
+    if (params?.job_id) queryParams.set('job_id', params.job_id)
+    if (params?.category) queryParams.set('category', params.category)
+    if (params?.location) queryParams.set('location', params.location)
+    if (params?.date_from) queryParams.set('date_from', params.date_from)
+    if (params?.date_to) queryParams.set('date_to', params.date_to)
+    if (params?.status) queryParams.set('status', params.status)
+    const queryString = queryParams.toString()
+    return fetchApi<{
+      metrics: {
+        total_applications: number
+        above_threshold: number
+        interviews_started: number
+        interviews_completed: number
+        shortlisted: number
+        avg_match_score: number | null
+        avg_interview_score: number | null
+      }
+      filter_options: {
+        clients: Array<{ id: string; name: string }>
+        jobs: Array<{ id: string; title: string }>
+        categories: string[]
+        locations: string[]
+      }
+    }>(`/admin/dashboard/metrics${queryString ? `?${queryString}` : ''}`, { token })
+  },
+
+  exportDashboard: async (token: string, params?: {
+    client_id?: string
+    job_id?: string
+    category?: string
+    location?: string
+    date_from?: string
+    date_to?: string
+    status?: string
+  }) => {
+    const queryParams = new URLSearchParams()
+    if (params?.client_id) queryParams.set('client_id', params.client_id)
+    if (params?.job_id) queryParams.set('job_id', params.job_id)
+    if (params?.category) queryParams.set('category', params.category)
+    if (params?.location) queryParams.set('location', params.location)
+    if (params?.date_from) queryParams.set('date_from', params.date_from)
+    if (params?.date_to) queryParams.set('date_to', params.date_to)
+    if (params?.status) queryParams.set('status', params.status)
+    const queryString = queryParams.toString()
+
+    const API_URL = typeof window === 'undefined'
+      ? process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      : '/api'
+
+    const response = await fetch(`${API_URL}/admin/dashboard/export.csv${queryString ? `?${queryString}` : ''}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null)
+      throw new ApiError(errorData?.detail || 'Error al exportar dashboard', response.status, errorData)
+    }
+
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `dashboard-export-${new Date().toISOString().split('T')[0]}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  },
 }
 
 // Public API (no auth required)
