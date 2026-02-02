@@ -786,3 +786,521 @@ async def seed_jobs(
         db.rollback()
         logger.error("admin_seed_jobs_error", error=str(e))
         return {"success": False, "message": f"Error: {str(e)}"}
+
+
+# ============ System Settings ============
+
+
+@router.get("/settings")
+async def list_settings(
+    category: Optional[str] = Query(None, description="Filter by category"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """List all system settings."""
+    from app.models.settings import SystemSettings
+
+    query = db.query(SystemSettings)
+    if category:
+        query = query.filter(SystemSettings.category == category)
+
+    settings_list = query.order_by(SystemSettings.category, SystemSettings.key).all()
+
+    return [
+        {
+            "id": str(s.id),
+            "key": s.key,
+            "value": s.value,
+            "value_int": s.value_int,
+            "value_bool": s.value_bool,
+            "value_json": s.value_json,
+            "description": s.description,
+            "category": s.category,
+            "is_editable": s.is_editable,
+            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+        }
+        for s in settings_list
+    ]
+
+
+@router.get("/settings/{key}")
+async def get_setting(
+    key: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get a specific setting by key."""
+    from app.models.settings import SystemSettings
+
+    setting = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+    if not setting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Configuracion no encontrada"
+        )
+
+    return {
+        "id": str(setting.id),
+        "key": setting.key,
+        "value": setting.value,
+        "value_int": setting.value_int,
+        "value_bool": setting.value_bool,
+        "value_json": setting.value_json,
+        "description": setting.description,
+        "category": setting.category,
+        "is_editable": setting.is_editable,
+    }
+
+
+@router.patch("/settings/{key}")
+async def update_setting(
+    key: str,
+    value: Optional[str] = Query(None),
+    value_int: Optional[int] = Query(None),
+    value_bool: Optional[bool] = Query(None),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Update a system setting."""
+    from app.models.settings import SystemSettings
+    from datetime import datetime
+
+    setting = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+    if not setting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Configuracion no encontrada"
+        )
+
+    if not setting.is_editable:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Esta configuracion no se puede editar"
+        )
+
+    # Update the appropriate value field
+    if value is not None:
+        setting.value = value
+    if value_int is not None:
+        setting.value_int = value_int
+    if value_bool is not None:
+        setting.value_bool = value_bool
+
+    setting.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(setting)
+
+    logger.info("setting_updated", key=key, by=str(current_user.id))
+
+    return {
+        "success": True,
+        "key": setting.key,
+        "value": setting.value,
+        "value_int": setting.value_int,
+        "value_bool": setting.value_bool,
+    }
+
+
+# ============ Enhanced Dashboard with Filters ============
+
+
+@router.get("/dashboard/metrics")
+async def get_dashboard_metrics(
+    client_id: Optional[UUID] = Query(None, description="Filter by client/company"),
+    job_id: Optional[UUID] = Query(None, description="Filter by specific job"),
+    category: Optional[str] = Query(None, description="Filter by job category"),
+    location: Optional[str] = Query(None, description="Filter by location"),
+    date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    status_filter: Optional[str] = Query(None, description="Filter by application status"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get dashboard metrics with filters."""
+    from app.models.application import Application, ApplicationStatus
+    from app.models.job import Job, JobStatus, JobCategory
+    from app.models.interview import InterviewSession, InterviewStatus
+    from app.models.shortlist import ShortlistItem
+    from app.models.company import Company
+    from app.models.settings import SystemSettings
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+
+    # Parse dates
+    start_date = None
+    end_date = None
+    if date_from:
+        try:
+            start_date = datetime.strptime(date_from, "%Y-%m-%d")
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            end_date = datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
+        except ValueError:
+            pass
+
+    # Get system threshold
+    system_threshold = SystemSettings.get_int(db, 'default_match_threshold', 70)
+
+    # Build base queries with filters
+    apps_query = db.query(Application).join(Job)
+
+    if client_id:
+        apps_query = apps_query.filter(Job.company_id == client_id)
+    if job_id:
+        apps_query = apps_query.filter(Application.job_id == job_id)
+    if category:
+        try:
+            cat_enum = JobCategory(category.upper())
+            apps_query = apps_query.filter(Job.category == cat_enum)
+        except ValueError:
+            pass
+    if location:
+        apps_query = apps_query.filter(Job.location.ilike(f"%{location}%"))
+    if start_date:
+        apps_query = apps_query.filter(Application.created_at >= start_date)
+    if end_date:
+        apps_query = apps_query.filter(Application.created_at < end_date)
+    if status_filter:
+        try:
+            status_enum = ApplicationStatus(status_filter)
+            apps_query = apps_query.filter(Application.status == status_enum)
+        except ValueError:
+            pass
+
+    # Calculate metrics
+    total_applications = apps_query.count()
+
+    # Applications above threshold
+    above_threshold = apps_query.filter(
+        Application.match_score >= system_threshold
+    ).count()
+
+    # Interviews started
+    interviews_started = apps_query.filter(
+        Application.status.in_([
+            ApplicationStatus.INTERVIEW_STARTED,
+            ApplicationStatus.INTERVIEW_COMPLETED,
+            ApplicationStatus.COMPLETED
+        ])
+    ).count()
+
+    # Interviews completed
+    interviews_completed = apps_query.filter(
+        Application.status.in_([
+            ApplicationStatus.INTERVIEW_COMPLETED,
+            ApplicationStatus.COMPLETED
+        ])
+    ).count()
+
+    # Shortlisted
+    shortlist_query = db.query(ShortlistItem).join(Job)
+    if client_id:
+        shortlist_query = shortlist_query.filter(Job.company_id == client_id)
+    if job_id:
+        shortlist_query = shortlist_query.filter(ShortlistItem.job_id == job_id)
+    shortlisted = shortlist_query.count()
+
+    # Active jobs
+    jobs_query = db.query(Job).filter(Job.status == JobStatus.ACTIVE)
+    if client_id:
+        jobs_query = jobs_query.filter(Job.company_id == client_id)
+    if category:
+        try:
+            cat_enum = JobCategory(category.upper())
+            jobs_query = jobs_query.filter(Job.category == cat_enum)
+        except ValueError:
+            pass
+    active_jobs = jobs_query.count()
+
+    # Applications by status
+    status_breakdown = {}
+    for s in ApplicationStatus:
+        count_query = apps_query.filter(Application.status == s)
+        # Need to re-apply filters since we're creating new queries
+        status_breakdown[s.value] = db.query(Application).join(Job).filter(
+            Application.status == s
+        )
+        if client_id:
+            status_breakdown[s.value] = status_breakdown[s.value].filter(Job.company_id == client_id)
+        if job_id:
+            status_breakdown[s.value] = status_breakdown[s.value].filter(Application.job_id == job_id)
+        if start_date:
+            status_breakdown[s.value] = status_breakdown[s.value].filter(Application.created_at >= start_date)
+        if end_date:
+            status_breakdown[s.value] = status_breakdown[s.value].filter(Application.created_at < end_date)
+        status_breakdown[s.value] = status_breakdown[s.value].count()
+
+    # Get clients for filter dropdown
+    clients = db.query(Company).filter(Company.is_active == True).order_by(Company.name).all()
+
+    return {
+        "metrics": {
+            "total_applications": total_applications,
+            "above_threshold": above_threshold,
+            "threshold_rate": round(above_threshold / total_applications * 100, 1) if total_applications > 0 else 0,
+            "interviews_started": interviews_started,
+            "interviews_completed": interviews_completed,
+            "completion_rate": round(interviews_completed / interviews_started * 100, 1) if interviews_started > 0 else 0,
+            "shortlisted": shortlisted,
+            "active_jobs": active_jobs,
+        },
+        "status_breakdown": status_breakdown,
+        "filters_applied": {
+            "client_id": str(client_id) if client_id else None,
+            "job_id": str(job_id) if job_id else None,
+            "category": category,
+            "location": location,
+            "date_from": date_from,
+            "date_to": date_to,
+            "status": status_filter,
+        },
+        "filter_options": {
+            "clients": [
+                {"id": str(c.id), "name": c.name}
+                for c in clients
+            ],
+            "statuses": [s.value for s in ApplicationStatus],
+            "categories": [c.value for c in JobCategory],
+        },
+        "system_threshold": system_threshold,
+    }
+
+
+@router.get("/dashboard/export.csv")
+async def export_dashboard_csv(
+    client_id: Optional[UUID] = Query(None),
+    job_id: Optional[UUID] = Query(None),
+    category: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Export filtered dashboard data as CSV."""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+    from app.models.application import Application, ApplicationStatus
+    from app.models.job import Job, JobCategory
+    from app.models.candidate import Candidate
+    from datetime import datetime, timedelta
+
+    # Parse dates
+    start_date = None
+    end_date = None
+    if date_from:
+        try:
+            start_date = datetime.strptime(date_from, "%Y-%m-%d")
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            end_date = datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
+        except ValueError:
+            pass
+
+    # Build query with filters
+    query = db.query(Application).join(Job).join(Candidate)
+
+    if client_id:
+        query = query.filter(Job.company_id == client_id)
+    if job_id:
+        query = query.filter(Application.job_id == job_id)
+    if category:
+        try:
+            cat_enum = JobCategory(category.upper())
+            query = query.filter(Job.category == cat_enum)
+        except ValueError:
+            pass
+    if start_date:
+        query = query.filter(Application.created_at >= start_date)
+    if end_date:
+        query = query.filter(Application.created_at < end_date)
+    if status_filter:
+        try:
+            status_enum = ApplicationStatus(status_filter)
+            query = query.filter(Application.status == status_enum)
+        except ValueError:
+            pass
+
+    applications = query.order_by(Application.created_at.desc()).limit(1000).all()
+
+    # Create CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header
+    writer.writerow([
+        "Application ID",
+        "Created At",
+        "Job Title",
+        "Job Category",
+        "Company",
+        "Location",
+        "Candidate Headline",
+        "Match Score",
+        "Applied Threshold",
+        "Status",
+        "Has Interview",
+    ])
+
+    for app in applications:
+        writer.writerow([
+            str(app.id),
+            app.created_at.isoformat() if app.created_at else "",
+            app.job.title if app.job else "",
+            app.job.category.value if app.job and app.job.category else "",
+            app.job.company.name if app.job and app.job.company else "",
+            app.job.location if app.job else "",
+            app.candidate.headline if app.candidate else "",
+            app.match_score or "",
+            app.applied_threshold or "",
+            app.status.value,
+            "Yes" if app.interview_session_id else "No",
+        ])
+
+    output.seek(0)
+
+    # Generate filename with date
+    filename = f"dashboard_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        },
+    )
+
+
+# ============ Placements Management ============
+
+
+@router.get("/placements")
+async def list_placements(
+    client_id: Optional[UUID] = Query(None, description="Filter by client"),
+    status_filter: Optional[str] = Query(None, description="Filter by status"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """List all placements with filters."""
+    from app.models.placement import Placement, PlacementStatus
+
+    query = db.query(Placement)
+
+    if client_id:
+        query = query.filter(Placement.client_id == client_id)
+    if status_filter:
+        try:
+            status_enum = PlacementStatus(status_filter.upper())
+            query = query.filter(Placement.status == status_enum)
+        except ValueError:
+            pass
+
+    total = query.count()
+    placements = (
+        query
+        .order_by(Placement.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "items": [
+            {
+                "id": str(p.id),
+                "candidate_id": str(p.candidate_id),
+                "client_id": str(p.client_id),
+                "job_id": str(p.job_id) if p.job_id else None,
+                "position_title": p.position_title,
+                "placement_type": p.placement_type.value,
+                "status": p.status.value,
+                "start_date": p.start_date.isoformat() if p.start_date else None,
+                "end_date": p.end_date.isoformat() if p.end_date else None,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in placements
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+    }
+
+
+@router.get("/placements/report")
+async def placements_report(
+    client_id: Optional[UUID] = Query(None, description="Filter by client"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get placement report by client."""
+    from app.models.placement import Placement, PlacementStatus
+    from app.models.company import Company
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+
+    # Parse dates
+    start_date = None
+    end_date = None
+    if date_from:
+        try:
+            start_date = datetime.strptime(date_from, "%Y-%m-%d")
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            end_date = datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
+        except ValueError:
+            pass
+
+    # Build query
+    query = db.query(Placement)
+    if client_id:
+        query = query.filter(Placement.client_id == client_id)
+    if start_date:
+        query = query.filter(Placement.start_date >= start_date)
+    if end_date:
+        query = query.filter(Placement.start_date < end_date)
+
+    # Active placements
+    active_count = query.filter(Placement.status == PlacementStatus.ACTIVE).count()
+
+    # Completed in period
+    completed_count = query.filter(Placement.status == PlacementStatus.COMPLETED).count()
+
+    # By client breakdown
+    by_client = (
+        db.query(
+            Company.name,
+            func.count(Placement.id).label("count")
+        )
+        .join(Placement, Placement.client_id == Company.id)
+        .filter(Placement.status == PlacementStatus.ACTIVE)
+        .group_by(Company.name)
+        .all()
+    )
+
+    return {
+        "summary": {
+            "active_placements": active_count,
+            "completed_in_period": completed_count,
+        },
+        "by_client": [
+            {"client": name, "active_count": count}
+            for name, count in by_client
+        ],
+        "filters": {
+            "client_id": str(client_id) if client_id else None,
+            "date_from": date_from,
+            "date_to": date_to,
+        },
+    }

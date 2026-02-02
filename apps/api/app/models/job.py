@@ -12,10 +12,12 @@ from app.models.base import BaseModel
 class JobStatus(str, PyEnum):
     """Job posting status."""
 
-    DRAFT = "DRAFT"
-    ACTIVE = "ACTIVE"
-    PAUSED = "PAUSED"
-    CLOSED = "CLOSED"
+    DRAFT = "DRAFT"  # Initial state, not published
+    PENDING = "PENDING"  # Awaiting approval before publishing
+    ACTIVE = "ACTIVE"  # Live and accepting applications
+    PAUSED = "PAUSED"  # Temporarily paused, not visible to candidates
+    CLOSED = "CLOSED"  # No longer accepting applications, visible in reports
+    INACTIVE = "INACTIVE"  # Archived, not visible but kept for records
 
 
 class JobModality(str, PyEnum):
@@ -120,6 +122,11 @@ class Job(BaseModel):
 
     # Interview configuration
     custom_questions = Column(JSONB, default=list)  # Custom interview questions
+
+    # Category-specific fields (for generic job form)
+    # Structure depends on category: healthcare (certifications, specialties),
+    # finance (licenses, experience areas), legal (bar admissions, practice areas), etc.
+    category_fields = Column(JSONB, default=dict)
 
     # Status
     status = Column(

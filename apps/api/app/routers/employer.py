@@ -749,3 +749,106 @@ async def list_invitations(
         }
         for inv in invitations
     ]
+
+
+# ============ Job Copilot AI ============
+
+
+@router.post("/copilot/suggest-description")
+async def copilot_suggest_description(
+    title: str = Query(..., description="Job title"),
+    category: str = Query(..., description="Job category"),
+    seniority: str = Query("MID", description="Seniority level"),
+    partial_description: Optional[str] = Query(None, description="Existing description to improve"),
+    current_user: User = Depends(require_employer),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Generate AI-powered job description suggestion."""
+    from app.services.job_copilot import JobCopilotService
+
+    copilot = JobCopilotService(db_session=db, user_id=current_user.id)
+
+    # Get company context if available
+    company_context = None
+    if current_user.company:
+        company_context = f"{current_user.company.name} - {current_user.company.industry or 'Empresa'}"
+
+    result = await copilot.suggest_description(
+        title=title,
+        category=category,
+        seniority=seniority,
+        company_context=company_context,
+        partial_description=partial_description,
+    )
+
+    return result
+
+
+@router.post("/copilot/suggest-requirements")
+async def copilot_suggest_requirements(
+    title: str = Query(..., description="Job title"),
+    category: str = Query(..., description="Job category"),
+    seniority: str = Query("MID", description="Seniority level"),
+    description: Optional[str] = Query(None, description="Job description for context"),
+    current_user: User = Depends(require_employer),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Generate AI-powered job requirements suggestion."""
+    from app.services.job_copilot import JobCopilotService
+
+    copilot = JobCopilotService(db_session=db, user_id=current_user.id)
+
+    result = await copilot.suggest_requirements(
+        title=title,
+        category=category,
+        seniority=seniority,
+        description=description,
+    )
+
+    return result
+
+
+@router.post("/copilot/suggest-questions")
+async def copilot_suggest_questions(
+    title: str = Query(..., description="Job title"),
+    category: str = Query(..., description="Job category"),
+    seniority: str = Query("MID", description="Seniority level"),
+    must_haves: Optional[str] = Query(None, description="Comma-separated must-have skills"),
+    description: Optional[str] = Query(None, description="Job description for context"),
+    current_user: User = Depends(require_employer),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Generate AI-powered interview questions suggestion."""
+    from app.services.job_copilot import JobCopilotService
+
+    copilot = JobCopilotService(db_session=db, user_id=current_user.id)
+
+    # Parse must_haves if provided
+    must_haves_list = None
+    if must_haves:
+        must_haves_list = [s.strip() for s in must_haves.split(",") if s.strip()]
+
+    result = await copilot.suggest_interview_questions(
+        title=title,
+        category=category,
+        seniority=seniority,
+        must_haves=must_haves_list,
+        description=description,
+    )
+
+    return result
+
+
+@router.get("/copilot/category-fields/{category}")
+async def get_category_fields(
+    category: str,
+    current_user: User = Depends(require_employer),
+) -> dict:
+    """Get category-specific fields template for generic job form."""
+    from app.services.job_copilot import get_category_fields as _get_fields
+
+    fields = _get_fields(category)
+    return {
+        "category": category.upper(),
+        "fields": fields.get("fields", []),
+    }

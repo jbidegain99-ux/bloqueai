@@ -68,6 +68,10 @@ class Application(BaseModel):
     match_gaps = Column(JSONB, nullable=True)  # List of gaps/missing skills
     recommended_job_ids = Column(JSONB, nullable=True)  # Top 3 recommended jobs if match < 70
 
+    # Threshold that was applied for this application (for audit trail)
+    # Captures: job threshold ?? client threshold ?? system default at time of analysis
+    applied_threshold = Column(Integer, nullable=True)
+
     # Interview tracking
     interview_session_id = Column(
         UUID(as_uuid=True),
