@@ -10,8 +10,24 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuthStore } from '@/lib/auth'
 import { employerApi } from '@/lib/api'
-import { ArrowLeft, Users, Download, RefreshCw, MapPin, Star, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Users, Download, RefreshCw, MapPin, Star, AlertTriangle, CheckCircle } from 'lucide-react'
 import Link from 'next/link'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+// Job status options for the dropdown (excluding DRAFT which has separate "Publicar" button)
+const JOB_STATUS_OPTIONS = [
+  { value: 'PENDING', label: 'Pendiente' },
+  { value: 'ACTIVE', label: 'Activo' },
+  { value: 'PAUSED', label: 'Pausado' },
+  { value: 'CLOSED', label: 'Cerrado' },
+  { value: 'INACTIVE', label: 'Inactivo' },
+]
 
 export default function JobDetailPage() {
   const router = useRouter()
@@ -22,6 +38,9 @@ export default function JobDetailPage() {
   const [shortlist, setShortlist] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -61,9 +80,19 @@ export default function JobDetailPage() {
     }
   }
 
-  const exportCsv = () => {
-    if (accessToken) {
-      employerApi.exportShortlist(accessToken, jobId)
+  const exportCsv = async () => {
+    if (!accessToken) return
+    setExporting(true)
+    setStatusMessage(null)
+    try {
+      await employerApi.exportShortlist(accessToken, jobId)
+      setStatusMessage({ type: 'success', text: 'CSV exportado correctamente' })
+      setTimeout(() => setStatusMessage(null), 3000)
+    } catch (err: any) {
+      console.error('Error exporting CSV:', err)
+      setStatusMessage({ type: 'error', text: err?.message || 'Error al exportar CSV' })
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -74,6 +103,26 @@ export default function JobDetailPage() {
       loadData()
     } catch (err) {
       console.error('Error publishing job:', err)
+    }
+  }
+
+  const handleStatusChange = async (newStatus: string) => {
+    if (!accessToken || newStatus === job?.status) return
+
+    setUpdatingStatus(true)
+    setStatusMessage(null)
+
+    try {
+      await employerApi.updateJob(accessToken, jobId, { status: newStatus })
+      setStatusMessage({ type: 'success', text: 'Estado actualizado correctamente' })
+      await loadData()
+      // Clear success message after 3 seconds
+      setTimeout(() => setStatusMessage(null), 3000)
+    } catch (err: any) {
+      console.error('Error updating job status:', err)
+      setStatusMessage({ type: 'error', text: err?.message || 'Error al actualizar el estado' })
+    } finally {
+      setUpdatingStatus(false)
     }
   }
 
@@ -121,7 +170,42 @@ export default function JobDetailPage() {
             <Badge variant={job.status === 'ACTIVE' ? 'success' : 'outline'}>
               {job.status}
             </Badge>
+            {/* Status dropdown - only show for non-DRAFT jobs */}
+            {job.status !== 'DRAFT' && (
+              <Select
+                value={job.status}
+                onValueChange={handleStatusChange}
+                disabled={updatingStatus}
+              >
+                <SelectTrigger className="w-[140px] h-8 text-sm">
+                  <SelectValue placeholder="Cambiar estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  {JOB_STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {updatingStatus && (
+              <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+            )}
           </div>
+          {/* Status update message */}
+          {statusMessage && (
+            <div className={`flex items-center gap-2 text-sm mb-2 ${
+              statusMessage.type === 'success' ? 'text-green-600' : 'text-red-600'
+            }`}>
+              {statusMessage.type === 'success' ? (
+                <CheckCircle className="h-4 w-4" />
+              ) : (
+                <AlertTriangle className="h-4 w-4" />
+              )}
+              {statusMessage.text}
+            </div>
+          )}
           <div className="flex gap-4 text-sm text-muted-foreground">
             {job.location && (
               <span className="flex items-center gap-1">
@@ -143,9 +227,9 @@ export default function JobDetailPage() {
             {generating ? 'Generando...' : 'Generar Shortlist'}
           </Button>
           {shortlist?.items?.length > 0 && (
-            <Button variant="outline" onClick={exportCsv}>
-              <Download className="h-4 w-4 mr-2" />
-              Exportar CSV
+            <Button variant="outline" onClick={exportCsv} disabled={exporting}>
+              <Download className={`h-4 w-4 mr-2 ${exporting ? 'animate-pulse' : ''}`} />
+              {exporting ? 'Exportando...' : 'Exportar CSV'}
             </Button>
           )}
         </div>

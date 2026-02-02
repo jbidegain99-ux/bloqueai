@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/lib/auth'
 import { candidateApi, applicationsApi } from '@/lib/api'
-import { MapPin, Briefcase, GraduationCap, Star, AlertCircle, FileText, MessageSquare, Upload, ArrowRight, CheckCircle, Play } from 'lucide-react'
+import { MapPin, Briefcase, GraduationCap, Star, AlertCircle, FileText, MessageSquare, Upload, ArrowRight, CheckCircle, Play, Clock, Sparkles, PenLine } from 'lucide-react'
 
 interface ApplicationForGating {
   id: string
@@ -74,9 +74,38 @@ export default function CandidateProfilePage() {
 
   const hasCV = profile?.skills?.length > 0 || profile?.experience?.length > 0
 
-  // Check for actual completed interview report (not just any report)
-  const hasCompletedInterview = report?.overall_score !== undefined && report?.overall_score !== null
+  // Check for actual completed interview session (from backend, not just report scores)
+  const hasCompletedInterview = profile?.has_completed_interview === true
   const hasCompetencies = report?.competency_scores && Object.keys(report.competency_scores).length > 0
+
+  // CV source display helpers
+  const getSourceBadge = (source: string | null) => {
+    switch (source) {
+      case 'UPLOADED':
+        return { label: 'Subido', icon: Upload, variant: 'outline' as const }
+      case 'AI_BUILDER':
+        return { label: 'Creado con IA', icon: Sparkles, variant: 'secondary' as const }
+      case 'MANUAL':
+        return { label: 'Manual', icon: PenLine, variant: 'outline' as const }
+      default:
+        return null
+    }
+  }
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return null
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('es-ES', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  const sourceBadge = getSourceBadge(profile?.resume_source)
+  const resumeUpdatedAt = formatDate(profile?.resume_updated_at)
 
   // Gating: Check if candidate has an approved application to enable interview
   const approvedStatuses = ['MATCH_PASSED', 'INTERVIEW_STARTED', 'INTERVIEW_COMPLETED']
@@ -109,17 +138,45 @@ export default function CandidateProfilePage() {
                 )}
               </div>
               <div>
-                <h3 className="font-medium text-bloque-navy900">CV / Resume</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium text-bloque-navy900">CV / Resume</h3>
+                  {hasCV && sourceBadge && (
+                    <Badge variant={sourceBadge.variant} className="text-xs">
+                      <sourceBadge.icon className="h-3 w-3 mr-1" />
+                      {sourceBadge.label}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">
                   {hasCV ? 'CV procesado correctamente' : 'Sube tu CV para extraer tu experiencia'}
                 </p>
+                {hasCV && resumeUpdatedAt && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                    <Clock className="h-3 w-3" />
+                    Actualizado: {resumeUpdatedAt}
+                  </p>
+                )}
               </div>
             </div>
-            {!hasCV && (
+            {!hasCV ? (
+              <div className="flex gap-2">
+                <Link href="/candidate/resume">
+                  <Button size="sm" variant="outline">
+                    <Upload className="h-4 w-4 mr-1" />
+                    Subir CV
+                  </Button>
+                </Link>
+                <Link href="/candidate/cv-builder">
+                  <Button size="sm" variant="secondary">
+                    <Sparkles className="h-4 w-4 mr-1" />
+                    Crear con IA
+                  </Button>
+                </Link>
+              </div>
+            ) : (
               <Link href="/candidate/resume">
-                <Button size="sm" variant="outline">
-                  <Upload className="h-4 w-4 mr-1" />
-                  Subir CV
+                <Button size="sm" variant="ghost">
+                  Actualizar
                 </Button>
               </Link>
             )}
@@ -220,12 +277,20 @@ export default function CandidateProfilePage() {
                 <p className="text-sm text-muted-foreground mb-4">
                   Nuestra IA extraera automaticamente tu experiencia, habilidades y educacion
                 </p>
-                <Link href="/candidate/resume">
-                  <Button>
-                    <Upload className="h-4 w-4 mr-2" />
-                    Subir mi CV
-                  </Button>
-                </Link>
+                <div className="flex gap-3 justify-center">
+                  <Link href="/candidate/resume">
+                    <Button>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Subir CV
+                    </Button>
+                  </Link>
+                  <Link href="/candidate/cv-builder">
+                    <Button variant="secondary">
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Crear CV con IA
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </BrandCard>
           )}

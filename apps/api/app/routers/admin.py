@@ -285,9 +285,9 @@ def format_interview_for_review(session: InterviewSession) -> dict:
         latest_report = sorted(session.reports, key=lambda r: r.created_at, reverse=True)[0]
         report = {
             "id": str(latest_report.id),
-            "overall_score": latest_report.overall_score,
+            "overall_score": latest_report.overall_score if latest_report.overall_score is not None else 0.0,
             "summary": latest_report.summary,
-            "confidence_score": latest_report.confidence_score,
+            "confidence_score": latest_report.confidence_score if latest_report.confidence_score is not None else 0,
             "score_overridden": latest_report.score_overridden or False,
             "original_score": latest_report.original_score,
             "competency_scores": latest_report.competency_scores or {},
@@ -321,8 +321,8 @@ def format_interview_for_review(session: InterviewSession) -> dict:
         "total_questions": session.total_questions,
         "interview_type": session.interview_type,
         "language": session.language,
-        "started_at": session.started_at,
-        "completed_at": session.completed_at,
+        "started_at": session.started_at.isoformat() if session.started_at else None,
+        "completed_at": session.completed_at.isoformat() if session.completed_at else None,
         "duration_seconds": session.duration_seconds,
         "has_inconsistencies": session.has_inconsistencies,
         "confidence_score": session.confidence_score,
@@ -1183,15 +1183,27 @@ async def export_dashboard_csv(
 async def list_placements(
     client_id: Optional[UUID] = Query(None, description="Filter by client"),
     status_filter: Optional[str] = Query(None, description="Filter by status"),
+    type_filter: Optional[str] = Query(None, description="Filter by placement type"),
+    date_from: Optional[str] = Query(None, description="Start date filter (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="End date filter (YYYY-MM-DD)"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> dict:
     """List all placements with filters."""
-    from app.models.placement import Placement, PlacementStatus
+    from app.models.placement import Placement, PlacementStatus, PlacementType
+    from app.models.company import Company
+    from app.models.candidate import Candidate
+    from app.models.job import Job
+    from sqlalchemy.orm import joinedload
+    from datetime import datetime, timedelta
 
-    query = db.query(Placement)
+    query = db.query(Placement).options(
+        joinedload(Placement.candidate).joinedload(Candidate.user),
+        joinedload(Placement.client),
+        joinedload(Placement.job),
+    )
 
     if client_id:
         query = query.filter(Placement.client_id == client_id)
@@ -1199,6 +1211,26 @@ async def list_placements(
         try:
             status_enum = PlacementStatus(status_filter.upper())
             query = query.filter(Placement.status == status_enum)
+        except ValueError:
+            pass
+    if type_filter:
+        try:
+            type_enum = PlacementType(type_filter.upper())
+            query = query.filter(Placement.placement_type == type_enum)
+        except ValueError:
+            pass
+
+    # Date filters
+    if date_from:
+        try:
+            start_date = datetime.strptime(date_from, "%Y-%m-%d")
+            query = query.filter(Placement.start_date >= start_date)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            end_date = datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
+            query = query.filter(Placement.start_date < end_date)
         except ValueError:
             pass
 
@@ -1211,18 +1243,30 @@ async def list_placements(
         .all()
     )
 
+    # Get clients for filter dropdown
+    clients = db.query(Company).filter(Company.is_client == True).order_by(Company.name).all()
+
     return {
         "items": [
             {
                 "id": str(p.id),
                 "candidate_id": str(p.candidate_id),
+                "candidate_name": p.candidate.user.full_name if p.candidate and p.candidate.user else None,
                 "client_id": str(p.client_id),
+                "client_name": p.client.name if p.client else None,
                 "job_id": str(p.job_id) if p.job_id else None,
+                "job_title": p.job.title if p.job else None,
                 "position_title": p.position_title,
+                "department": p.department,
+                "location": p.location,
                 "placement_type": p.placement_type.value,
                 "status": p.status.value,
                 "start_date": p.start_date.isoformat() if p.start_date else None,
                 "end_date": p.end_date.isoformat() if p.end_date else None,
+                "salary_amount": p.salary_amount,
+                "salary_currency": p.salary_currency,
+                "salary_period": p.salary_period,
+                "notes": p.notes,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
             }
             for p in placements
@@ -1231,6 +1275,11 @@ async def list_placements(
         "page": page,
         "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size,
+        "filter_options": {
+            "clients": [{"id": str(c.id), "name": c.name} for c in clients],
+            "statuses": [s.value for s in PlacementStatus],
+            "types": [t.value for t in PlacementType],
+        },
     }
 
 
@@ -1303,4 +1352,653 @@ async def placements_report(
             "date_from": date_from,
             "date_to": date_to,
         },
+    }
+
+
+@router.get("/placements/{placement_id}")
+async def get_placement(
+    placement_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get a specific placement by ID."""
+    from app.models.placement import Placement
+    from app.models.candidate import Candidate
+    from sqlalchemy.orm import joinedload
+
+    placement = (
+        db.query(Placement)
+        .options(
+            joinedload(Placement.candidate).joinedload(Candidate.user),
+            joinedload(Placement.client),
+            joinedload(Placement.job),
+        )
+        .filter(Placement.id == placement_id)
+        .first()
+    )
+
+    if not placement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Placement no encontrado"
+        )
+
+    return {
+        "id": str(placement.id),
+        "candidate_id": str(placement.candidate_id),
+        "candidate_name": placement.candidate.user.full_name if placement.candidate and placement.candidate.user else None,
+        "client_id": str(placement.client_id),
+        "client_name": placement.client.name if placement.client else None,
+        "job_id": str(placement.job_id) if placement.job_id else None,
+        "job_title": placement.job.title if placement.job else None,
+        "position_title": placement.position_title,
+        "department": placement.department,
+        "location": placement.location,
+        "placement_type": placement.placement_type.value,
+        "status": placement.status.value,
+        "offer_date": placement.offer_date.isoformat() if placement.offer_date else None,
+        "start_date": placement.start_date.isoformat() if placement.start_date else None,
+        "end_date": placement.end_date.isoformat() if placement.end_date else None,
+        "salary_amount": placement.salary_amount,
+        "salary_currency": placement.salary_currency,
+        "salary_period": placement.salary_period,
+        "placement_fee": placement.placement_fee,
+        "fee_percentage": placement.fee_percentage,
+        "fee_paid": placement.fee_paid,
+        "notes": placement.notes,
+        "created_at": placement.created_at.isoformat() if placement.created_at else None,
+        "updated_at": placement.updated_at.isoformat() if placement.updated_at else None,
+    }
+
+
+@router.post("/placements", status_code=status.HTTP_201_CREATED)
+async def create_placement(
+    candidate_id: UUID = Query(..., description="Candidate ID"),
+    client_id: UUID = Query(..., description="Client company ID"),
+    position_title: str = Query(..., min_length=1, max_length=255),
+    placement_type: str = Query(..., description="Placement type"),
+    job_id: Optional[UUID] = Query(None, description="Associated job ID"),
+    department: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    salary_amount: Optional[float] = Query(None),
+    salary_currency: Optional[str] = Query("USD"),
+    salary_period: Optional[str] = Query("monthly"),
+    notes: Optional[str] = Query(None),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Create a new placement."""
+    from app.models.placement import Placement, PlacementStatus, PlacementType
+    from app.models.candidate import Candidate
+    from app.models.company import Company
+    from app.models.job import Job
+    from uuid import uuid4
+    from datetime import datetime
+
+    # Validate candidate exists
+    candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Candidato no encontrado"
+        )
+
+    # Validate client exists
+    client = db.query(Company).filter(Company.id == client_id).first()
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cliente no encontrado"
+        )
+
+    # Validate job if provided
+    if job_id:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Trabajo no encontrado"
+            )
+
+    # Parse placement type
+    try:
+        type_enum = PlacementType(placement_type.upper())
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Tipo de placement invalido. Valores validos: {[t.value for t in PlacementType]}"
+        )
+
+    # Parse dates
+    parsed_start_date = None
+    parsed_end_date = None
+    if start_date:
+        try:
+            parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Formato de fecha invalido. Use YYYY-MM-DD"
+            )
+    if end_date:
+        try:
+            parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Formato de fecha invalido. Use YYYY-MM-DD"
+            )
+
+    placement = Placement(
+        id=uuid4(),
+        candidate_id=candidate_id,
+        client_id=client_id,
+        job_id=job_id,
+        position_title=position_title,
+        placement_type=type_enum,
+        status=PlacementStatus.PENDING,
+        department=department,
+        location=location,
+        start_date=parsed_start_date,
+        end_date=parsed_end_date,
+        salary_amount=salary_amount,
+        salary_currency=salary_currency,
+        salary_period=salary_period,
+        notes=notes,
+    )
+
+    db.add(placement)
+    db.commit()
+    db.refresh(placement)
+
+    return {
+        "id": str(placement.id),
+        "candidate_id": str(placement.candidate_id),
+        "candidate_name": candidate.user.full_name if candidate.user else None,
+        "client_id": str(placement.client_id),
+        "client_name": client.name,
+        "job_id": str(placement.job_id) if placement.job_id else None,
+        "position_title": placement.position_title,
+        "placement_type": placement.placement_type.value,
+        "status": placement.status.value,
+        "start_date": placement.start_date.isoformat() if placement.start_date else None,
+        "end_date": placement.end_date.isoformat() if placement.end_date else None,
+        "created_at": placement.created_at.isoformat() if placement.created_at else None,
+    }
+
+
+@router.patch("/placements/{placement_id}")
+async def update_placement(
+    placement_id: UUID,
+    status_update: Optional[str] = Query(None, description="New status"),
+    position_title: Optional[str] = Query(None),
+    department: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    placement_type: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    salary_amount: Optional[float] = Query(None),
+    salary_currency: Optional[str] = Query(None),
+    salary_period: Optional[str] = Query(None),
+    notes: Optional[str] = Query(None),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Update a placement."""
+    from app.models.placement import Placement, PlacementStatus, PlacementType
+    from app.models.candidate import Candidate
+    from sqlalchemy.orm import joinedload
+    from datetime import datetime
+
+    placement = (
+        db.query(Placement)
+        .options(
+            joinedload(Placement.candidate).joinedload(Candidate.user),
+            joinedload(Placement.client),
+            joinedload(Placement.job),
+        )
+        .filter(Placement.id == placement_id)
+        .first()
+    )
+
+    if not placement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Placement no encontrado"
+        )
+
+    # Update status
+    if status_update:
+        try:
+            placement.status = PlacementStatus(status_update.upper())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Estado invalido. Valores validos: {[s.value for s in PlacementStatus]}"
+            )
+
+    # Update placement type
+    if placement_type:
+        try:
+            placement.placement_type = PlacementType(placement_type.upper())
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Tipo invalido. Valores validos: {[t.value for t in PlacementType]}"
+            )
+
+    # Update other fields
+    if position_title is not None:
+        placement.position_title = position_title
+    if department is not None:
+        placement.department = department
+    if location is not None:
+        placement.location = location
+    if salary_amount is not None:
+        placement.salary_amount = salary_amount
+    if salary_currency is not None:
+        placement.salary_currency = salary_currency
+    if salary_period is not None:
+        placement.salary_period = salary_period
+    if notes is not None:
+        placement.notes = notes
+
+    # Parse and update dates
+    if start_date is not None:
+        if start_date == "":
+            placement.start_date = None
+        else:
+            try:
+                placement.start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Formato de fecha invalido. Use YYYY-MM-DD"
+                )
+
+    if end_date is not None:
+        if end_date == "":
+            placement.end_date = None
+        else:
+            try:
+                placement.end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Formato de fecha invalido. Use YYYY-MM-DD"
+                )
+
+    db.commit()
+    db.refresh(placement)
+
+    return {
+        "id": str(placement.id),
+        "candidate_id": str(placement.candidate_id),
+        "candidate_name": placement.candidate.user.full_name if placement.candidate and placement.candidate.user else None,
+        "client_id": str(placement.client_id),
+        "client_name": placement.client.name if placement.client else None,
+        "job_id": str(placement.job_id) if placement.job_id else None,
+        "job_title": placement.job.title if placement.job else None,
+        "position_title": placement.position_title,
+        "department": placement.department,
+        "location": placement.location,
+        "placement_type": placement.placement_type.value,
+        "status": placement.status.value,
+        "start_date": placement.start_date.isoformat() if placement.start_date else None,
+        "end_date": placement.end_date.isoformat() if placement.end_date else None,
+        "salary_amount": placement.salary_amount,
+        "salary_currency": placement.salary_currency,
+        "salary_period": placement.salary_period,
+        "notes": placement.notes,
+        "created_at": placement.created_at.isoformat() if placement.created_at else None,
+        "updated_at": placement.updated_at.isoformat() if placement.updated_at else None,
+    }
+
+
+# ============ Clients Management ============
+
+
+@router.get("/clients")
+async def list_clients(
+    include_non_clients: bool = Query(False, description="Include companies that are not clients"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    search: Optional[str] = Query(None, description="Search by name or client_code"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """List all clients (companies with is_client=True)."""
+    from app.models.company import Company
+    from app.models.job import Job
+
+    query = db.query(Company)
+
+    # Filter by is_client unless include_non_clients
+    if not include_non_clients:
+        query = query.filter(Company.is_client == True)
+
+    # Filter by active status
+    if is_active is not None:
+        query = query.filter(Company.is_active == is_active)
+
+    # Search filter
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            (Company.name.ilike(search_term)) |
+            (Company.client_code.ilike(search_term))
+        )
+
+    total = query.count()
+
+    # Get clients with pagination
+    clients = (
+        query
+        .order_by(Company.name)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    # Get job counts for each client
+    job_counts = {}
+    if clients:
+        client_ids = [c.id for c in clients]
+        counts = (
+            db.query(Job.company_id, func.count(Job.id))
+            .filter(Job.company_id.in_(client_ids))
+            .group_by(Job.company_id)
+            .all()
+        )
+        job_counts = {str(cid): count for cid, count in counts}
+
+    return {
+        "items": [
+            {
+                "id": str(c.id),
+                "name": c.name,
+                "slug": c.slug,
+                "description": c.description,
+                "website": c.website,
+                "industry": c.industry,
+                "size": c.size,
+                "logo_url": c.logo_url,
+                "is_active": c.is_active,
+                "is_client": c.is_client,
+                "client_code": c.client_code,
+                "match_threshold": c.match_threshold,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+                "job_count": job_counts.get(str(c.id), 0),
+            }
+            for c in clients
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+    }
+
+
+@router.post("/clients", status_code=status.HTTP_201_CREATED)
+async def create_client(
+    name: str = Query(..., min_length=1, max_length=255),
+    description: Optional[str] = Query(None),
+    website: Optional[str] = Query(None),
+    industry: Optional[str] = Query(None),
+    size: Optional[str] = Query(None),
+    client_code: Optional[str] = Query(None),
+    match_threshold: Optional[int] = Query(None, ge=0, le=100),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Create a new client."""
+    from app.models.company import Company
+    from uuid import uuid4
+    from datetime import datetime
+    import re
+
+    # Generate slug from name
+    slug_base = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+    slug = slug_base
+
+    # Check for slug uniqueness
+    existing = db.query(Company).filter(Company.slug == slug).first()
+    if existing:
+        slug = f"{slug_base}-{str(uuid4())[:8]}"
+
+    # Check for client_code uniqueness if provided
+    if client_code:
+        existing_code = db.query(Company).filter(Company.client_code == client_code).first()
+        if existing_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El codigo de cliente '{client_code}' ya existe"
+            )
+
+    client = Company(
+        id=uuid4(),
+        name=name,
+        slug=slug,
+        description=description,
+        website=website,
+        industry=industry,
+        size=size,
+        is_active=True,
+        is_client=True,
+        client_code=client_code,
+        match_threshold=match_threshold,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+
+    db.add(client)
+    db.commit()
+    db.refresh(client)
+
+    return {
+        "id": str(client.id),
+        "name": client.name,
+        "slug": client.slug,
+        "description": client.description,
+        "website": client.website,
+        "industry": client.industry,
+        "size": client.size,
+        "logo_url": client.logo_url,
+        "is_active": client.is_active,
+        "is_client": client.is_client,
+        "client_code": client.client_code,
+        "match_threshold": client.match_threshold,
+        "created_at": client.created_at.isoformat() if client.created_at else None,
+        "updated_at": client.updated_at.isoformat() if client.updated_at else None,
+        "job_count": 0,
+    }
+
+
+@router.get("/clients/{client_id}")
+async def get_client(
+    client_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get a specific client by ID."""
+    from app.models.company import Company
+    from app.models.job import Job
+
+    client = db.query(Company).filter(Company.id == client_id).first()
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cliente no encontrado"
+        )
+
+    # Get job count
+    job_count = db.query(Job).filter(Job.company_id == client_id).count()
+
+    return {
+        "id": str(client.id),
+        "name": client.name,
+        "slug": client.slug,
+        "description": client.description,
+        "website": client.website,
+        "industry": client.industry,
+        "size": client.size,
+        "logo_url": client.logo_url,
+        "is_active": client.is_active,
+        "is_client": client.is_client,
+        "client_code": client.client_code,
+        "match_threshold": client.match_threshold,
+        "created_at": client.created_at.isoformat() if client.created_at else None,
+        "updated_at": client.updated_at.isoformat() if client.updated_at else None,
+        "job_count": job_count,
+    }
+
+
+@router.patch("/clients/{client_id}")
+async def update_client(
+    client_id: UUID,
+    name: Optional[str] = Query(None, min_length=1, max_length=255),
+    description: Optional[str] = Query(None),
+    website: Optional[str] = Query(None),
+    industry: Optional[str] = Query(None),
+    size: Optional[str] = Query(None),
+    client_code: Optional[str] = Query(None),
+    match_threshold: Optional[int] = Query(None, ge=0, le=100),
+    is_client: Optional[bool] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Update a client."""
+    from app.models.company import Company
+    from app.models.job import Job
+    from datetime import datetime
+
+    client = db.query(Company).filter(Company.id == client_id).first()
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cliente no encontrado"
+        )
+
+    # Check for client_code uniqueness if being updated
+    if client_code is not None and client_code != client.client_code:
+        existing_code = db.query(Company).filter(
+            Company.client_code == client_code,
+            Company.id != client_id
+        ).first()
+        if existing_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El codigo de cliente '{client_code}' ya existe"
+            )
+
+    # Update fields
+    if name is not None:
+        client.name = name
+    if description is not None:
+        client.description = description
+    if website is not None:
+        client.website = website
+    if industry is not None:
+        client.industry = industry
+    if size is not None:
+        client.size = size
+    if client_code is not None:
+        client.client_code = client_code
+    if match_threshold is not None:
+        client.match_threshold = match_threshold
+    if is_client is not None:
+        client.is_client = is_client
+    if is_active is not None:
+        client.is_active = is_active
+
+    client.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(client)
+
+    # Get job count
+    job_count = db.query(Job).filter(Job.company_id == client_id).count()
+
+    return {
+        "id": str(client.id),
+        "name": client.name,
+        "slug": client.slug,
+        "description": client.description,
+        "website": client.website,
+        "industry": client.industry,
+        "size": client.size,
+        "logo_url": client.logo_url,
+        "is_active": client.is_active,
+        "is_client": client.is_client,
+        "client_code": client.client_code,
+        "match_threshold": client.match_threshold,
+        "created_at": client.created_at.isoformat() if client.created_at else None,
+        "updated_at": client.updated_at.isoformat() if client.updated_at else None,
+        "job_count": job_count,
+    }
+
+
+@router.get("/clients/{client_id}/jobs")
+async def get_client_jobs(
+    client_id: UUID,
+    status_filter: Optional[str] = Query(None, description="Filter by job status"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """List jobs for a specific client."""
+    from app.models.company import Company
+    from app.models.job import Job, JobStatus
+
+    # Verify client exists
+    client = db.query(Company).filter(Company.id == client_id).first()
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cliente no encontrado"
+        )
+
+    query = db.query(Job).filter(Job.company_id == client_id)
+
+    # Apply status filter
+    if status_filter:
+        try:
+            status_enum = JobStatus(status_filter.upper())
+            query = query.filter(Job.status == status_enum)
+        except ValueError:
+            pass
+
+    total = query.count()
+
+    jobs = (
+        query
+        .order_by(Job.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "items": [
+            {
+                "id": str(j.id),
+                "title": j.title,
+                "status": j.status.value if j.status else None,
+                "category": j.category.value if j.category else None,
+                "seniority": j.seniority.value if j.seniority else None,
+                "location": j.location,
+                "modality": j.modality.value if j.modality else None,
+                "created_at": j.created_at.isoformat() if j.created_at else None,
+            }
+            for j in jobs
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
     }

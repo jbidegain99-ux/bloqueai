@@ -26,28 +26,28 @@ interface Interview {
   candidate_id: string
   job_id?: string
   status: string
-  transcript: InterviewMessage[]
-  started_at: string
-  completed_at?: string
+  transcript?: InterviewMessage[]
+  started_at?: string | null
+  completed_at?: string | null
   total_messages: number
-  duration_minutes?: number
+  duration_minutes?: number | null
   requires_review: boolean
   candidate?: {
     id: string
     user?: {
       full_name: string
       email: string
-    }
-  }
+    } | null
+  } | null
   report?: {
     id: string
-    overall_score: number
-    summary?: string
-    confidence_score: number
+    overall_score: number | null
+    summary?: string | null
+    confidence_score: number | null
     score_overridden: boolean
-    original_score?: number
-    competency_scores?: Record<string, { score: number; notes?: string }>
-  }
+    original_score?: number | null
+    competency_scores?: Record<string, { score: number; notes?: string }> | null
+  } | null
 }
 
 type TabValue = 'completed' | 'flagged' | 'in_progress' | 'all'
@@ -115,7 +115,7 @@ export default function InterviewsPage() {
     setSelectedInterview(interview)
     setShowOverrideForm(false)
     setExpandedTranscript(false)
-    if (interview.report) {
+    if (interview.report && interview.report.overall_score != null) {
       setOverrideScore(interview.report.overall_score)
     }
   }
@@ -147,14 +147,19 @@ export default function InterviewsPage() {
     }
   }
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString('es-ES', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+  const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return '-'
+    try {
+      return new Date(dateStr).toLocaleString('es-ES', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    } catch {
+      return '-'
+    }
   }
 
   const getStatusBadge = (status: string, requiresReview: boolean) => {
@@ -273,7 +278,7 @@ export default function InterviewsPage() {
                             </p>
                           </div>
                         </div>
-                        {interview.report && (
+                        {interview.report && interview.report.overall_score != null && (
                           <div className="text-right">
                             <span className={`text-sm font-semibold ${
                               interview.report.overall_score >= 4 ? 'text-green-600' :
@@ -347,16 +352,16 @@ export default function InterviewsPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-6">
                         <ScoreDisplay
-                          score={selectedInterview.report.overall_score}
+                          score={selectedInterview.report.overall_score ?? 0}
                           size="lg"
                         />
                         <div>
                           <p className="text-sm text-muted-foreground">
-                            Confianza: {selectedInterview.report.confidence_score}%
+                            Confianza: {selectedInterview.report.confidence_score ?? 0}%
                           </p>
-                          {selectedInterview.report.score_overridden && (
+                          {selectedInterview.report.score_overridden && selectedInterview.report.original_score != null && (
                             <p className="text-sm text-amber-600">
-                              Original: {selectedInterview.report.original_score?.toFixed(1)}
+                              Original: {selectedInterview.report.original_score.toFixed(1)}
                             </p>
                           )}
                         </div>
@@ -378,7 +383,7 @@ export default function InterviewsPage() {
                     )}
 
                     {/* Competency scores */}
-                    {selectedInterview.report.competency_scores && Object.keys(selectedInterview.report.competency_scores).length > 0 && (
+                    {selectedInterview.report.competency_scores && typeof selectedInterview.report.competency_scores === 'object' && Object.keys(selectedInterview.report.competency_scores).length > 0 && (
                       <div className="mt-6 pt-4 border-t">
                         <h4 className="text-sm font-medium text-bloque-navy900 mb-3">Competencias Evaluadas</h4>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -470,7 +475,7 @@ export default function InterviewsPage() {
 
                   {expandedTranscript && (
                     <div className="mt-4 space-y-4 max-h-[500px] overflow-y-auto">
-                      {selectedInterview.transcript && selectedInterview.transcript.length > 0 ? (
+                      {selectedInterview.transcript && Array.isArray(selectedInterview.transcript) && selectedInterview.transcript.length > 0 ? (
                         selectedInterview.transcript.map((message, index) => (
                           <div
                             key={index}

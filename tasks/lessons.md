@@ -133,3 +133,116 @@
    - tasks/todo.md with full status
    - tasks/qa.md with test checklist
    - tasks/lessons.md (this file)
+
+---
+
+## Session: 2026-02-02 - QA Fix Session
+
+### New Patterns Discovered
+
+1. **Datetime Serialization in FastAPI Dict Responses**
+   - Pattern: Returning datetime fields in dict() without .isoformat()
+   - Fix: Always call `dt.isoformat() if dt else None` for datetime fields
+   - Files affected: `admin.py` (interviews endpoint)
+
+2. **Nullable Score Fields**
+   - Pattern: Calling `.toFixed()` on nullable number fields
+   - Fix: Check for null/undefined before numeric formatting: `score ?? 0`
+   - Files affected: `admin/interviews/page.tsx`
+
+3. **Async Export Functions**
+   - Pattern: Not awaiting async export functions (silently fails)
+   - Fix: Always `await` async functions and add error handling
+   - Files affected: `employer/jobs/[id]/page.tsx` exportCsv function
+
+4. **Query Params vs Request Body in FastAPI**
+   - Pattern: Frontend sends JSON body, backend expects Query params
+   - Fix: Use Pydantic request schemas with Body(...) instead of Query(...)
+   - Files affected: All copilot endpoints in `employer.py`
+
+### New Features Implemented
+
+1. **CV Builder IA Wizard** (`/candidate/cv-builder`)
+   - 6-step wizard for creating CV from scratch
+   - AI generates professional summary
+   - Creates HTML/PDF CV
+   - Auto-saves draft to localStorage
+   - New backend service: `cv_builder.py`
+
+2. **Clients Management UI** (`/admin/clients`)
+   - Full CRUD for client management
+   - Toggle is_client status
+   - View linked jobs per client
+   - New backend endpoints and schemas
+
+3. **Placements Management UI** (`/admin/placements`)
+   - List/create/edit placements
+   - Status and type badges
+   - Filter by client, status, type, dates
+   - Summary cards with metrics
+
+4. **Job Status Dropdown**
+   - Employer can now change job status from detail page
+   - Options: PENDING, ACTIVE, PAUSED, CLOSED, INACTIVE
+   - Success/error feedback
+
+5. **Category-Aware Job Form Placeholders**
+   - Dynamic placeholders based on job category
+   - Categories: TECHNOLOGY, HEALTHCARE, FINANCE, LEGAL, SALES, etc.
+
+6. **Job Copilot Error Handling**
+   - User-friendly error messages when LLM API key missing
+   - Success feedback when content generated
+   - Fixed body/query param mismatch
+
+7. **Candidate Profile Enhancements**
+   - CV source indicator (UPLOADED / AI_BUILDER / MANUAL)
+   - CV last updated timestamp
+   - Fixed false "Entrevista completada" state
+   - New ResumeSource enum
+
+### Architecture Patterns Used
+
+1. **Pydantic Request/Response Schemas**
+   - Create explicit schemas for complex endpoints
+   - Better validation and documentation
+   - Example: `CopilotDescriptionRequest`, `ClientCreate`
+
+2. **Component Modals Pattern**
+   - Use inline modals (fixed inset-0) for create/edit forms
+   - Consistent across admin pages
+
+3. **Status/Message State Pattern**
+   ```typescript
+   const [statusMessage, setStatusMessage] = useState<{type: 'success'|'error', text: string}|null>(null)
+   ```
+   - Auto-clear success after 3 seconds
+   - Persist error until user action
+
+4. **Draft/Autosave Pattern**
+   - Use localStorage for form drafts
+   - Clear on successful submit
+   - Example: CV Builder saves progress
+
+### Files Created This Session
+
+**Backend:**
+- `apps/api/app/services/cv_builder.py` - CV generation service
+- `apps/api/app/schemas/copilot.py` - Copilot request/response schemas
+- `apps/api/app/schemas/client.py` - Client management schemas
+
+**Frontend:**
+- `apps/web/src/app/candidate/cv-builder/page.tsx` - CV Builder wizard
+- `apps/web/src/app/admin/clients/page.tsx` - Clients management
+- `apps/web/src/app/admin/placements/page.tsx` - Placements management
+
+### Key Fixes Summary
+
+| Issue | Root Cause | Fix |
+|-------|------------|-----|
+| /admin/interviews crash | Null scores + datetime serialization | Added null checks + .isoformat() |
+| CSV export no download | Async function not awaited | Added await + error handling |
+| Copilot buttons no content | Query params vs body mismatch | Changed to Pydantic body schemas |
+| Profile false states | Checking score instead of session status | Check actual InterviewSession.status |
+| Job status not editable | No UI control | Added dropdown with status options |
+| Dev-specific placeholders | Hardcoded React/Node | Category-aware dynamic placeholders |

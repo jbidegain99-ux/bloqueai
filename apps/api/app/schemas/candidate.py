@@ -1,5 +1,6 @@
 """Candidate schemas."""
 
+from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
@@ -32,6 +33,13 @@ class CandidateProfileResponse(CandidateResponse):
     certifications: list[dict[str, Any]] = []
     competency_scores: dict[str, Any] = {}
 
+    # Resume/CV info
+    resume_updated_at: Optional[datetime] = None
+    resume_source: Optional[str] = None  # UPLOADED, AI_BUILDER, MANUAL
+
+    # Interview status
+    has_completed_interview: bool = False
+
 
 class CandidateUpdate(BaseSchema):
     """Candidate profile update."""
@@ -55,3 +63,69 @@ class CandidateForEmployer(BaseSchema):
     experience_years: int = 0
     ai_summary: Optional[str] = None
     competency_scores: dict[str, Any] = {}
+
+
+# CV Builder Schemas
+class CVBuilderPersonalInfo(BaseSchema):
+    """Personal information for CV builder."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+    email: str = Field(..., min_length=1, max_length=255)
+    phone: Optional[str] = Field(None, max_length=50)
+    location: Optional[str] = Field(None, max_length=255)
+    headline: Optional[str] = Field(None, max_length=500)
+
+
+class CVBuilderWorkEntry(BaseSchema):
+    """Work history entry for CV builder."""
+
+    company: str = Field(..., min_length=1, max_length=200)
+    title: str = Field(..., min_length=1, max_length=200)
+    start_date: str = Field(..., max_length=50)
+    end_date: Optional[str] = Field(None, max_length=50)
+    description: Optional[str] = Field(None, max_length=2000)
+    achievements: list[str] = []
+
+
+class CVBuilderEducationEntry(BaseSchema):
+    """Education entry for CV builder."""
+
+    institution: str = Field(..., min_length=1, max_length=200)
+    degree: str = Field(..., min_length=1, max_length=200)
+    field: Optional[str] = Field(None, max_length=200)
+    year: Optional[str] = Field(None, max_length=20)
+
+
+class CVBuilderSkills(BaseSchema):
+    """Skills for CV builder."""
+
+    technical: list[str] = []
+    soft: list[str] = []
+
+
+class CVBuilderLanguage(BaseSchema):
+    """Language entry for CV builder."""
+
+    language: str = Field(..., min_length=1, max_length=100)
+    level: str = Field(..., max_length=50)  # Nativo, Avanzado, Intermedio, Basico
+
+
+class CVBuilderRequest(BaseSchema):
+    """CV Builder full request."""
+
+    personal_info: CVBuilderPersonalInfo
+    work_history: list[CVBuilderWorkEntry] = []
+    education: list[CVBuilderEducationEntry] = []
+    skills: CVBuilderSkills = Field(default_factory=CVBuilderSkills)
+    languages: list[CVBuilderLanguage] = []
+
+
+class CVBuilderResponse(BaseSchema):
+    """CV Builder response."""
+
+    success: bool = True
+    message: str = "CV generado exitosamente"
+    resume_id: UUID
+    file_url: Optional[str] = None
+    summary: str
+    html_preview: str
