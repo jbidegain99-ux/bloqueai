@@ -12,7 +12,7 @@ import {
   Plus,
   Search,
   Edit2,
-  Toggle,
+  ToggleLeft,
   Briefcase,
   AlertCircle,
   CheckCircle,
@@ -492,7 +492,7 @@ export default function ClientsPage() {
                               }`}
                               title={client.is_client ? 'Desmarcar como cliente' : 'Marcar como cliente'}
                             >
-                              <Toggle className="h-4 w-4" />
+                              <ToggleLeft className="h-4 w-4" />
                             </button>
                             {client.website && (
                               <a
