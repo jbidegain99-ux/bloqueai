@@ -154,13 +154,75 @@ Migration `007_add_settings_placements_and_enhancements.py` creates:
 
 ---
 
+## Frontend Integration (A1-A3)
+
+| Component | Status | Route | Notes |
+|-----------|--------|-------|-------|
+| Admin Settings page | DONE | `/admin/settings` | View/edit system settings by category |
+| Admin Dashboard + filters | DONE | `/admin/dashboard` | Filters, metrics, funnel, CSV export |
+| Job Copilot buttons | DONE | `/employer/jobs/new` | 3 AI buttons + category selector |
+
+### Frontend Files Created/Modified
+
+1. `apps/web/src/lib/api.ts`
+   - Added `adminApi.getSettings()`, `adminApi.updateSetting()`
+   - Added `adminApi.getDashboardMetrics()`, `adminApi.exportDashboard()`
+   - Added `employerApi.copilotSuggestDescription/Requirements/Questions()`
+   - Added `employerApi.getCategoryFields()`
+
+2. `apps/web/src/app/admin/settings/page.tsx` - **NEW**
+   - Settings grouped by category
+   - Edit inline with save button
+   - Support for int/bool/string/json types
+
+3. `apps/web/src/app/admin/dashboard/page.tsx` - **NEW**
+   - Filter controls (client, job, category, location, dates)
+   - Metrics cards (applications, threshold, interviews, shortlisted)
+   - Funnel visualization
+   - CSV export button
+
+4. `apps/web/src/app/employer/jobs/new/page.tsx` - MODIFIED
+   - Added category selector
+   - Added "Sugerir con IA" buttons for description, requirements, questions
+   - Loading states during AI generation
+
+---
+
+## Manual Testing Checklist
+
+### Admin Settings (`/admin/settings`)
+- [ ] Page loads without errors
+- [ ] Settings grouped by category (matching, interview, upload)
+- [ ] Can edit integer values (default_match_threshold)
+- [ ] Save button shows loading state
+- [ ] Success message appears after save
+- [ ] Read-only settings show badge
+
+### Admin Dashboard (`/admin/dashboard`)
+- [ ] Page loads with metrics
+- [ ] Filter panel toggles open/close
+- [ ] Client dropdown populates
+- [ ] Job dropdown populates
+- [ ] Date filters work
+- [ ] "Aplicar" button refreshes data
+- [ ] "Limpiar" resets filters
+- [ ] Export CSV downloads file
+- [ ] Funnel shows percentages
+
+### Job Copilot (`/employer/jobs/new`)
+- [ ] Category selector appears
+- [ ] "Sugerir con IA" button disabled without title
+- [ ] Description button generates text
+- [ ] Requirements button fills must_haves and nice_to_haves
+- [ ] Questions button fills custom_questions
+- [ ] Loading spinner appears during generation
+- [ ] Error message shows if API fails
+
+---
+
 ## Known Limitations
 
-1. **Frontend UI for new features** - Backend APIs ready, frontend integration pending:
-   - Admin settings page
-   - Dashboard filters UI
-   - Job Copilot buttons in job form
-   - Placements management UI
+1. **Placements management UI** - Backend ready, frontend pending
 
 2. **Email notifications** - Not implemented for:
    - Placement status changes
@@ -173,10 +235,13 @@ Migration `007_add_settings_placements_and_enhancements.py` creates:
 ## Conclusion
 
 All core functionality verified at API level. T1-T12 tasks completed successfully.
+Frontend integration A1-A3 completed successfully.
 
-Backend ready for:
+Platform ready for:
 - Threshold hierarchy (system -> client -> job)
 - Job states management
 - AI-powered job creation assistance
 - Dashboard analytics with filters
 - Placement tracking foundation
+- Admin settings UI
+- Dashboard with filters and export

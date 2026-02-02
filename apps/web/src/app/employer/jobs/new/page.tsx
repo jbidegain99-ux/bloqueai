@@ -17,16 +17,19 @@ import {
 } from '@/components/ui/select'
 import { useAuthStore } from '@/lib/auth'
 import { employerApi } from '@/lib/api'
+import { Sparkles, Wand2, MessageSquare, Loader2 } from 'lucide-react'
 
 export default function NewJobPage() {
   const router = useRouter()
   const { accessToken } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [copilotLoading, setCopilotLoading] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     department: '',
+    category: 'TECHNOLOGY',
     seniority: 'MID',
     salary_min: '',
     salary_max: '',
@@ -41,6 +44,90 @@ export default function NewJobPage() {
     custom_questions: '',
   })
 
+  const handleCopilotDescription = async () => {
+    if (!accessToken || !formData.title) {
+      setError('Primero ingresa un titulo para la vacante')
+      return
+    }
+    setCopilotLoading('description')
+    setError('')
+    try {
+      const result = await employerApi.copilotSuggestDescription(accessToken, {
+        title: formData.title,
+        category: formData.category,
+        seniority: formData.seniority,
+        partial_description: formData.description || undefined,
+      })
+      if (result.error) {
+        setError(result.error)
+      } else if (result.description) {
+        setFormData({ ...formData, description: result.description })
+      }
+    } catch (err: any) {
+      setError(err.message || 'Error al generar descripcion')
+    } finally {
+      setCopilotLoading(null)
+    }
+  }
+
+  const handleCopilotRequirements = async () => {
+    if (!accessToken || !formData.title) {
+      setError('Primero ingresa un titulo para la vacante')
+      return
+    }
+    setCopilotLoading('requirements')
+    setError('')
+    try {
+      const result = await employerApi.copilotSuggestRequirements(accessToken, {
+        title: formData.title,
+        category: formData.category,
+        seniority: formData.seniority,
+        description: formData.description || undefined,
+      })
+      if (result.error) {
+        setError(result.error)
+      } else {
+        setFormData({
+          ...formData,
+          must_haves: result.must_haves?.join('\n') || formData.must_haves,
+          nice_to_haves: result.nice_to_haves?.join('\n') || formData.nice_to_haves,
+        })
+      }
+    } catch (err: any) {
+      setError(err.message || 'Error al generar requisitos')
+    } finally {
+      setCopilotLoading(null)
+    }
+  }
+
+  const handleCopilotQuestions = async () => {
+    if (!accessToken || !formData.title) {
+      setError('Primero ingresa un titulo para la vacante')
+      return
+    }
+    setCopilotLoading('questions')
+    setError('')
+    try {
+      const result = await employerApi.copilotSuggestQuestions(accessToken, {
+        title: formData.title,
+        category: formData.category,
+        seniority: formData.seniority,
+        must_haves: formData.must_haves.split('\n').filter(Boolean),
+        description: formData.description || undefined,
+      })
+      if (result.error) {
+        setError(result.error)
+      } else if (result.questions) {
+        const questions = result.questions.map(q => q.question).join('\n')
+        setFormData({ ...formData, custom_questions: questions })
+      }
+    } catch (err: any) {
+      setError(err.message || 'Error al generar preguntas')
+    } finally {
+      setCopilotLoading(null)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!accessToken) return
@@ -53,6 +140,7 @@ export default function NewJobPage() {
         title: formData.title,
         description: formData.description,
         department: formData.department || undefined,
+        category: formData.category,
         seniority: formData.seniority,
         salary_min: formData.salary_min ? parseInt(formData.salary_min) : undefined,
         salary_max: formData.salary_max ? parseInt(formData.salary_max) : undefined,
@@ -109,26 +197,65 @@ export default function NewJobPage() {
               </div>
 
               <div>
-                <Label htmlFor="description">Descripción *</Label>
+                <div className="flex items-center justify-between mb-1">
+                  <Label htmlFor="description">Descripcion *</Label>
+                  <button
+                    type="button"
+                    onClick={handleCopilotDescription}
+                    disabled={copilotLoading === 'description' || !formData.title}
+                    className="flex items-center gap-1.5 px-3 py-1 text-sm bg-gradient-to-r from-bloque-gold400 to-bloque-gold500 text-bloque-navy900 rounded-full hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={!formData.title ? 'Primero ingresa un titulo' : 'Generar descripcion con IA'}
+                  >
+                    {copilotLoading === 'description' ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    Sugerir con IA
+                  </button>
+                </div>
                 <Textarea
                   id="description"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Describe la posición, el equipo, y lo que buscas..."
+                  placeholder="Describe la posicion, el equipo, y lo que buscas..."
                   rows={6}
                   required
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <Label htmlFor="department">Departamento</Label>
                   <Input
                     id="department"
                     value={formData.department}
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                    placeholder="Ej: Ingeniería"
+                    placeholder="Ej: Ingenieria"
                   />
+                </div>
+
+                <div>
+                  <Label htmlFor="category">Categoria *</Label>
+                  <Select
+                    value={formData.category}
+                    onValueChange={(value) => setFormData({ ...formData, category: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TECHNOLOGY">Tecnologia</SelectItem>
+                      <SelectItem value="HEALTHCARE">Salud</SelectItem>
+                      <SelectItem value="DENTAL">Dental</SelectItem>
+                      <SelectItem value="FINANCE">Finanzas</SelectItem>
+                      <SelectItem value="LEGAL">Legal</SelectItem>
+                      <SelectItem value="MANUFACTURING">Manufactura</SelectItem>
+                      <SelectItem value="SALES">Ventas</SelectItem>
+                      <SelectItem value="HUMAN_RESOURCES">Recursos Humanos</SelectItem>
+                      <SelectItem value="OTHER">Otro</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div>
@@ -242,10 +369,26 @@ export default function NewJobPage() {
           </BrandCard>
 
           <BrandCard>
-            <BrandCardHeader
-              title="Requisitos"
-              description="Define qué necesitas del candidato ideal (uno por línea)"
-            />
+            <div className="flex items-start justify-between">
+              <BrandCardHeader
+                title="Requisitos"
+                description="Define que necesitas del candidato ideal (uno por linea)"
+              />
+              <button
+                type="button"
+                onClick={handleCopilotRequirements}
+                disabled={copilotLoading === 'requirements' || !formData.title}
+                className="flex items-center gap-1.5 px-3 py-1 text-sm bg-gradient-to-r from-bloque-gold400 to-bloque-gold500 text-bloque-navy900 rounded-full hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                title={!formData.title ? 'Primero ingresa un titulo' : 'Generar requisitos con IA'}
+              >
+                {copilotLoading === 'requirements' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Wand2 className="h-3.5 w-3.5" />
+                )}
+                Sugerir con IA
+              </button>
+            </div>
 
             <div className="space-y-4">
               <div>
@@ -254,7 +397,7 @@ export default function NewJobPage() {
                   id="must_haves"
                   value={formData.must_haves}
                   onChange={(e) => setFormData({ ...formData, must_haves: e.target.value })}
-                  placeholder="React&#10;Node.js&#10;5+ años de experiencia"
+                  placeholder="React&#10;Node.js&#10;5+ anos de experiencia"
                   rows={4}
                 />
               </div>
@@ -273,15 +416,31 @@ export default function NewJobPage() {
           </BrandCard>
 
           <BrandCard>
-            <BrandCardHeader
-              title="Preguntas personalizadas"
-              description="Agrega preguntas específicas para esta posición (una por línea)"
-            />
+            <div className="flex items-start justify-between">
+              <BrandCardHeader
+                title="Preguntas personalizadas"
+                description="Agrega preguntas especificas para esta posicion (una por linea)"
+              />
+              <button
+                type="button"
+                onClick={handleCopilotQuestions}
+                disabled={copilotLoading === 'questions' || !formData.title}
+                className="flex items-center gap-1.5 px-3 py-1 text-sm bg-gradient-to-r from-bloque-gold400 to-bloque-gold500 text-bloque-navy900 rounded-full hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                title={!formData.title ? 'Primero ingresa un titulo' : 'Generar preguntas con IA'}
+              >
+                {copilotLoading === 'questions' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <MessageSquare className="h-3.5 w-3.5" />
+                )}
+                Sugerir con IA
+              </button>
+            </div>
 
             <Textarea
               value={formData.custom_questions}
               onChange={(e) => setFormData({ ...formData, custom_questions: e.target.value })}
-              placeholder="¿Por qué te interesa esta posición?&#10;Describe un proyecto desafiante que hayas liderado"
+              placeholder="Por que te interesa esta posicion?&#10;Describe un proyecto desafiante que hayas liderado"
               rows={3}
             />
           </BrandCard>
