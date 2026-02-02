@@ -13,7 +13,12 @@ from app.models.candidate import Candidate
 from app.models.resume import Resume, ResumeStatus
 from app.models.interview import InterviewSession, InterviewMessage, InterviewStatus, MessageRole
 from app.models.report import CandidateReport, ReportStatus
-from app.schemas.candidate import CandidateProfileResponse, CandidateUpdate
+from app.schemas.candidate import (
+    CandidateProfileResponse,
+    CandidateUpdate,
+    CVBuilderRequest,
+    CVBuilderResponse,
+)
 from app.schemas.resume import ResumeUploadResponse, ResumeResponse
 from app.schemas.interview import (
     InterviewStartRequest,
@@ -67,9 +72,53 @@ def get_or_create_candidate(db: Session, user: User) -> Candidate:
 async def get_profile(
     current_user: User = Depends(require_candidate),
     db: Session = Depends(get_db),
-) -> Candidate:
-    """Get candidate profile."""
-    return get_or_create_candidate(db, current_user)
+) -> dict:
+    """Get candidate profile with resume and interview status."""
+    candidate = get_or_create_candidate(db, current_user)
+
+    # Get latest completed resume for CV info
+    latest_resume = (
+        db.query(Resume)
+        .filter(Resume.candidate_id == candidate.id)
+        .filter(Resume.status == ResumeStatus.COMPLETED)
+        .order_by(Resume.updated_at.desc())
+        .first()
+    )
+
+    # Check if there's a completed interview session
+    completed_interview = (
+        db.query(InterviewSession)
+        .filter(InterviewSession.candidate_id == candidate.id)
+        .filter(InterviewSession.status == InterviewStatus.COMPLETED)
+        .first()
+    )
+
+    # Build response with additional fields
+    profile_data = {
+        "id": candidate.id,
+        "user_id": candidate.user_id,
+        "phone_masked": candidate.phone_masked,
+        "location": candidate.location,
+        "linkedin_url": candidate.linkedin_url,
+        "github_url": candidate.github_url,
+        "headline": candidate.headline,
+        "summary": candidate.summary,
+        "skills": candidate.skills or [],
+        "ai_summary": candidate.ai_summary,
+        "ai_skills": candidate.ai_skills or [],
+        "experience": candidate.experience or [],
+        "education": candidate.education or [],
+        "languages": candidate.languages or [],
+        "certifications": candidate.certifications or [],
+        "competency_scores": candidate.competency_scores or {},
+        # Resume info
+        "resume_updated_at": latest_resume.updated_at if latest_resume else None,
+        "resume_source": latest_resume.source.value if latest_resume else None,
+        # Interview status - based on actual completed interview session
+        "has_completed_interview": completed_interview is not None,
+    }
+
+    return profile_data
 
 
 @router.patch("/profile", response_model=CandidateProfileResponse)
@@ -730,3 +779,124 @@ async def get_latest_report(
         )
 
     return report
+
+
+@router.post("/cv/generate", response_model=CVBuilderResponse)
+async def generate_cv_from_wizard(
+    request: CVBuilderRequest,
+    current_user: User = Depends(require_candidate),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Generate CV from wizard data using AI.
+
+    This endpoint:
+    1. Takes structured CV data from the wizard
+    2. Generates a professional summary with AI
+    3. Creates an HTML CV and optionally a PDF
+    4. Saves a Resume record with source=AI_BUILDER
+    5. Updates the CandidateProfile with extracted data
+    """
+    import structlog
+    from app.services.cv_builder import build_cv
+    from app.models.resume import ResumeSource
+    from app.services.storage import get_storage_service
+    from app.services.cv_parser import mask_phone
+
+    logger = structlog.get_logger()
+
+    candidate = get_or_create_candidate(db, current_user)
+
+    logger.info(
+        "cv_builder_request",
+        candidate_id=str(candidate.id),
+        user_id=str(current_user.id),
+    )
+
+    try:
+        # Convert pydantic models to dicts
+        personal_info = request.personal_info.model_dump()
+        work_history = [w.model_dump() for w in request.work_history]
+        education = [e.model_dump() for e in request.education]
+        skills = request.skills.model_dump()
+        languages = [l.model_dump() for l in request.languages]
+
+        # Build CV with AI
+        result = await build_cv(
+            personal_info=personal_info,
+            work_history=work_history,
+            education=education,
+            skills=skills,
+            languages=languages,
+            candidate_id=candidate.id,
+        )
+
+        # Create Resume record
+        resume = Resume(
+            candidate_id=candidate.id,
+            filename=f"cv_builder_{candidate.id}.html",
+            file_path=result["file_path"] or f"cv-builder/{candidate.id}.html",
+            file_type="html",
+            file_size="Generated",
+            status=ResumeStatus.COMPLETED,
+            source=ResumeSource.AI_BUILDER,
+            parsed_data=result["parsed_data"],
+        )
+        db.add(resume)
+        db.flush()
+
+        # Update candidate profile from parsed data
+        parsed = result["parsed_data"]
+
+        if parsed.get("skills"):
+            candidate.skills = parsed["skills"]
+        if parsed.get("experience"):
+            candidate.experience = parsed["experience"]
+        if parsed.get("education"):
+            candidate.education = parsed["education"]
+        if parsed.get("languages"):
+            candidate.languages = parsed["languages"]
+        if parsed.get("headline"):
+            candidate.headline = parsed["headline"]
+        if parsed.get("summary"):
+            candidate.summary = parsed["summary"]
+        if parsed.get("location"):
+            candidate.location = parsed["location"]
+        if parsed.get("phone"):
+            candidate.phone = parsed["phone"]
+            candidate.phone_masked = mask_phone(parsed["phone"])
+
+        candidate.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(resume)
+
+        # Get file URL if storage is configured
+        file_url = None
+        storage = get_storage_service()
+        if storage and result["file_path"]:
+            file_url = storage.get_presigned_url(result["file_path"], expires_hours=24)
+
+        logger.info(
+            "cv_builder_success",
+            candidate_id=str(candidate.id),
+            resume_id=str(resume.id),
+        )
+
+        return {
+            "success": True,
+            "message": "CV generado exitosamente",
+            "resume_id": resume.id,
+            "file_url": file_url,
+            "summary": result["summary"],
+            "html_preview": result["html_content"],
+        }
+
+    except Exception as e:
+        logger.error(
+            "cv_builder_failed",
+            candidate_id=str(candidate.id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al generar el CV: {str(e)}",
+        )

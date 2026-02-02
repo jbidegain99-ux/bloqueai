@@ -185,6 +185,50 @@ export const candidateApi = {
 
   getReport: (token: string) =>
     fetchApi('/candidate/report', { token }),
+
+  generateCV: (token: string, data: {
+    personal_info: {
+      name: string
+      email: string
+      phone?: string
+      location?: string
+      headline?: string
+    }
+    work_history?: Array<{
+      company: string
+      title: string
+      start_date: string
+      end_date?: string
+      description?: string
+      achievements?: string[]
+    }>
+    education?: Array<{
+      institution: string
+      degree: string
+      field?: string
+      year?: string
+    }>
+    skills?: {
+      technical?: string[]
+      soft?: string[]
+    }
+    languages?: Array<{
+      language: string
+      level: string
+    }>
+  }) =>
+    fetchApi<{
+      success: boolean
+      message: string
+      resume_id: string
+      file_url: string | null
+      summary: string
+      html_preview: string
+    }>('/candidate/cv/generate', {
+      method: 'POST',
+      body: data,
+      token,
+    }),
 }
 
 // Employer API
@@ -503,6 +547,380 @@ export const adminApi = {
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
+  },
+
+  // Clients Management
+  getClients: (token: string, params?: {
+    include_non_clients?: boolean
+    is_active?: boolean
+    search?: string
+    page?: number
+    page_size?: number
+  }) => {
+    const queryParams = new URLSearchParams()
+    if (params?.include_non_clients) queryParams.set('include_non_clients', 'true')
+    if (params?.is_active !== undefined) queryParams.set('is_active', String(params.is_active))
+    if (params?.search) queryParams.set('search', params.search)
+    if (params?.page) queryParams.set('page', String(params.page))
+    if (params?.page_size) queryParams.set('page_size', String(params.page_size))
+    const queryString = queryParams.toString()
+    return fetchApi<{
+      items: Array<{
+        id: string
+        name: string
+        slug: string
+        description: string | null
+        website: string | null
+        industry: string | null
+        size: string | null
+        logo_url: string | null
+        is_active: boolean
+        is_client: boolean
+        client_code: string | null
+        match_threshold: number | null
+        created_at: string
+        updated_at: string
+        job_count: number
+      }>
+      total: number
+      page: number
+      page_size: number
+      total_pages: number
+    }>(`/admin/clients${queryString ? `?${queryString}` : ''}`, { token })
+  },
+
+  getClient: (token: string, clientId: string) =>
+    fetchApi<{
+      id: string
+      name: string
+      slug: string
+      description: string | null
+      website: string | null
+      industry: string | null
+      size: string | null
+      logo_url: string | null
+      is_active: boolean
+      is_client: boolean
+      client_code: string | null
+      match_threshold: number | null
+      created_at: string
+      updated_at: string
+      job_count: number
+    }>(`/admin/clients/${clientId}`, { token }),
+
+  createClient: (token: string, data: {
+    name: string
+    description?: string
+    website?: string
+    industry?: string
+    size?: string
+    client_code?: string
+    match_threshold?: number
+  }) => {
+    const queryParams = new URLSearchParams()
+    queryParams.set('name', data.name)
+    if (data.description) queryParams.set('description', data.description)
+    if (data.website) queryParams.set('website', data.website)
+    if (data.industry) queryParams.set('industry', data.industry)
+    if (data.size) queryParams.set('size', data.size)
+    if (data.client_code) queryParams.set('client_code', data.client_code)
+    if (data.match_threshold !== undefined) queryParams.set('match_threshold', String(data.match_threshold))
+    return fetchApi<{
+      id: string
+      name: string
+      slug: string
+      description: string | null
+      website: string | null
+      industry: string | null
+      size: string | null
+      logo_url: string | null
+      is_active: boolean
+      is_client: boolean
+      client_code: string | null
+      match_threshold: number | null
+      created_at: string
+      updated_at: string
+      job_count: number
+    }>(`/admin/clients?${queryParams.toString()}`, {
+      method: 'POST',
+      token,
+    })
+  },
+
+  updateClient: (token: string, clientId: string, data: {
+    name?: string
+    description?: string
+    website?: string
+    industry?: string
+    size?: string
+    client_code?: string
+    match_threshold?: number
+    is_client?: boolean
+    is_active?: boolean
+  }) => {
+    const queryParams = new URLSearchParams()
+    if (data.name) queryParams.set('name', data.name)
+    if (data.description !== undefined) queryParams.set('description', data.description)
+    if (data.website !== undefined) queryParams.set('website', data.website)
+    if (data.industry !== undefined) queryParams.set('industry', data.industry)
+    if (data.size !== undefined) queryParams.set('size', data.size)
+    if (data.client_code !== undefined) queryParams.set('client_code', data.client_code)
+    if (data.match_threshold !== undefined) queryParams.set('match_threshold', String(data.match_threshold))
+    if (data.is_client !== undefined) queryParams.set('is_client', String(data.is_client))
+    if (data.is_active !== undefined) queryParams.set('is_active', String(data.is_active))
+    return fetchApi<{
+      id: string
+      name: string
+      slug: string
+      description: string | null
+      website: string | null
+      industry: string | null
+      size: string | null
+      logo_url: string | null
+      is_active: boolean
+      is_client: boolean
+      client_code: string | null
+      match_threshold: number | null
+      created_at: string
+      updated_at: string
+      job_count: number
+    }>(`/admin/clients/${clientId}?${queryParams.toString()}`, {
+      method: 'PATCH',
+      token,
+    })
+  },
+
+  getClientJobs: (token: string, clientId: string, params?: {
+    status_filter?: string
+    page?: number
+    page_size?: number
+  }) => {
+    const queryParams = new URLSearchParams()
+    if (params?.status_filter) queryParams.set('status_filter', params.status_filter)
+    if (params?.page) queryParams.set('page', String(params.page))
+    if (params?.page_size) queryParams.set('page_size', String(params.page_size))
+    const queryString = queryParams.toString()
+    return fetchApi<{
+      items: Array<{
+        id: string
+        title: string
+        status: string
+        category: string | null
+        seniority: string | null
+        location: string | null
+        modality: string | null
+        created_at: string
+      }>
+      total: number
+      page: number
+      page_size: number
+      total_pages: number
+    }>(`/admin/clients/${clientId}/jobs${queryString ? `?${queryString}` : ''}`, { token })
+  },
+
+  // Placements Management
+  getPlacements: (token: string, params?: {
+    client_id?: string
+    status_filter?: string
+    type_filter?: string
+    date_from?: string
+    date_to?: string
+    page?: number
+    page_size?: number
+  }) => {
+    const queryParams = new URLSearchParams()
+    if (params?.client_id) queryParams.set('client_id', params.client_id)
+    if (params?.status_filter) queryParams.set('status_filter', params.status_filter)
+    if (params?.type_filter) queryParams.set('type_filter', params.type_filter)
+    if (params?.date_from) queryParams.set('date_from', params.date_from)
+    if (params?.date_to) queryParams.set('date_to', params.date_to)
+    if (params?.page) queryParams.set('page', String(params.page))
+    if (params?.page_size) queryParams.set('page_size', String(params.page_size))
+    const queryString = queryParams.toString()
+    return fetchApi<{
+      items: Array<{
+        id: string
+        candidate_id: string
+        candidate_name: string | null
+        client_id: string
+        client_name: string | null
+        job_id: string | null
+        job_title: string | null
+        position_title: string
+        department: string | null
+        location: string | null
+        placement_type: string
+        status: string
+        start_date: string | null
+        end_date: string | null
+        salary_amount: number | null
+        salary_currency: string | null
+        salary_period: string | null
+        notes: string | null
+        created_at: string
+      }>
+      total: number
+      page: number
+      page_size: number
+      total_pages: number
+      filter_options: {
+        clients: Array<{ id: string; name: string }>
+        statuses: string[]
+        types: string[]
+      }
+    }>(`/admin/placements${queryString ? `?${queryString}` : ''}`, { token })
+  },
+
+  getPlacement: (token: string, placementId: string) =>
+    fetchApi<{
+      id: string
+      candidate_id: string
+      candidate_name: string | null
+      client_id: string
+      client_name: string | null
+      job_id: string | null
+      job_title: string | null
+      position_title: string
+      department: string | null
+      location: string | null
+      placement_type: string
+      status: string
+      offer_date: string | null
+      start_date: string | null
+      end_date: string | null
+      salary_amount: number | null
+      salary_currency: string | null
+      salary_period: string | null
+      placement_fee: number | null
+      fee_percentage: number | null
+      fee_paid: boolean
+      notes: string | null
+      created_at: string
+      updated_at: string
+    }>(`/admin/placements/${placementId}`, { token }),
+
+  createPlacement: (token: string, data: {
+    candidate_id: string
+    client_id: string
+    position_title: string
+    placement_type: string
+    job_id?: string
+    department?: string
+    location?: string
+    start_date?: string
+    end_date?: string
+    salary_amount?: number
+    salary_currency?: string
+    salary_period?: string
+    notes?: string
+  }) => {
+    const queryParams = new URLSearchParams()
+    queryParams.set('candidate_id', data.candidate_id)
+    queryParams.set('client_id', data.client_id)
+    queryParams.set('position_title', data.position_title)
+    queryParams.set('placement_type', data.placement_type)
+    if (data.job_id) queryParams.set('job_id', data.job_id)
+    if (data.department) queryParams.set('department', data.department)
+    if (data.location) queryParams.set('location', data.location)
+    if (data.start_date) queryParams.set('start_date', data.start_date)
+    if (data.end_date) queryParams.set('end_date', data.end_date)
+    if (data.salary_amount !== undefined) queryParams.set('salary_amount', String(data.salary_amount))
+    if (data.salary_currency) queryParams.set('salary_currency', data.salary_currency)
+    if (data.salary_period) queryParams.set('salary_period', data.salary_period)
+    if (data.notes) queryParams.set('notes', data.notes)
+    return fetchApi<{
+      id: string
+      candidate_id: string
+      candidate_name: string | null
+      client_id: string
+      client_name: string | null
+      job_id: string | null
+      position_title: string
+      placement_type: string
+      status: string
+      start_date: string | null
+      end_date: string | null
+      created_at: string
+    }>(`/admin/placements?${queryParams.toString()}`, {
+      method: 'POST',
+      token,
+    })
+  },
+
+  updatePlacement: (token: string, placementId: string, data: {
+    status?: string
+    position_title?: string
+    department?: string
+    location?: string
+    placement_type?: string
+    start_date?: string
+    end_date?: string
+    salary_amount?: number
+    salary_currency?: string
+    salary_period?: string
+    notes?: string
+  }) => {
+    const queryParams = new URLSearchParams()
+    if (data.status) queryParams.set('status_update', data.status)
+    if (data.position_title) queryParams.set('position_title', data.position_title)
+    if (data.department !== undefined) queryParams.set('department', data.department)
+    if (data.location !== undefined) queryParams.set('location', data.location)
+    if (data.placement_type) queryParams.set('placement_type', data.placement_type)
+    if (data.start_date !== undefined) queryParams.set('start_date', data.start_date)
+    if (data.end_date !== undefined) queryParams.set('end_date', data.end_date)
+    if (data.salary_amount !== undefined) queryParams.set('salary_amount', String(data.salary_amount))
+    if (data.salary_currency !== undefined) queryParams.set('salary_currency', data.salary_currency)
+    if (data.salary_period !== undefined) queryParams.set('salary_period', data.salary_period)
+    if (data.notes !== undefined) queryParams.set('notes', data.notes)
+    return fetchApi<{
+      id: string
+      candidate_id: string
+      candidate_name: string | null
+      client_id: string
+      client_name: string | null
+      job_id: string | null
+      job_title: string | null
+      position_title: string
+      department: string | null
+      location: string | null
+      placement_type: string
+      status: string
+      start_date: string | null
+      end_date: string | null
+      salary_amount: number | null
+      salary_currency: string | null
+      salary_period: string | null
+      notes: string | null
+      created_at: string
+      updated_at: string
+    }>(`/admin/placements/${placementId}?${queryParams.toString()}`, {
+      method: 'PATCH',
+      token,
+    })
+  },
+
+  getPlacementsReport: (token: string, params?: {
+    client_id?: string
+    date_from?: string
+    date_to?: string
+  }) => {
+    const queryParams = new URLSearchParams()
+    if (params?.client_id) queryParams.set('client_id', params.client_id)
+    if (params?.date_from) queryParams.set('date_from', params.date_from)
+    if (params?.date_to) queryParams.set('date_to', params.date_to)
+    const queryString = queryParams.toString()
+    return fetchApi<{
+      summary: {
+        active_placements: number
+        completed_in_period: number
+      }
+      by_client: Array<{ client: string; active_count: number }>
+      filters: {
+        client_id: string | null
+        date_from: string | null
+        date_to: string | null
+      }
+    }>(`/admin/placements/report${queryString ? `?${queryString}` : ''}`, { token })
   },
 }
 

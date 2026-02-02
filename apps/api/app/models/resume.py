@@ -18,6 +18,14 @@ class ResumeStatus(str, PyEnum):
     FAILED = "FAILED"
 
 
+class ResumeSource(str, PyEnum):
+    """How the resume/CV was created."""
+
+    UPLOADED = "UPLOADED"      # File uploaded by candidate
+    AI_BUILDER = "AI_BUILDER"  # Created using AI CV builder
+    MANUAL = "MANUAL"          # Manually entered by candidate
+
+
 class Resume(BaseModel):
     """Resume/CV upload model."""
 
@@ -39,6 +47,11 @@ class Resume(BaseModel):
     status = Column(
         Enum(ResumeStatus, name="resume_status"),
         default=ResumeStatus.PENDING,
+        nullable=False,
+    )
+    source = Column(
+        Enum(ResumeSource, name="resume_source"),
+        default=ResumeSource.UPLOADED,
         nullable=False,
     )
     error_message = Column(Text, nullable=True)

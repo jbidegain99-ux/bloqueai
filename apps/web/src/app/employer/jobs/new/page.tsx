@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/brand/AppShell'
 import { BrandCard, BrandCardHeader } from '@/components/brand/BrandCard'
@@ -17,13 +17,39 @@ import {
 } from '@/components/ui/select'
 import { useAuthStore } from '@/lib/auth'
 import { employerApi } from '@/lib/api'
-import { Sparkles, Wand2, MessageSquare, Loader2 } from 'lucide-react'
+import { Sparkles, Wand2, MessageSquare, Loader2, CheckCircle2 } from 'lucide-react'
+
+// Category-aware placeholder templates for requirements
+const MUST_HAVES_PLACEHOLDERS: Record<string, string> = {
+  TECHNOLOGY: 'React\nNode.js\n5+ anos de experiencia',
+  HEALTHCARE: 'Titulo en medicina\nCedula profesional\n3+ anos en consulta',
+  DENTAL: 'Titulo en odontologia\nCedula profesional\nExperiencia clinica',
+  FINANCE: 'CPA/Contador\nExcel avanzado\nConocimiento de SAP',
+  LEGAL: 'Cedula profesional\nLitigacion\nDerecho corporativo',
+  SALES: 'Experiencia comercial\nManejo de CRM\nCierre de ventas',
+  MANUFACTURING: 'Control de calidad\nSix Sigma\nManejo de inventarios',
+  HUMAN_RESOURCES: 'Gestion de talento\nConocimiento de nominas\nEntrevistas por competencias',
+  OTHER: 'Experiencia requerida\nHabilidades clave\nCertificaciones',
+}
+
+const NICE_TO_HAVES_PLACEHOLDERS: Record<string, string> = {
+  TECHNOLOGY: 'Docker\nKubernetes\nAWS',
+  HEALTHCARE: 'Especialidad medica\nIngles medico\nInvestigacion clinica',
+  DENTAL: 'Especialidad en ortodoncia\nManejo de software dental\nIngles',
+  FINANCE: 'MBA\nCertificacion CFA\nPower BI',
+  LEGAL: 'Maestria en derecho\nIngles juridico\nMediacion',
+  SALES: 'Ingles de negocios\nExperiencia en sector\nNegociacion avanzada',
+  MANUFACTURING: 'Lean Manufacturing\nIngles tecnico\nERP',
+  HUMAN_RESOURCES: 'Maestria en RRHH\nCertificacion SHRM\nIngles',
+  OTHER: 'Certificaciones adicionales\nIdiomas\nHabilidades complementarias',
+}
 
 export default function NewJobPage() {
   const router = useRouter()
   const { accessToken } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [copilotLoading, setCopilotLoading] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     title: '',
@@ -44,6 +70,20 @@ export default function NewJobPage() {
     custom_questions: '',
   })
 
+  // Dynamic placeholders based on selected category
+  const mustHavesPlaceholder = useMemo(() => {
+    return MUST_HAVES_PLACEHOLDERS[formData.category] || MUST_HAVES_PLACEHOLDERS.OTHER
+  }, [formData.category])
+
+  const niceToHavesPlaceholder = useMemo(() => {
+    return NICE_TO_HAVES_PLACEHOLDERS[formData.category] || NICE_TO_HAVES_PLACEHOLDERS.OTHER
+  }, [formData.category])
+
+  const showSuccess = (message: string) => {
+    setSuccess(message)
+    setTimeout(() => setSuccess(''), 4000)
+  }
+
   const handleCopilotDescription = async () => {
     if (!accessToken || !formData.title) {
       setError('Primero ingresa un titulo para la vacante')
@@ -51,6 +91,7 @@ export default function NewJobPage() {
     }
     setCopilotLoading('description')
     setError('')
+    setSuccess('')
     try {
       const result = await employerApi.copilotSuggestDescription(accessToken, {
         title: formData.title,
@@ -62,6 +103,7 @@ export default function NewJobPage() {
         setError(result.error)
       } else if (result.description) {
         setFormData({ ...formData, description: result.description })
+        showSuccess('Descripcion generada exitosamente. Puedes editarla si lo deseas.')
       }
     } catch (err: any) {
       setError(err.message || 'Error al generar descripcion')
@@ -77,6 +119,7 @@ export default function NewJobPage() {
     }
     setCopilotLoading('requirements')
     setError('')
+    setSuccess('')
     try {
       const result = await employerApi.copilotSuggestRequirements(accessToken, {
         title: formData.title,
@@ -92,6 +135,7 @@ export default function NewJobPage() {
           must_haves: result.must_haves?.join('\n') || formData.must_haves,
           nice_to_haves: result.nice_to_haves?.join('\n') || formData.nice_to_haves,
         })
+        showSuccess('Requisitos generados exitosamente. Puedes editarlos si lo deseas.')
       }
     } catch (err: any) {
       setError(err.message || 'Error al generar requisitos')
@@ -107,6 +151,7 @@ export default function NewJobPage() {
     }
     setCopilotLoading('questions')
     setError('')
+    setSuccess('')
     try {
       const result = await employerApi.copilotSuggestQuestions(accessToken, {
         title: formData.title,
@@ -120,6 +165,7 @@ export default function NewJobPage() {
       } else if (result.questions) {
         const questions = result.questions.map(q => q.question).join('\n')
         setFormData({ ...formData, custom_questions: questions })
+        showSuccess('Preguntas generadas exitosamente. Puedes editarlas si lo deseas.')
       }
     } catch (err: any) {
       setError(err.message || 'Error al generar preguntas')
@@ -175,6 +221,13 @@ export default function NewJobPage() {
           {error && (
             <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm">
               {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="bg-green-50 text-green-700 p-3 rounded-md text-sm flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+              {success}
             </div>
           )}
 
@@ -397,7 +450,7 @@ export default function NewJobPage() {
                   id="must_haves"
                   value={formData.must_haves}
                   onChange={(e) => setFormData({ ...formData, must_haves: e.target.value })}
-                  placeholder="React&#10;Node.js&#10;5+ anos de experiencia"
+                  placeholder={mustHavesPlaceholder}
                   rows={4}
                 />
               </div>
@@ -408,7 +461,7 @@ export default function NewJobPage() {
                   id="nice_to_haves"
                   value={formData.nice_to_haves}
                   onChange={(e) => setFormData({ ...formData, nice_to_haves: e.target.value })}
-                  placeholder="Docker&#10;Kubernetes&#10;AWS"
+                  placeholder={niceToHavesPlaceholder}
                   rows={3}
                 />
               </div>

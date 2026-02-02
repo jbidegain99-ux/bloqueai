@@ -1,30 +1,44 @@
 # TalentOS Platform Stabilization - Task Plan
 
-**Date:** 2026-02-02
-**Branch:** `claude/stabilize-platform-tOFOh`
-**Goal:** Stabilize platform, close critical gaps, advance to key features
+**Date:** 2026-02-02 (Updated)
+**Branch:** `claude/fix-cv-pre-step-dx5aR`
+**Goal:** Fix all issues from latest QA report + complete missing features
 
 ---
 
-## Phase 1: Critical Fixes (Non-Negotiable)
+## NEW QA FINDINGS (2026-02-02)
 
-### T1: Fix `/admin/interviews`
-**Status:** [x] DONE - Verified
+User QA reports the following issues still exist despite previous claims:
+1. Pre-step CV + example ❌ (VERIFIED: EXISTS - user may not have found it)
+2. CV Builder IA ❌ (NOT IMPLEMENTED - new feature needed)
+3. Candidate Profile false states ❌ (shows "Entrevista completada" without actual interview)
+4. Threshold UI ❌ (VERIFIED: EXISTS at /admin/settings)
+5. Job status editable ❌ (UI missing - backend done)
+6. Job form generic ❌ (placeholders still dev-specific)
+7. Job Copilot IA buttons ❌ (may be API key issue or error handling)
+8. Clients module ❌ (backend done, UI missing)
+9. Dashboard segmentable ❌ (VERIFIED: EXISTS at /admin/dashboard)
+10. /admin/interviews crash ❌ (needs re-verification)
+11. Export CSV shortlist ❌ (needs re-verification)
+
+---
+
+## Phase 1: Critical Fixes (P0)
+
+### T1: Verify /admin/interviews NO crash
+**Status:** [ ] RE-VERIFY
 **Priority:** P0 - Critical
 
-**Analysis:**
-- Previous fix addressed enum serialization (admin.py lines 319, 332)
-- Page loads without crash
-- Error handling in place
+**User reports crash still occurs.**
 
 **Definition of Done:**
-- [x] Page loads without "Application error"
-- [x] Shows "No hay entrevistas" when empty
-- [x] Filters work (Completed/Flagged/In Progress/All)
-- [x] Interview details panel works
-- [x] Score override works
+- [ ] Page loads without "Application error"
+- [ ] Shows "No hay entrevistas" when empty
+- [ ] Filters work (Completed/Flagged/In Progress/All)
+- [ ] Interview details panel works
+- [ ] Score override works
 
-**Files Verified:**
+**Files:**
 - `apps/web/src/app/admin/interviews/page.tsx`
 - `apps/api/app/routers/admin.py`
 

@@ -78,7 +78,7 @@ class JobCopilotService:
             Dict with 'description' and 'suggestions' keys
         """
         if not self.client:
-            return {"error": "AI service not configured"}
+            return {"error": "Servicio IA no disponible. Configura la API key de LLM en ajustes del sistema."}
 
         system_prompt = """Eres un experto en redaccion de ofertas de empleo.
 Tu tarea es crear descripciones de trabajo atractivas, claras y profesionales.
@@ -157,7 +157,7 @@ Nivel: {seniority}
             Dict with 'must_haves' and 'nice_to_haves' lists
         """
         if not self.client:
-            return {"error": "AI service not configured"}
+            return {"error": "Servicio IA no disponible. Configura la API key de LLM en ajustes del sistema."}
 
         system_prompt = """Eres un experto en reclutamiento.
 Tu tarea es generar requisitos realistas y relevantes para ofertas de empleo.
@@ -240,7 +240,7 @@ Nivel: {seniority}
             Dict with 'questions' list and 'categories' breakdown
         """
         if not self.client:
-            return {"error": "AI service not configured"}
+            return {"error": "Servicio IA no disponible. Configura la API key de LLM en ajustes del sistema."}
 
         system_prompt = """Eres un experto en entrevistas y evaluacion de talento.
 Tu tarea es generar preguntas de entrevista efectivas para evaluar candidatos.
