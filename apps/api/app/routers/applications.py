@@ -388,7 +388,7 @@ async def analyze_cv(
         )
 
     application = db.query(Application).options(
-        joinedload(Application.job)
+        joinedload(Application.job).joinedload(Job.company)
     ).filter(
         and_(
             Application.id == application_id,
@@ -530,9 +530,35 @@ Proporciona tu analisis en formato JSON."""
         match_reasons = analysis.get("match_reasons", [])
         gaps = analysis.get("gaps", [])
 
-        # Get threshold from job or use system default (70)
-        SYSTEM_DEFAULT_THRESHOLD = 70
-        match_threshold = job.match_threshold if job.match_threshold is not None else SYSTEM_DEFAULT_THRESHOLD
+        # Get threshold using inheritance: job -> client -> system
+        # 1. Try job-specific threshold
+        # 2. Fallback to client (company) threshold
+        # 3. Fallback to system default from settings
+        from app.models.settings import SystemSettings
+
+        # System default (from settings table or hardcoded 70)
+        system_default = SystemSettings.get_int(db, 'default_match_threshold', 70)
+
+        # Client (company) threshold
+        client_threshold = None
+        if job.company and job.company.match_threshold is not None:
+            client_threshold = job.company.match_threshold
+
+        # Final threshold = job ?? client ?? system
+        if job.match_threshold is not None:
+            match_threshold = job.match_threshold
+        elif client_threshold is not None:
+            match_threshold = client_threshold
+        else:
+            match_threshold = system_default
+
+        logger.debug(
+            "threshold_resolved",
+            job_threshold=job.match_threshold,
+            client_threshold=client_threshold,
+            system_default=system_default,
+            final_threshold=match_threshold
+        )
 
         # Determine status based on match score vs threshold
         if match_score >= match_threshold:
@@ -577,6 +603,7 @@ Proporciona tu analisis en formato JSON."""
         application.match_reasons = match_reasons
         application.match_gaps = gaps
         application.recommended_job_ids = recommended_jobs
+        application.applied_threshold = match_threshold  # Store for audit trail
         application.status = new_status
         application.updated_at = datetime.utcnow()
 

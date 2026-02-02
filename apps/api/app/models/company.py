@@ -1,6 +1,6 @@
 """Company model for employer organizations."""
 
-from sqlalchemy import Column, String, Text, Boolean
+from sqlalchemy import Column, String, Text, Boolean, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -8,7 +8,7 @@ from app.models.base import BaseModel
 
 
 class Company(BaseModel):
-    """Company model for employers."""
+    """Company model for employers/clients."""
 
     __tablename__ = "companies"
 
@@ -20,6 +20,13 @@ class Company(BaseModel):
     size = Column(String(50), nullable=True)  # e.g., "1-10", "11-50", "51-200"
     logo_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+
+    # Client-level match threshold override (NULL = use system default)
+    match_threshold = Column(Integer, nullable=True)
+
+    # Client designation (for outsourcing)
+    is_client = Column(Boolean, default=False, nullable=False)
+    client_code = Column(String(50), nullable=True, unique=True)
 
     # Additional company data
     metadata_ = Column("metadata", JSONB, default=dict)
