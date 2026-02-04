@@ -262,8 +262,25 @@ async def get_resumes(
     db: Session = Depends(get_db),
 ) -> list[Resume]:
     """Get all resumes for current candidate."""
-    candidate = get_or_create_candidate(db, current_user)
-    return db.query(Resume).filter(Resume.candidate_id == candidate.id).all()
+    import structlog
+    logger = structlog.get_logger()
+
+    try:
+        candidate = get_or_create_candidate(db, current_user)
+        resumes = db.query(Resume).filter(Resume.candidate_id == candidate.id).all()
+
+        # Ensure parsed_data is not None for serialization
+        for resume in resumes:
+            if resume.parsed_data is None:
+                resume.parsed_data = {}
+
+        return resumes
+    except Exception as e:
+        logger.error("get_resumes_error", user_id=str(current_user.id), error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener los CVs: {str(e)}"
+        )
 
 
 @router.post("/interview/start", response_model=InterviewSessionResponse)

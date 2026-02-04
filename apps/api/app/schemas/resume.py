@@ -3,7 +3,7 @@
 from typing import Any, Optional
 from uuid import UUID
 
-from app.models.resume import ResumeStatus
+from app.models.resume import ResumeStatus, ResumeSource
 from app.schemas.base import IDSchema
 
 
@@ -23,5 +23,6 @@ class ResumeResponse(IDSchema):
     file_type: str
     file_size: Optional[str] = None
     status: ResumeStatus
+    source: ResumeSource = ResumeSource.UPLOADED
     error_message: Optional[str] = None
-    parsed_data: dict[str, Any] = {}
+    parsed_data: Optional[dict[str, Any]] = None
