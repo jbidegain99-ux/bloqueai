@@ -1151,4 +1151,376 @@ export const applicationsApi = {
     }),
 }
 
+// Payroll API
+// --- Payroll TypeScript Interfaces ---
+
+interface PayrollEmployee {
+  id: string
+  client_id: string
+  client_name: string | null
+  full_name: string
+  email: string | null
+  phone: string | null
+  employee_code: string | null
+  department: string | null
+  position: string | null
+  is_active: boolean
+  hire_date: string | null
+  termination_date: string | null
+  active_contract: {
+    contract_type: string | null
+    base_salary: number | null
+    currency: string | null
+    pay_frequency: string | null
+  } | null
+  created_at: string | null
+}
+
+interface PayrollContract {
+  id: string
+  employee_id: string
+  employee_name: string
+  client_id: string
+  contract_type: string
+  start_date: string
+  end_date: string | null
+  base_salary: number
+  currency: string
+  pay_frequency: string
+  is_active: boolean
+  notes: string | null
+  created_at: string | null
+}
+
+interface PayrollAttendanceRecord {
+  id: string
+  employee_id: string
+  employee_name: string
+  client_id: string
+  date: string
+  hours: number
+  attendance_type: string
+  notes: string | null
+}
+
+interface PayrollRunItem {
+  id: string
+  client_id: string
+  client_name: string | null
+  period_start: string
+  period_end: string
+  pay_frequency: string
+  status: string
+  total_gross: number
+  total_deductions: number
+  total_net: number
+  employee_count: number
+  currency: string
+  approved_by_name: string | null
+  approved_at: string | null
+  notes: string | null
+  created_at: string | null
+}
+
+interface PayrollLineItem {
+  id: string
+  employee_id: string
+  employee_name: string
+  employee_code: string | null
+  department: string | null
+  base_salary: number
+  days_worked: number | null
+  hours_regular: number
+  hours_overtime: number
+  gross_pay: number
+  total_deductions: number
+  net_pay: number
+  deductions_detail: Array<{ name: string; type: string; amount: number }> | null
+}
+
+interface PayrollDeductionType {
+  id: string
+  client_id: string
+  name: string
+  description: string | null
+  calc_type: string
+  value: number
+  is_active: boolean
+  is_mandatory: boolean
+  created_at: string | null
+}
+
+interface PayrollSummary {
+  client_name: string | null
+  period: string | null
+  total_employees: number
+  total_gross: number
+  total_deductions: number
+  total_net: number
+  runs_count: number
+  currency: string
+}
+
+interface PayrollDetailItem {
+  employee_name: string
+  employee_code: string | null
+  department: string | null
+  base_salary: number
+  gross_pay: number
+  total_deductions: number
+  net_pay: number
+}
+
+interface PayrollPayslip {
+  employee_id: string
+  employee_name: string
+  payslip_id: string | null
+  html_content: string | null
+  generated_at: string | null
+}
+
+interface AttendanceCsvPreviewResult {
+  rows: Array<{
+    employee_code: string | null
+    employee_name: string | null
+    date: string
+    hours: number
+    attendance_type: string
+    notes: string | null
+    is_duplicate: boolean
+    employee_id: string | null
+  }>
+  total_rows: number
+  valid_rows: number
+  duplicate_rows: number
+  unmapped_rows: number
+}
+
+export const payrollApi = {
+  // Employees
+  getEmployees: (token: string, params?: {
+    client_id?: string
+    is_active?: boolean
+    search?: string
+    skip?: number
+    limit?: number
+  }) => {
+    const qp = new URLSearchParams()
+    if (params?.client_id) qp.set('client_id', params.client_id)
+    if (params?.is_active !== undefined) qp.set('is_active', String(params.is_active))
+    if (params?.search) qp.set('search', params.search)
+    if (params?.skip !== undefined) qp.set('skip', String(params.skip))
+    if (params?.limit !== undefined) qp.set('limit', String(params.limit))
+    const qs = qp.toString()
+    return fetchApi<PayrollEmployee[]>(`/payroll/employees${qs ? `?${qs}` : ''}`, { token })
+  },
+
+  createEmployee: (token: string, data: {
+    client_id: string
+    full_name: string
+    email?: string
+    phone?: string
+    employee_code?: string
+    department?: string
+    position?: string
+    hire_date?: string
+  }) =>
+    fetchApi<PayrollEmployee>('/payroll/employees', { method: 'POST', body: data, token }),
+
+  updateEmployee: (token: string, employeeId: string, data: {
+    full_name?: string
+    email?: string
+    phone?: string
+    employee_code?: string
+    department?: string
+    position?: string
+    is_active?: boolean
+    hire_date?: string
+    termination_date?: string
+  }) =>
+    fetchApi<PayrollEmployee>(`/payroll/employees/${employeeId}`, { method: 'PATCH', body: data, token }),
+
+  // Contracts
+  getContracts: (token: string, params?: {
+    client_id?: string
+    employee_id?: string
+    is_active?: boolean
+  }) => {
+    const qp = new URLSearchParams()
+    if (params?.client_id) qp.set('client_id', params.client_id)
+    if (params?.employee_id) qp.set('employee_id', params.employee_id)
+    if (params?.is_active !== undefined) qp.set('is_active', String(params.is_active))
+    const qs = qp.toString()
+    return fetchApi<PayrollContract[]>(`/payroll/contracts${qs ? `?${qs}` : ''}`, { token })
+  },
+
+  createContract: (token: string, data: {
+    employee_id: string
+    client_id: string
+    contract_type: string
+    start_date: string
+    base_salary: number
+    currency?: string
+    pay_frequency: string
+    end_date?: string
+    notes?: string
+  }) =>
+    fetchApi<{ id: string; message: string }>('/payroll/contracts', { method: 'POST', body: data, token }),
+
+  updateContract: (token: string, contractId: string, data: {
+    contract_type?: string
+    start_date?: string
+    end_date?: string
+    base_salary?: number
+    currency?: string
+    pay_frequency?: string
+    is_active?: boolean
+    notes?: string
+  }) =>
+    fetchApi<{ id: string; message: string }>(`/payroll/contracts/${contractId}`, { method: 'PATCH', body: data, token }),
+
+  // Attendance
+  getAttendance: (token: string, params?: {
+    client_id?: string
+    employee_id?: string
+    date_from?: string
+    date_to?: string
+    skip?: number
+    limit?: number
+  }) => {
+    const qp = new URLSearchParams()
+    if (params?.client_id) qp.set('client_id', params.client_id)
+    if (params?.employee_id) qp.set('employee_id', params.employee_id)
+    if (params?.date_from) qp.set('date_from', params.date_from)
+    if (params?.date_to) qp.set('date_to', params.date_to)
+    if (params?.skip !== undefined) qp.set('skip', String(params.skip))
+    if (params?.limit !== undefined) qp.set('limit', String(params.limit))
+    const qs = qp.toString()
+    return fetchApi<PayrollAttendanceRecord[]>(`/payroll/attendance${qs ? `?${qs}` : ''}`, { token })
+  },
+
+  createAttendance: (token: string, data: {
+    employee_id: string
+    client_id: string
+    date: string
+    hours: number
+    attendance_type?: string
+    notes?: string
+  }) =>
+    fetchApi<{ id: string; message: string }>('/payroll/attendance', { method: 'POST', body: data, token }),
+
+  importAttendanceCsv: async (token: string, clientId: string, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await fetch(`${API_URL}/payroll/attendance/import-csv?client_id=${clientId}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => null)
+      throw new ApiError(err?.detail || 'Error al importar CSV', response.status, err)
+    }
+    return response.json() as Promise<AttendanceCsvPreviewResult>
+  },
+
+  confirmAttendanceCsv: (token: string, clientId: string, rows: AttendanceCsvPreviewResult['rows']) =>
+    fetchApi<{ created: number; message: string }>(`/payroll/attendance/import-csv/confirm?client_id=${clientId}`, {
+      method: 'POST', body: rows, token,
+    }),
+
+  // Payroll Runs
+  getRuns: (token: string, params?: {
+    client_id?: string
+    run_status?: string
+  }) => {
+    const qp = new URLSearchParams()
+    if (params?.client_id) qp.set('client_id', params.client_id)
+    if (params?.run_status) qp.set('run_status', params.run_status)
+    const qs = qp.toString()
+    return fetchApi<PayrollRunItem[]>(`/payroll/runs${qs ? `?${qs}` : ''}`, { token })
+  },
+
+  createRun: (token: string, data: {
+    client_id: string
+    period_start: string
+    period_end: string
+    pay_frequency: string
+    notes?: string
+  }) =>
+    fetchApi<PayrollRunItem>('/payroll/runs', { method: 'POST', body: data, token }),
+
+  validateRun: (token: string, runId: string) =>
+    fetchApi<{ status: string; employee_count: number; warnings: string[] }>(`/payroll/runs/${runId}/validate`, {
+      method: 'POST', token,
+    }),
+
+  calculateRun: (token: string, runId: string) =>
+    fetchApi<{
+      status: string
+      employee_count: number
+      total_gross: number
+      total_deductions: number
+      total_net: number
+    }>(`/payroll/runs/${runId}/calculate`, { method: 'POST', token }),
+
+  approveRun: (token: string, runId: string) =>
+    fetchApi<{ status: string; approved_by: string }>(`/payroll/runs/${runId}/approve`, { method: 'POST', token }),
+
+  getRunLines: (token: string, runId: string) =>
+    fetchApi<PayrollLineItem[]>(`/payroll/runs/${runId}/lines`, { token }),
+
+  getRunPayslips: (token: string, runId: string) =>
+    fetchApi<PayrollPayslip[]>(`/payroll/runs/${runId}/payslips`, { token }),
+
+  exportRunCsv: async (token: string, runId: string) => {
+    const response = await fetch(`${API_URL}/payroll/runs/${runId}/export.csv`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => null)
+      throw new ApiError(err?.detail || 'Error al exportar CSV', response.status, err)
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `nomina-${runId}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  },
+
+  // Deduction Types
+  getDeductionTypes: (token: string, clientId: string) =>
+    fetchApi<PayrollDeductionType[]>(`/payroll/deduction-types?client_id=${clientId}`, { token }),
+
+  createDeductionType: (token: string, data: {
+    client_id: string
+    name: string
+    description?: string
+    calc_type: string
+    value: number
+    is_mandatory?: boolean
+  }) =>
+    fetchApi<PayrollDeductionType>('/payroll/deduction-types', { method: 'POST', body: data, token }),
+
+  // Reports
+  getSummaryReport: (token: string, params: {
+    client_id: string
+    period_start?: string
+    period_end?: string
+  }) => {
+    const qp = new URLSearchParams()
+    qp.set('client_id', params.client_id)
+    if (params.period_start) qp.set('period_start', params.period_start)
+    if (params.period_end) qp.set('period_end', params.period_end)
+    return fetchApi<PayrollSummary>(`/payroll/reports/summary?${qp.toString()}`, { token })
+  },
+
+  getDetailReport: (token: string, runId: string) =>
+    fetchApi<PayrollDetailItem[]>(`/payroll/reports/detail?run_id=${runId}`, { token }),
+}
+
 export { ApiError }

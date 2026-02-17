@@ -13,7 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScoreDisplay } from '@/components/brand/ScoreDisplay'
 import { useAuthStore, isRecruiter } from '@/lib/auth'
 import { adminApi } from '@/lib/api'
-import { AlertTriangle, MessageSquare, User, Clock, CheckCircle, ChevronDown, ChevronUp, Play, FileText } from 'lucide-react'
+import { AlertTriangle, MessageSquare, User, Clock, CheckCircle, ChevronDown, ChevronUp, Play, FileText, ChevronRight } from 'lucide-react'
+import Link from 'next/link'
 
 interface InterviewMessage {
   role: 'assistant' | 'user'
@@ -210,7 +211,13 @@ export default function InterviewsPage() {
         size="sm"
       />
 
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="mt-6">
+      <nav className="flex items-center gap-2 text-sm text-muted-foreground mt-4 mb-2">
+        <Link href="/admin/dashboard" className="hover:text-bloque-navy900 transition-colors">Dashboard</Link>
+        <ChevronRight className="h-4 w-4" />
+        <span className="text-bloque-navy900 font-medium">Entrevistas</span>
+      </nav>
+
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="mt-4">
         <TabsList className="mb-6">
           <TabsTrigger value="completed">
             <CheckCircle className="h-4 w-4 mr-2" />
