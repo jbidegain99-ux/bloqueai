@@ -71,6 +71,7 @@ export function AppShell({ children }: AppShellProps) {
     { label: 'Nóminas', href: '/admin/payroll/runs', icon: FileText },
     { label: 'Deducciones', href: '/admin/payroll/deductions', icon: Settings },
     { label: 'Reportes', href: '/admin/payroll/reports', icon: BarChart3 },
+    { label: 'Clientes', href: '/admin/clients', icon: Building2 },
   ]
 
   // Role-specific navigation

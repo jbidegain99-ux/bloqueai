@@ -260,7 +260,7 @@ def seed_payroll_mvp():
                     offer_date=date(2026, 1, 10),
                     start_date=date(2026, 1, 15),
                     salary_amount=emp_data["base_salary"],
-                    salary_currency="MXN",
+                    salary_currency="USD",
                     salary_period="monthly",
                     created_at=now,
                     updated_at=now,
@@ -311,7 +311,7 @@ def seed_payroll_mvp():
                     contract_type=emp_data["contract_type"],
                     start_date=date(2026, 1, 15),
                     base_salary=emp_data["base_salary"],
-                    currency="MXN",
+                    currency="USD",
                     pay_frequency=emp_data["pay_frequency"],
                     is_active=True,
                     notes=f"Contrato {emp_data['contract_type'].value} para {emp_data['full_name']}",
@@ -464,7 +464,7 @@ def seed_payroll_mvp():
                 period_end=PERIOD_END,
                 pay_frequency=PayFrequency.MONTHLY,
                 status=PayrollRunStatus.DRAFT,
-                currency="MXN",
+                currency="USD",
                 created_at=now,
                 updated_at=now,
             )
@@ -549,7 +549,7 @@ def seed_payroll_mvp():
                     deductions=deductions_detail,
                     total_deductions=line_ded,
                     net_pay=net_pay,
-                    currency="MXN",
+                    currency="USD",
                 )
                 payslip = Payslip(
                     id=uuid4(),
@@ -579,9 +579,9 @@ def seed_payroll_mvp():
 
             db.flush()
             print(f"\n  [+] Run APPROVED: {line_count} employees")
-            print(f"      Total Bruto:      MXN ${total_gross:,.2f}")
-            print(f"      Total Deducciones: MXN ${total_deductions_sum:,.2f}")
-            print(f"      Total Neto:        MXN ${total_net:,.2f}")
+            print(f"      Total Bruto:      USD ${total_gross:,.2f}")
+            print(f"      Total Deducciones: USD ${total_deductions_sum:,.2f}")
+            print(f"      Total Neto:        USD ${total_net:,.2f}")
 
         db.commit()
 

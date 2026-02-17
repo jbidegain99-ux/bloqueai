@@ -61,7 +61,7 @@ class ContractCreate(BaseSchema):
     contract_type: str
     start_date: date
     base_salary: float = Field(..., gt=0)
-    currency: str = "MXN"
+    currency: str = "USD"
     pay_frequency: str
     end_date: Optional[date] = None
     notes: Optional[str] = None
@@ -186,7 +186,7 @@ class PayrollSummaryReport(BaseSchema):
     total_deductions: float = 0.0
     total_net: float = 0.0
     runs_count: int = 0
-    currency: str = "MXN"
+    currency: str = "USD"
 
 
 class PayrollDetailLine(BaseSchema):

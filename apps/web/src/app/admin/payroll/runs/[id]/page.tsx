@@ -111,7 +111,7 @@ export default function PayrollRunDetailPage() {
     setMessage(null)
     try {
       const result = await payrollApi.calculateRun(accessToken, runId)
-      setMessage({ type: 'success', text: `Calculada: ${result.employee_count} empleados, neto ${run?.currency || 'MXN'} ${result.total_net.toLocaleString('es-MX', { minimumFractionDigits: 2 })}` })
+      setMessage({ type: 'success', text: `Calculada: ${result.employee_count} empleados, neto ${run?.currency || 'USD'} ${result.total_net.toLocaleString('es-MX', { minimumFractionDigits: 2 })}` })
       loadRunDetail()
     } catch (err) {
       setMessage({ type: 'error', text: 'Error al calcular la nomina' })

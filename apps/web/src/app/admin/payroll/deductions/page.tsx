@@ -162,7 +162,7 @@ export default function PayrollDeductionsPage() {
                         </span>
                       </td>
                       <td className="p-3 text-right text-gray-700">
-                        {d.calc_type === 'PERCENTAGE' ? `${d.value}%` : `MXN ${d.value.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`}
+                        {d.calc_type === 'PERCENTAGE' ? `${d.value}%` : `USD ${d.value.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`}
                       </td>
                       <td className="p-3 text-center">
                         {d.is_mandatory ? (

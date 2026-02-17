@@ -949,7 +949,7 @@ function PlacementForm({
             className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-bloque-gold500 focus:border-transparent"
           >
             <option value="USD">USD</option>
-            <option value="MXN">MXN</option>
+            <option value="USD">USD</option>
             <option value="EUR">EUR</option>
           </select>
         </div>

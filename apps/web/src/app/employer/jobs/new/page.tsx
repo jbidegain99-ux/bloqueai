@@ -374,7 +374,7 @@ export default function NewJobPage() {
                     <SelectContent>
                       <SelectItem value="USD">USD</SelectItem>
                       <SelectItem value="EUR">EUR</SelectItem>
-                      <SelectItem value="MXN">MXN</SelectItem>
+                      <SelectItem value="USD">USD</SelectItem>
                       <SelectItem value="COP">COP</SelectItem>
                       <SelectItem value="ARS">ARS</SelectItem>
                     </SelectContent>

@@ -19,7 +19,7 @@ def generate_payslip_html(
     deductions: List[dict],
     total_deductions: float,
     net_pay: float,
-    currency: str = "MXN",
+    currency: str = "USD",
 ) -> str:
     """Generate an HTML payslip document."""
 

@@ -249,10 +249,10 @@ export default function PayrollReportsPage() {
                         <td className="p-3 font-medium text-gray-900">{d.employee_name}</td>
                         <td className="p-3 text-gray-600">{d.employee_code || '-'}</td>
                         <td className="p-3 text-gray-600">{d.department || '-'}</td>
-                        <td className="p-3 text-right text-gray-700">{formatMoney(d.base_salary, summary?.currency || 'MXN')}</td>
-                        <td className="p-3 text-right text-gray-700">{formatMoney(d.gross_pay, summary?.currency || 'MXN')}</td>
-                        <td className="p-3 text-right text-orange-600">{formatMoney(d.total_deductions, summary?.currency || 'MXN')}</td>
-                        <td className="p-3 text-right font-semibold text-bloque-navy900 bg-gray-50">{formatMoney(d.net_pay, summary?.currency || 'MXN')}</td>
+                        <td className="p-3 text-right text-gray-700">{formatMoney(d.base_salary, summary?.currency || 'USD')}</td>
+                        <td className="p-3 text-right text-gray-700">{formatMoney(d.gross_pay, summary?.currency || 'USD')}</td>
+                        <td className="p-3 text-right text-orange-600">{formatMoney(d.total_deductions, summary?.currency || 'USD')}</td>
+                        <td className="p-3 text-right font-semibold text-bloque-navy900 bg-gray-50">{formatMoney(d.net_pay, summary?.currency || 'USD')}</td>
                       </tr>
                     ))}
                   </tbody>

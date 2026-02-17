@@ -208,7 +208,7 @@ export default function PayrollEmployeesPage() {
                       <td className="p-3 text-gray-600">{emp.position || '-'}</td>
                       <td className="p-3 text-right text-gray-700">
                         {emp.active_contract?.base_salary
-                          ? `${emp.active_contract.currency || 'MXN'} ${emp.active_contract.base_salary.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
+                          ? `${emp.active_contract.currency || 'USD'} ${emp.active_contract.base_salary.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
                           : '-'}
                       </td>
                       <td className="p-3 text-center">

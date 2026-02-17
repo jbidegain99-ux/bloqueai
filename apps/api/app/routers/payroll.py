@@ -1020,7 +1020,7 @@ async def payroll_summary_report(
         total_deductions=round(total_deductions, 2),
         total_net=round(total_net, 2),
         runs_count=len(runs),
-        currency=runs[0].currency if runs else "MXN",
+        currency=runs[0].currency if runs else "USD",
     )
 
 
