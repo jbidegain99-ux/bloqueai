@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "json"
 
+    # Feature Flags
+    enable_dev_overrides: bool = False
+    enable_payroll: bool = False
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from comma-separated string.
