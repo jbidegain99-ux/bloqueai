@@ -246,3 +246,60 @@
 | Profile false states | Checking score instead of session status | Check actual InterviewSession.status |
 | Job status not editable | No UI control | Added dropdown with status options |
 | Dev-specific placeholders | Hardcoded React/Node | Category-aware dynamic placeholders |
+
+---
+
+## Session: 2026-02-17 - QA Clientes + Entrevista IA + Payroll Seeds
+
+### Patterns Discovered
+
+1. **Seed Script Reuse via Wrapper**
+   - Pattern: Creating thin wrappers that import existing seed functions
+   - Benefit: Single source of truth for seed logic, multiple entry points
+   - Example: `seed_interview_high_match.py` wraps `seed_interview_e2e.py`
+
+2. **Payroll Calculation Inline in Seeds**
+   - Pattern: Router has calculation logic but no separate service layer
+   - Workaround: Replicate calculation inline in seed script
+   - Improvement: Extract payroll calculation into a service for reuse
+   - Files affected: `payroll.py:485-580`, `seed_payroll_mvp.py`
+
+3. **Idempotent Seeds with filter().first()**
+   - Pattern: Always check if entity exists before creating
+   - Use `db.query(Model).filter(Model.unique_field == value).first()`
+   - If exists, reuse; if not, create
+   - Critical for development workflow (run seed multiple times)
+
+4. **Placement-Payroll Bridge**
+   - Pattern: PayrollEmployee.candidate_id links to Candidate (which links to Placement)
+   - Flow: Candidate → Placement (ACTIVE) → PayrollEmployee → Contract → PayrollRun
+   - candidate_id is nullable (supports employees not from recruitment pipeline)
+
+5. **BrandCardHeader Requires title Prop**
+   - Pattern: `BrandCardHeader` component requires `title: string` prop, not children
+   - Fix: Use `<div>` elements for custom card headers, or pass `title` prop
+   - Files affected: payroll dashboard, runs/[id], reports pages
+
+### Architecture Decisions
+
+1. **Monthly Run Only Processes Monthly Employees**
+   - PayrollRun with MONTHLY frequency only includes employees with MONTHLY contracts
+   - Biweekly employees need a separate BIWEEKLY run
+   - Filter: `contract.pay_frequency == run.pay_frequency`
+
+2. **Deduction Types: Percentage vs Fixed**
+   - PERCENTAGE type: `deduction = base_salary * (rate / 100)`
+   - FIXED type: `deduction = rate` (flat amount)
+   - Both stored in same DeductionType model, distinguished by `calculation_type`
+
+3. **Feature Flag Gating**
+   - `enable_payroll` must be True for payroll API and seeds
+   - Router uses `Depends(require_payroll_enabled)` at route level
+   - Seeds set it via `settings.enable_payroll = True` or direct config
+
+### Key Metrics (Payroll Seed)
+
+- 4 employees: 2 MONTHLY ($45k, $35k), 2 BIWEEKLY ($25k, $15k)
+- 3 deduction types: IMSS 2.5%, ISR 10%, Seguro Vida $150
+- ~60 attendance records over 15 business days
+- 1 payroll run (MONTHLY, Feb 2026) with 2 lines processed
