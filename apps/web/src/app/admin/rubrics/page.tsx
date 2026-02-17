@@ -10,7 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore, isAdmin } from '@/lib/auth'
 import { adminApi } from '@/lib/api'
-import { Plus, Edit, ChevronRight, Settings, Trash, Save } from 'lucide-react'
+import { Plus, Edit, ChevronRight, Settings, Trash, Save, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 
 interface RubricCriteria {
   id?: string
@@ -180,7 +181,13 @@ export default function RubricsPage() {
         size="sm"
       />
 
-      <div className="mt-6 grid lg:grid-cols-3 gap-6">
+      <nav className="flex items-center gap-2 text-sm text-muted-foreground mt-4 mb-2">
+        <Link href="/admin/dashboard" className="hover:text-bloque-navy900 transition-colors">Dashboard</Link>
+        <ChevronRight className="h-4 w-4" />
+        <span className="text-bloque-navy900 font-medium">Rúbricas</span>
+      </nav>
+
+      <div className="mt-4 grid lg:grid-cols-3 gap-6">
         {/* Rubrics list */}
         <div className="lg:col-span-1">
           <BrandCard>

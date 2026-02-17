@@ -56,6 +56,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const [exportMessage, setExportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -102,10 +103,15 @@ export default function DashboardPage() {
   const handleExport = async () => {
     if (!accessToken) return
     setExporting(true)
+    setExportMessage({ type: 'success', text: 'Descarga iniciada...' })
     try {
       await adminApi.exportDashboard(accessToken, filters)
+      setExportMessage({ type: 'success', text: 'Descarga exitosa' })
+      setTimeout(() => setExportMessage(null), 3000)
     } catch (err) {
       console.error('Error exporting:', err)
+      setExportMessage({ type: 'error', text: 'Error al exportar CSV' })
+      setTimeout(() => setExportMessage(null), 5000)
     } finally {
       setExporting(false)
     }
@@ -148,6 +154,13 @@ export default function DashboardPage() {
               {showFilters ? 'Ocultar Filtros' : 'Mostrar Filtros'}
             </button>
             <div className="flex items-center gap-2">
+              {exportMessage && (
+                <span className={`text-sm px-3 py-1 rounded-full ${
+                  exportMessage.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                }`}>
+                  {exportMessage.text}
+                </span>
+              )}
               <button
                 onClick={handleExport}
                 disabled={exporting}
