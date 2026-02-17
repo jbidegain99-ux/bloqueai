@@ -151,12 +151,34 @@ def seed_payroll_mvp():
             print(f"  [=] Company already exists: {COMPANY_NAME} ({company.id})")
 
         # === 2. Job ===
+        # Get admin user for created_by_id
+        admin_user = db.query(User).filter(User.role == UserRole.ADMIN).first()
+        if not admin_user:
+            # Create a minimal admin user if none exists
+            admin_user = User(
+                id=uuid4(),
+                email="admin@nominademo.com",
+                hashed_password=get_password_hash("Admin123!"),
+                full_name="Admin Nomina Demo",
+                role=UserRole.ADMIN,
+                is_active=True,
+                is_verified=True,
+                company_id=company.id,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(admin_user)
+            db.flush()
+            print(f"  [+] Admin user: {admin_user.email}")
+
         job = db.query(Job).filter(Job.company_id == company.id, Job.title == "Equipo de Tecnologia").first()
         if not job:
             job = Job(
                 id=uuid4(),
                 company_id=company.id,
+                created_by_id=admin_user.id,
                 title="Equipo de Tecnologia",
+                slug=f"equipo-tecnologia-{uuid4().hex[:8]}",
                 description="Posiciones en el equipo de tecnologia de Nomina Demo Corp",
                 status=JobStatus.ACTIVE,
                 category="TECHNOLOGY",

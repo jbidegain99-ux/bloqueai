@@ -130,7 +130,7 @@ export function AppShell({ children }: AppShellProps) {
                         ? 'text-bloque-slate200 cursor-not-allowed'
                         : (tab.id === 'nomina' && isPayrollSection)
                         ? 'bg-bloque-navy700 text-white'
-                        : pathname.startsWith(tab.href) || (tab.id === 'talento' && pathname === '/dashboard')
+                        : (tab.id === 'talento' && (pathname === '/dashboard' || (pathname.startsWith('/admin/') && !isPayrollSection) || pathname.startsWith('/employer/') || pathname.startsWith('/candidate/')))
                         ? 'bg-bloque-navy700 text-white'
                         : 'text-bloque-slate200 hover:bg-bloque-navy700 hover:text-white'
                     }`}
