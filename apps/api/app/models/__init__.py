@@ -16,6 +16,11 @@ from app.models.invitation import InterviewInvitation
 from app.models.application import Application, ApplicationStatus
 from app.models.settings import SystemSettings
 from app.models.placement import Placement, Assignment, PlacementStatus, AssignmentStatus, PlacementType
+from app.models.payroll import (
+    Employee, Contract, Attendance, PayrollRun, PayrollLine,
+    Payslip, DeductionType, TaxConfig,
+    PayFrequency, ContractType, AttendanceType, PayrollRunStatus, DeductionCalcType,
+)
 
 __all__ = [
     "User",
@@ -43,4 +48,17 @@ __all__ = [
     "PlacementStatus",
     "AssignmentStatus",
     "PlacementType",
+    "Employee",
+    "Contract",
+    "Attendance",
+    "PayrollRun",
+    "PayrollLine",
+    "Payslip",
+    "DeductionType",
+    "TaxConfig",
+    "PayFrequency",
+    "ContractType",
+    "AttendanceType",
+    "PayrollRunStatus",
+    "DeductionCalcType",
 ]
