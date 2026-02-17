@@ -779,13 +779,16 @@ async def copilot_suggest_description(
     if not company_context and current_user.company:
         company_context = f"{current_user.company.name} - {current_user.company.industry or 'Empresa'}"
 
-    result = await copilot.suggest_description(
-        title=request.title,
-        category=request.category,
-        seniority=request.seniority,
-        company_context=company_context,
-        partial_description=request.partial_description,
-    )
+    try:
+        result = await copilot.suggest_description(
+            title=request.title,
+            category=request.category,
+            seniority=request.seniority,
+            company_context=company_context,
+            partial_description=request.partial_description,
+        )
+    except Exception as e:
+        return CopilotDescriptionResponse(error=f"Error al generar descripcion: {str(e)}")
 
     return CopilotDescriptionResponse(**result)
 
@@ -801,12 +804,15 @@ async def copilot_suggest_requirements(
 
     copilot = JobCopilotService(db_session=db, user_id=current_user.id)
 
-    result = await copilot.suggest_requirements(
-        title=request.title,
-        category=request.category,
-        seniority=request.seniority,
-        description=request.description,
-    )
+    try:
+        result = await copilot.suggest_requirements(
+            title=request.title,
+            category=request.category,
+            seniority=request.seniority,
+            description=request.description,
+        )
+    except Exception as e:
+        return CopilotRequirementsResponse(error=f"Error al generar requisitos: {str(e)}")
 
     return CopilotRequirementsResponse(**result)
 
@@ -822,13 +828,16 @@ async def copilot_suggest_questions(
 
     copilot = JobCopilotService(db_session=db, user_id=current_user.id)
 
-    result = await copilot.suggest_interview_questions(
-        title=request.title,
-        category=request.category,
-        seniority=request.seniority,
-        must_haves=request.must_haves,
-        description=request.description,
-    )
+    try:
+        result = await copilot.suggest_interview_questions(
+            title=request.title,
+            category=request.category,
+            seniority=request.seniority,
+            must_haves=request.must_haves,
+            description=request.description,
+        )
+    except Exception as e:
+        return CopilotQuestionsResponse(error=f"Error al generar preguntas: {str(e)}")
 
     return CopilotQuestionsResponse(**result)
 

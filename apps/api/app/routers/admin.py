@@ -321,8 +321,8 @@ def format_interview_for_review(session: InterviewSession) -> dict:
         "total_questions": session.total_questions,
         "interview_type": session.interview_type,
         "language": session.language,
-        "started_at": session.started_at.isoformat() if session.started_at else None,
-        "completed_at": session.completed_at.isoformat() if session.completed_at else None,
+        "started_at": session.started_at if session.started_at else None,
+        "completed_at": session.completed_at if session.completed_at else None,
         "duration_seconds": session.duration_seconds,
         "has_inconsistencies": session.has_inconsistencies,
         "confidence_score": session.confidence_score,
@@ -890,7 +890,8 @@ async def update_setting(
     db.commit()
     db.refresh(setting)
 
-    logger.info("setting_updated", key=key, by=str(current_user.id))
+    import structlog
+    structlog.get_logger().info("setting_updated", key=key, by=str(current_user.id))
 
     return {
         "success": True,
