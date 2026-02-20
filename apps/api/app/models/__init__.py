@@ -16,6 +16,7 @@ from app.models.invitation import InterviewInvitation
 from app.models.application import Application, ApplicationStatus
 from app.models.settings import SystemSettings
 from app.models.placement import Placement, Assignment, PlacementStatus, AssignmentStatus, PlacementType
+from app.models.cache import CVAnalysisCache
 from app.models.payroll import (
     Employee, Contract, Attendance, PayrollRun, PayrollLine,
     Payslip, DeductionType, TaxConfig,
@@ -61,4 +62,5 @@ __all__ = [
     "AttendanceType",
     "PayrollRunStatus",
     "DeductionCalcType",
+    "CVAnalysisCache",
 ]

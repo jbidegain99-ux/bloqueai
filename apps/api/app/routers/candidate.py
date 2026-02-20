@@ -4,8 +4,9 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 from sqlalchemy.orm import Session
+from slowapi import Limiter
 
 from app.core.database import get_db
 from app.models.user import User, UserRole
@@ -33,6 +34,9 @@ from app.services.interview import get_interview_questions, DEFAULT_QUESTIONS
 from app.services.llm import llm_provider
 from app.services.cv_parser import mask_phone
 from app.utils.deps import get_current_user, require_candidate
+from app.middleware.rate_limit import get_user_id_or_ip, RATE_LIMIT_INTERVIEW
+
+limiter = Limiter(key_func=get_user_id_or_ip)
 
 router = APIRouter(prefix="/candidate", tags=["Candidate"])
 
@@ -288,8 +292,10 @@ async def get_resumes(
 
 
 @router.post("/interview/start", response_model=InterviewSessionResponse)
+@limiter.limit(RATE_LIMIT_INTERVIEW)
 async def start_interview(
-    request: InterviewStartRequest,
+    request: Request,
+    body: InterviewStartRequest,
     current_user: User = Depends(require_candidate),
     db: Session = Depends(get_db),
 ) -> InterviewSession:
@@ -305,8 +311,8 @@ async def start_interview(
         .filter(InterviewSession.candidate_id == candidate.id)
         .filter(InterviewSession.status == InterviewStatus.IN_PROGRESS)
     )
-    if request.job_id:
-        existing_query = existing_query.filter(InterviewSession.job_id == request.job_id)
+    if body.job_id:
+        existing_query = existing_query.filter(InterviewSession.job_id == body.job_id)
 
     existing = existing_query.first()
     if existing:
@@ -319,17 +325,17 @@ async def start_interview(
     # Create session
     session = InterviewSession(
         candidate_id=candidate.id,
-        job_id=request.job_id,
+        job_id=body.job_id,
         status=InterviewStatus.IN_PROGRESS,
         total_questions=total_questions,
-        language=request.language or "es",
-        interview_type="dynamic" if request.job_id else "general",
+        language=body.language or "es",
+        interview_type="dynamic" if body.job_id else "general",
         started_at=datetime.utcnow().isoformat(),
     )
     db.add(session)
     db.flush()
 
-    logger.info("interview_session_created", session_id=str(session.id), job_id=str(request.job_id) if request.job_id else None)
+    logger.info("interview_session_created", session_id=str(session.id), job_id=str(body.job_id) if body.job_id else None)
 
     # Use Interview Orchestrator for dynamic first question
     try:
@@ -337,7 +343,7 @@ async def start_interview(
 
         orchestrator = await create_orchestrator_for_session(
             session_id=session.id,
-            job_id=request.job_id,
+            job_id=body.job_id,
             candidate_id=candidate.id,
             db=db,
         )
@@ -355,7 +361,7 @@ async def start_interview(
     except Exception as e:
         logger.error("dynamic_question_failed_using_fallback", error=str(e))
         # Fallback to static questions
-        questions = get_interview_questions(request.job_id)
+        questions = get_interview_questions(body.job_id)
         first_message_content = questions[0]["question"]
         session.ai_analysis = {"dynamic_mode": False, "fallback_reason": str(e)}
 

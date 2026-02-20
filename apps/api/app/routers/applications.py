@@ -6,7 +6,7 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_
 import structlog
@@ -25,8 +25,14 @@ from app.schemas.application import (
     CVAnalysisResponse,
 )
 from app.utils.deps import get_current_user
+from app.utils.cache import generate_cache_key, get_cached_analysis, set_cached_analysis
+from app.middleware.rate_limit import get_user_id_or_ip, RATE_LIMIT_CV_ANALYSIS
+
+from slowapi import Limiter
 
 logger = structlog.get_logger()
+
+limiter = Limiter(key_func=get_user_id_or_ip)
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
 
@@ -370,7 +376,9 @@ async def upload_resume(
 
 
 @router.post("/{application_id}/analyze", response_model=CVAnalysisResponse)
+@limiter.limit(RATE_LIMIT_CV_ANALYSIS)
 async def analyze_cv(
+    request: Request,
     application_id: UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -435,8 +443,22 @@ async def analyze_cv(
         )
 
     try:
-        # Build job context - inside try block to catch any attribute errors
-        job_context = f"""
+        cv_text = application.resume_text or "CV sin texto extraido"
+
+        # ── Cache lookup ──────────────────────────────────────────
+        cache_key = generate_cache_key(cv_text, str(job.id))
+        cached_result = get_cached_analysis(db, cache_key)
+        cache_hit = cached_result is not None
+
+        if cached_result:
+            # Use cached analysis — skip OpenAI call entirely
+            analysis = cached_result
+            latency_ms = 0.0
+        else:
+            # ── Call OpenAI ───────────────────────────────────────
+
+            # Build job context - inside try block to catch any attribute errors
+            job_context = f"""
 Puesto: {job.title or 'Sin titulo'}
 Descripcion: {job.description or 'Sin descripcion'}
 
@@ -451,13 +473,11 @@ Ubicacion: {job.location or 'No especificado'}
 Modalidad: {job.modality.value if job.modality else 'No especificado'}
 """
 
-        cv_text = application.resume_text or "CV sin texto extraido"
+            # OpenAI SDK v1.x requires client instantiation
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
 
-        # OpenAI SDK v1.x requires client instantiation
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
-
-        system_prompt = """Eres un experto en reclutamiento y analisis de CVs. Tu tarea es analizar
+            system_prompt = """Eres un experto en reclutamiento y analisis de CVs. Tu tarea es analizar
 un CV contra los requisitos de un puesto de trabajo y proporcionar:
 1. Un score de match del 0 al 100
 2. Un perfil del candidato extraido del CV
@@ -478,7 +498,7 @@ Responde SIEMPRE en JSON valido con esta estructura exacta:
   "gaps": ["gap1", "gap2"]
 }"""
 
-        user_prompt = f"""Analiza este CV contra el puesto de trabajo:
+            user_prompt = f"""Analiza este CV contra el puesto de trabajo:
 
 === PUESTO ===
 {job_context}
@@ -487,53 +507,56 @@ Responde SIEMPRE en JSON valido con esta estructura exacta:
 {cv_text}
 
 Proporciona tu analisis en formato JSON."""
-        start_time = datetime.utcnow()
+            start_time = datetime.utcnow()
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.3,
-            max_tokens=2000,
-            response_format={"type": "json_object"}
-        )
-
-        end_time = datetime.utcnow()
-        latency_ms = (end_time - start_time).total_seconds() * 1000
-
-        # Parse response
-        import json
-        result_text = response.choices[0].message.content
-        try:
-            analysis = json.loads(result_text)
-        except (json.JSONDecodeError, TypeError) as json_err:
-            logger.error(
-                "cv_analysis_json_parse_error",
-                application_id=str(application_id),
-                raw_response=result_text[:500] if result_text else None,
-                error=str(json_err),
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                max_tokens=2000,
+                response_format={"type": "json_object"}
             )
-            raise ValueError(f"OpenAI returned invalid JSON: {json_err}")
 
-        # Log the API call
-        llm_log = LLMLog(
-            id=uuid4(),
-            user_id=current_user.id,
-            model="gpt-4o-mini",
-            tokens_in=response.usage.prompt_tokens if response.usage else 0,
-            tokens_out=response.usage.completion_tokens if response.usage else 0,
-            total_tokens=response.usage.total_tokens if response.usage else 0,
-            latency_ms=int(latency_ms),
-            status="success",
-            endpoint="cv_analysis",
-            operation="cv_analysis",
-            created_at=datetime.utcnow(),
-        )
-        db.add(llm_log)
+            end_time = datetime.utcnow()
+            latency_ms = (end_time - start_time).total_seconds() * 1000
 
-        # Extract results
+            # Parse response
+            import json
+            result_text = response.choices[0].message.content
+            try:
+                analysis = json.loads(result_text)
+            except (json.JSONDecodeError, TypeError) as json_err:
+                logger.error(
+                    "cv_analysis_json_parse_error",
+                    application_id=str(application_id),
+                    raw_response=result_text[:500] if result_text else None,
+                    error=str(json_err),
+                )
+                raise ValueError(f"OpenAI returned invalid JSON: {json_err}")
+
+            # Log the API call
+            llm_log = LLMLog(
+                id=uuid4(),
+                user_id=current_user.id,
+                model="gpt-4o-mini",
+                tokens_in=response.usage.prompt_tokens if response.usage else 0,
+                tokens_out=response.usage.completion_tokens if response.usage else 0,
+                total_tokens=response.usage.total_tokens if response.usage else 0,
+                latency_ms=int(latency_ms),
+                status="success",
+                endpoint="cv_analysis",
+                operation="cv_analysis",
+                created_at=datetime.utcnow(),
+            )
+            db.add(llm_log)
+
+            # Store in cache for future requests
+            set_cached_analysis(db, cache_key, analysis, job_id=job.id)
+
+        # Extract results (from cache or fresh analysis)
         match_score = float(analysis.get("match_score", 50))
         candidate_profile = analysis.get("candidate_profile", {})
         match_reasons = analysis.get("match_reasons", [])
@@ -625,7 +648,8 @@ Proporciona tu analisis en formato JSON."""
             "cv_analysis_completed",
             application_id=str(application_id),
             match_score=match_score,
-            status=new_status.value
+            status=new_status.value,
+            cache_hit=cache_hit,
         )
 
         return CVAnalysisResponse(

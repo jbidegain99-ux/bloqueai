@@ -7,11 +7,11 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import structlog
 
 from app.core.config import settings
+from app.middleware.rate_limit import get_user_id_or_ip
 from app.core.database import engine, Base
 from app.routers import (
     auth_router,
@@ -47,8 +47,8 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
-# Rate limiter
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiter — keyed by user_id (from JWT) or IP fallback
+limiter = Limiter(key_func=get_user_id_or_ip)
 
 
 def run_seed_on_startup():
@@ -183,6 +183,17 @@ async def log_requests(request: Request, call_next):
 
     # Add request ID to state
     request.state.request_id = request_id
+
+    # Extract user_id from JWT for rate limiting (best-effort)
+    try:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            from jose import jwt
+            token = auth_header[7:]
+            payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+            request.state.rate_limit_user_id = payload.get("sub")
+    except Exception:
+        pass  # No valid token — rate limiter will fall back to IP
 
     # Process request
     response = await call_next(request)

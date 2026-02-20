@@ -373,3 +373,36 @@
    - Deploying from `apps/api/` causes double-nesting: `apps/api/apps/api`
    - For deploying different projects from same monorepo, swap `.vercel/project.json` at repo root
    - Keep a backup: `cp .vercel/project.json .vercel/project.json.frontend` before swapping
+
+---
+
+## Session: 2026-02-20 - Infrastructure (Cache + Rate Limiting + Health)
+
+### Patterns Used
+
+1. **PostgreSQL as Cache (No Redis Required)**
+   - Simple table with `cache_key` (SHA-256), `result` (JSONB), `expires_at`
+   - Graceful degradation: all cache operations wrapped in try/except
+   - Upsert pattern: check existing before insert to handle concurrent writes
+   - TTL-based expiry with `expires_at > NOW()` filter
+
+2. **slowapi Reuse Instead of Custom Rate Limiter**
+   - slowapi was already installed but only used on 1 endpoint
+   - Each router creates its own `Limiter(key_func=...)` — not shared from main
+   - Custom `key_func` extracts `user_id` from `request.state` (set by middleware)
+   - Decorator order matters: `@router` first, then `@limiter.limit`
+
+3. **JWT Extraction in Middleware for Rate Limiting**
+   - Can't use `Depends()` in middleware, so decode JWT manually
+   - Best-effort: wrapped in try/except, falls back to IP if no valid token
+   - Stored in `request.state.rate_limit_user_id` for key_func to read
+
+4. **Body Parameter Rename for slowapi Compatibility**
+   - slowapi needs a parameter named `request` with type `Request`
+   - When endpoint already has `request: SomeBodySchema`, rename body to `body`
+   - Update ALL references to `request.field` → `body.field` in the function
+
+5. **Health Check Service-Level Granularity**
+   - Each service (DB, OpenAI, Storage) gets its own `ServiceStatus` with status + latency
+   - Overall status derived from individual: all healthy → healthy, DB only → degraded, DB down → unhealthy
+   - `time.monotonic()` for accurate latency measurement (not affected by wall clock changes)

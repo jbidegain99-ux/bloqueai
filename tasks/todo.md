@@ -689,3 +689,166 @@ Also added null-safe access for `resume.source`:
 - [x] All fields returned correctly (skills, experience, education, etc.)
 - [x] `has_completed_interview`: correctly returns True for candidate with completed interview
 - [x] `resume_source`: correctly returns "UPLOADED"
+
+---
+
+## INFRAESTRUCTURA: CACHE + RATE LIMITING + HEALTH CHECK (2026-02-20)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Goal:** Mejorar performance y resiliencia del backend con cache PostgreSQL, rate limiting in-memory, y health check mejorado.
+
+### Análisis Previo
+
+**Hallazgos de la exploración:**
+- CV Analysis vive inline en `applications.py` (~líneas 400-550) — no hay service layer
+- OpenAI se llama con `gpt-4o-mini`, JSON mode, temperatura 0.3
+- Resultado se guarda en Application: `match_score`, `candidate_profile`, `match_reasons`, `match_gaps`
+- Ya existe `slowapi` instalado en `main.py` pero solo se usa en 1 ruta (`public.py`, 5/min)
+- Ya existe health check básico en `/health` (solo verifica DB con `SELECT 1`)
+- Migración más reciente: `009_add_payroll_tables.py`
+- Base model usa UUID PK + timestamps automáticos
+
+---
+
+### T004: Cache PostgreSQL para Análisis de CV
+
+**Status:** [x] DONE
+
+#### T004.1 — Modelo y Migración
+- [x] Crear `apps/api/app/models/cache.py` con modelo `CVAnalysisCache`
+  - `cache_key`: VARCHAR(64), UNIQUE, NOT NULL — SHA-256 del contenido CV
+  - `result`: JSONB, NOT NULL — resultado del análisis
+  - `job_id`: UUID, nullable — para invalidar por job si cambian requisitos
+  - `expires_at`: TIMESTAMP, NOT NULL
+  - Hereda de `BaseModel` (UUID PK + timestamps)
+- [x] Crear migración `010_add_cv_analysis_cache.py`
+  - Tabla `cv_analysis_cache`
+  - Índice en `cache_key`
+  - Índice en `expires_at` (para cleanup)
+- [x] Exportar en `models/__init__.py`
+
+#### T004.2 — Utilidad de Cache
+- [x] Crear `apps/api/app/utils/cache.py`:
+  - `generate_cache_key(cv_text: str, job_id: str) -> str` — SHA-256
+  - `get_cached_analysis(db, cache_key) -> dict | None` — busca no expirado
+  - `set_cached_analysis(db, cache_key, result, job_id, ttl_hours=24)` — guarda resultado
+  - `cleanup_expired_cache(db) -> int` — borra expirados, retorna count
+- [x] Graceful degradation: try/except en todas las operaciones de cache
+
+#### T004.3 — Integrar en Flujo de Análisis
+- [x] En `applications.py` endpoint `POST /{id}/analyze`:
+  1. Después de extraer `resume_text`, generar `cache_key = sha256(resume_text + job_id)`
+  2. Buscar en cache → si HIT, usar resultado cacheado
+  3. Si MISS → llamar OpenAI → guardar en cache
+  4. Logging: `logger.info("cv_analysis_cache_hit/miss", cache_key=..., application_id=...)`
+- [x] No cachear si OpenAI retorna error (only stores on successful parse)
+- [x] Agregar `cache_hit` al log final de `cv_analysis_completed`
+
+**Archivos:**
+- `apps/api/app/models/cache.py` (NUEVO)
+- `apps/api/app/utils/cache.py` (NUEVO)
+- `apps/api/alembic/versions/010_add_cv_analysis_cache.py` (NUEVO)
+- `apps/api/app/models/__init__.py` (MODIFICAR)
+- `apps/api/app/routers/applications.py` (MODIFICAR)
+
+---
+
+### T007: Rate Limiting para Endpoints OpenAI
+
+**Status:** [x] DONE
+
+#### T007.1 — Rate Limiter con slowapi existente
+- [x] Aprovechar `slowapi` ya instalado (no crear sistema custom)
+- [x] Crear key function por user_id (no solo IP):
+  - `apps/api/app/middleware/rate_limit.py`
+  - `get_user_id_or_ip(request)` — extrae user_id del JWT via `request.state` o IP
+- [x] JWT user_id inyectado en middleware de `main.py` vía `request.state.rate_limit_user_id`
+- [x] Aplicar decoradores a endpoints de OpenAI:
+  - `POST /applications/{id}/analyze` → `10/hour`
+  - `POST /candidate/interview/start` → `20/hour`
+  - `POST /employer/copilot/suggest-description` → `50/hour`
+  - `POST /employer/copilot/suggest-requirements` → `50/hour`
+  - `POST /employer/copilot/suggest-questions` → `50/hour`
+- [x] slowapi maneja 429 automáticamente con `_rate_limit_exceeded_handler`
+
+#### Límites
+
+| Endpoint | Límite | Key |
+|----------|--------|-----|
+| CV Analysis | 10/hora | user_id |
+| Interview Start | 20/hora | user_id |
+| Copilot endpoints | 50/hora | user_id |
+
+**Archivos:**
+- `apps/api/app/middleware/rate_limit.py` (NUEVO)
+- `apps/api/app/routers/applications.py` (MODIFICAR — agregar decorador)
+- `apps/api/app/routers/candidate.py` (MODIFICAR — si tiene interview start)
+- `apps/api/app/routers/employer.py` (MODIFICAR — copilot endpoints)
+
+---
+
+### T010: Health Check Mejorado
+
+**Status:** [x] DONE
+
+#### T010.1 — Backend (mejorar existente)
+- [x] Mejorar `apps/api/app/routers/health.py`:
+  - Latencia de DB (`latency_ms`) con `time.monotonic()`
+  - Verificar `OPENAI_API_KEY` presente (status: configured/not_configured)
+  - Verificar storage (MinIO/S3) configurado
+  - Status: `healthy` / `degraded` / `unhealthy`
+  - `version` del app + `timestamp` ISO
+  - Response schema con `ServiceStatus` por servicio
+
+#### T010.2 — Frontend health
+- [x] Crear `apps/web/src/app/api/health/route.ts`:
+  - Llama a backend `/health` con timeout 5s
+  - Agrega status del frontend
+  - Overall: healthy si backend healthy, degraded otherwise
+
+**Archivos:**
+- `apps/api/app/routers/health.py` (MODIFICAR)
+- `apps/web/src/app/api/health/route.ts` (NUEVO)
+
+---
+
+### T011: Cleanup Job para Cache
+
+**Status:** [x] DONE
+
+- [x] Función `cleanup_expired_cache()` incluida en `utils/cache.py`
+- [x] Crear script `apps/api/scripts/cleanup_cache.py` ejecutable manualmente
+- [x] Uso: `cd apps/api && python -m scripts.cleanup_cache`
+
+**Archivos:**
+- `apps/api/scripts/cleanup_cache.py` (NUEVO)
+
+---
+
+### Verificación en Producción
+
+| Test | URL | Status |
+|------|-----|--------|
+| Backend health | `GET /health` | 200 OK — healthy, DB 494ms, OpenAI configured, storage configured |
+| Frontend health | `GET /api/health` | 200 OK — frontend healthy, backend healthy |
+| Login | `POST /auth/login` | 200 OK |
+| Candidate profile | `GET /candidate/profile` | 200 OK |
+| Public jobs | `GET /public/jobs` | 200 OK (280 jobs) |
+
+### Archivos Creados/Modificados
+
+| Tipo | Archivo | Propósito |
+|------|---------|-----------|
+| Nuevo | `apps/api/app/models/cache.py` | Modelo CVAnalysisCache |
+| Nuevo | `apps/api/app/utils/cache.py` | Utilidades de cache (get/set/cleanup) |
+| Nuevo | `apps/api/alembic/versions/010_add_cv_analysis_cache.py` | Migración tabla cache |
+| Nuevo | `apps/api/app/middleware/__init__.py` | Package middleware |
+| Nuevo | `apps/api/app/middleware/rate_limit.py` | Key function + constantes rate limit |
+| Nuevo | `apps/api/scripts/cleanup_cache.py` | Script manual cleanup |
+| Nuevo | `apps/web/src/app/api/health/route.ts` | Frontend health endpoint |
+| Modificado | `apps/api/app/models/__init__.py` | Export CVAnalysisCache |
+| Modificado | `apps/api/app/routers/applications.py` | Cache integration + rate limit |
+| Modificado | `apps/api/app/routers/candidate.py` | Rate limit interview start |
+| Modificado | `apps/api/app/routers/employer.py` | Rate limit copilot endpoints |
+| Modificado | `apps/api/app/routers/health.py` | Improved health check |
+| Modificado | `apps/api/app/main.py` | User-aware rate limiter + JWT extraction |

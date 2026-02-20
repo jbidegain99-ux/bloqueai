@@ -5,9 +5,10 @@ import io
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from slowapi import Limiter
 
 from app.core.database import get_db
 from app.models.user import User, UserRole
@@ -37,6 +38,9 @@ from app.schemas.candidate import CandidateForEmployer
 from app.schemas.report import ReportForShortlist
 from app.services.ranking import rank_candidates_for_job
 from app.utils.deps import get_current_user, require_employer
+from app.middleware.rate_limit import get_user_id_or_ip, RATE_LIMIT_COPILOT
+
+limiter = Limiter(key_func=get_user_id_or_ip)
 
 router = APIRouter(prefix="/employer", tags=["Employer"])
 
@@ -764,8 +768,10 @@ async def list_invitations(
 
 
 @router.post("/copilot/suggest-description", response_model=CopilotDescriptionResponse)
+@limiter.limit(RATE_LIMIT_COPILOT)
 async def copilot_suggest_description(
-    request: CopilotDescriptionRequest,
+    request: Request,
+    body: CopilotDescriptionRequest,
     current_user: User = Depends(require_employer),
     db: Session = Depends(get_db),
 ) -> CopilotDescriptionResponse:
@@ -774,18 +780,18 @@ async def copilot_suggest_description(
 
     copilot = JobCopilotService(db_session=db, user_id=current_user.id)
 
-    # Get company context if available (use request value or fallback to user's company)
-    company_context = request.company_context
+    # Get company context if available (use body value or fallback to user's company)
+    company_context = body.company_context
     if not company_context and current_user.company:
         company_context = f"{current_user.company.name} - {current_user.company.industry or 'Empresa'}"
 
     try:
         result = await copilot.suggest_description(
-            title=request.title,
-            category=request.category,
-            seniority=request.seniority,
+            title=body.title,
+            category=body.category,
+            seniority=body.seniority,
             company_context=company_context,
-            partial_description=request.partial_description,
+            partial_description=body.partial_description,
         )
     except Exception as e:
         return CopilotDescriptionResponse(error=f"Error al generar descripcion: {str(e)}")
@@ -794,8 +800,10 @@ async def copilot_suggest_description(
 
 
 @router.post("/copilot/suggest-requirements", response_model=CopilotRequirementsResponse)
+@limiter.limit(RATE_LIMIT_COPILOT)
 async def copilot_suggest_requirements(
-    request: CopilotRequirementsRequest,
+    request: Request,
+    body: CopilotRequirementsRequest,
     current_user: User = Depends(require_employer),
     db: Session = Depends(get_db),
 ) -> CopilotRequirementsResponse:
@@ -806,10 +814,10 @@ async def copilot_suggest_requirements(
 
     try:
         result = await copilot.suggest_requirements(
-            title=request.title,
-            category=request.category,
-            seniority=request.seniority,
-            description=request.description,
+            title=body.title,
+            category=body.category,
+            seniority=body.seniority,
+            description=body.description,
         )
     except Exception as e:
         return CopilotRequirementsResponse(error=f"Error al generar requisitos: {str(e)}")
@@ -818,8 +826,10 @@ async def copilot_suggest_requirements(
 
 
 @router.post("/copilot/suggest-questions", response_model=CopilotQuestionsResponse)
+@limiter.limit(RATE_LIMIT_COPILOT)
 async def copilot_suggest_questions(
-    request: CopilotQuestionsRequest,
+    request: Request,
+    body: CopilotQuestionsRequest,
     current_user: User = Depends(require_employer),
     db: Session = Depends(get_db),
 ) -> CopilotQuestionsResponse:
@@ -830,11 +840,11 @@ async def copilot_suggest_questions(
 
     try:
         result = await copilot.suggest_interview_questions(
-            title=request.title,
-            category=request.category,
-            seniority=request.seniority,
-            must_haves=request.must_haves,
-            description=request.description,
+            title=body.title,
+            category=body.category,
+            seniority=body.seniority,
+            must_haves=body.must_haves,
+            description=body.description,
         )
     except Exception as e:
         return CopilotQuestionsResponse(error=f"Error al generar preguntas: {str(e)}")
