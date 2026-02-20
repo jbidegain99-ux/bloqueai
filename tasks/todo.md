@@ -852,3 +852,57 @@ Also added null-safe access for `resume.source`:
 | Modificado | `apps/api/app/routers/employer.py` | Rate limit copilot endpoints |
 | Modificado | `apps/api/app/routers/health.py` | Improved health check |
 | Modificado | `apps/api/app/main.py` | User-aware rate limiter + JWT extraction |
+
+---
+
+## Phase 7: Premium UI Components (2026-02-20)
+
+### T037: Button Premium ✅
+**Status:** DONE
+- Added `primary` variant (brand-500 colors) alongside existing `default` (gold)
+- Added `isLoading` prop with Loader2 spinner
+- CSS scale animations: hover `scale(1.02)`, active `scale(0.98)`
+- Focus ring: `ring-2 ring-brand-500 ring-offset-2`
+- Sizes: sm (h-8), default (h-10), lg (h-12), icon (h-10 w-10)
+- Backward compatible: `default`, `secondary`, `ghost`, `outline`, `link`, `asChild` all preserved
+
+### T038: Input Premium ✅
+**Status:** DONE
+- Added `error` prop for error state (border-error-500, ring-error-500/20)
+- Added `leftIcon` / `rightIcon` props for icon slots
+- Smooth transitions on border/shadow (200ms)
+- Disabled: bg-neutral-50, cursor-not-allowed
+- Created `FormField` wrapper component with animated error messages (Framer Motion)
+
+### T039: Dialog Premium ✅
+**Status:** DONE
+- Enhanced overlay: backdrop-blur-sm, lighter opacity (black/50)
+- Content: rounded-xl, shadow-overlay, zoom-in/out at 0.97 scale
+- Added size variants via CVA: sm (max-w-md), default (max-w-lg), lg (max-w-2xl), xl (max-w-4xl), full
+- Close button: hover:bg-neutral-100 with transition
+- All existing exports preserved
+
+### T040: Toast Premium (Sonner) ✅
+**Status:** DONE
+- Installed `sonner` package
+- Added `<Toaster>` to root layout with bottom-right position
+- Rich colors enabled, close button enabled
+- Usage: `import { toast } from 'sonner'` → `toast.success()`, `toast.error()`, `toast.loading()`
+- Existing Radix toast components kept for backward compatibility
+
+### T042: Skeleton Loader ✅
+**Status:** DONE
+- Shimmer animation via gradient + animate-shimmer (from tailwind config)
+- Added `CardSkeleton` preset: avatar + text lines + badges
+- Added `TableSkeleton` preset: header row + N data rows
+- Exported all three: `Skeleton`, `CardSkeleton`, `TableSkeleton`
+
+### Files Changed
+| Tipo | Archivo | Propósito |
+|------|---------|-----------|
+| Modificado | `apps/web/src/components/ui/button.tsx` | Premium button with loading, scale animations, primary variant |
+| Modificado | `apps/web/src/components/ui/input.tsx` | Error state, icon slots, smooth transitions |
+| Modificado | `apps/web/src/components/ui/dialog.tsx` | Size variants, backdrop-blur, rounded-xl |
+| Modificado | `apps/web/src/components/ui/skeleton.tsx` | Shimmer animation, CardSkeleton, TableSkeleton |
+| Modificado | `apps/web/src/app/layout.tsx` | Sonner Toaster in root layout |
+| Nuevo | `apps/web/src/components/ui/form-field.tsx` | FormField wrapper with animated errors |

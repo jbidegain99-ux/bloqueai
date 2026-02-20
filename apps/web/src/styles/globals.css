@@ -37,6 +37,18 @@
     --ring: 47 79% 53%; /* gold ring */
 
     --radius: 0.5rem;
+
+    /* Chart colors */
+    --chart-1: 234 89% 74%;
+    --chart-2: 47 79% 53%;
+    --chart-3: 160 60% 45%;
+    --chart-4: 27 87% 60%;
+    --chart-5: 340 75% 55%;
+
+    /* Surface tokens */
+    --surface-primary: 0 0% 100%;
+    --surface-secondary: 240 5% 96%;
+    --surface-tertiary: 240 6% 90%;
   }
 
   .dark {
@@ -67,6 +79,18 @@
     --border: 227 35% 31%;
     --input: 227 35% 31%;
     --ring: 47 79% 53%;
+
+    /* Chart colors - dark */
+    --chart-1: 234 89% 74%;
+    --chart-2: 47 79% 53%;
+    --chart-3: 160 60% 45%;
+    --chart-4: 27 87% 60%;
+    --chart-5: 340 75% 55%;
+
+    /* Surface tokens - dark */
+    --surface-primary: 227 35% 27%;
+    --surface-secondary: 227 40% 22%;
+    --surface-tertiary: 227 45% 18%;
   }
 }
 
@@ -75,8 +99,10 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
@@ -87,7 +113,7 @@
   }
 
   .brand-card {
-    @apply bg-white border border-bloque-slate200 rounded-lg shadow-sm;
+    @apply bg-white border border-bloque-slate200 rounded-lg shadow-soft;
   }
 
   .brand-btn-primary {
@@ -100,6 +126,16 @@
 
   .brand-btn-outline {
     @apply border-2 border-bloque-slate200 text-bloque-navy900 hover:bg-bloque-gray50;
+  }
+
+  /* Glass surface effect */
+  .surface-glass {
+    @apply bg-white/80 backdrop-blur-xl border border-neutral-200/50;
+  }
+
+  /* Shimmer loading effect */
+  .shimmer {
+    @apply animate-shimmer bg-gradient-to-r from-neutral-200 via-neutral-100 to-neutral-200 bg-[length:200%_100%];
   }
 }
 
