@@ -335,3 +335,41 @@
    - TypeScript best practice: catch blocks should use `unknown` type
    - Check with `err instanceof Error` before accessing `.message`
    - Follows CLAUDE.md "never use any" rule
+
+---
+
+## Session: 2026-02-20 - Login 500 Fix + Vercel Project Migration
+
+### Patterns Discovered
+
+1. **Verify Env Vars Are Correct Values**
+   - `NEXT_PUBLIC_API_URL` was set to `"N\n"` (garbage) on the `web` Vercel project
+   - This caused ALL API proxy calls to fail with 500
+   - Lesson: When debugging 500s on API proxy, first check `NEXT_PUBLIC_API_URL` value
+
+2. **Use `printf` Not `echo` for Vercel Env Vars**
+   - `echo "value" | vercel env add` adds trailing newline to the value
+   - Use `printf "value" | vercel env add` instead
+   - This caused Sentry source map upload to fail with "Invalid value for project"
+
+3. **Vercel Project Linking from Monorepo Root**
+   - If Vercel project has `rootDirectory: apps/web` in settings, link from repo root NOT from apps/web
+   - Linking from apps/web causes double-nesting: Vercel tries to build `apps/web/apps/web`
+   - `.vercel` directory should be at repo root
+
+4. **Multiple Vercel Projects = Confusion**
+   - Having both `web` and `bloqueai-ia` projects pointing to similar code caused environment variable confusion
+   - Always verify which project you're deploying to with `vercel whoami` + `vercel project ls`
+   - Clean up unused projects promptly
+
+5. **Dict vs ORM Object in FastAPI response_model**
+   - When `response_model` inherits from a schema with required fields (like `TimestampSchema` with `created_at`/`updated_at`), returning a dict must include ALL required fields
+   - Returning an ORM object works via `from_attributes=True` which auto-extracts all matching attributes
+   - Lesson: If GET returns dict but PATCH returns ORM, they may behave differently with the same `response_model`
+   - Tip: When writing dict responses, check the FULL inheritance chain of the response_model for required fields
+
+6. **Vercel Monorepo Deploy: rootDirectory + CWD**
+   - If a Vercel project has `rootDirectory: apps/api` in settings, always deploy from REPO ROOT, not from `apps/api/`
+   - Deploying from `apps/api/` causes double-nesting: `apps/api/apps/api`
+   - For deploying different projects from same monorepo, swap `.vercel/project.json` at repo root
+   - Keep a backup: `cp .vercel/project.json .vercel/project.json.frontend` before swapping

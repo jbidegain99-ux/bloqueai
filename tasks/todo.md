@@ -610,3 +610,82 @@ NEXT_PUBLIC_SENTRY_DSN=  # DSN expuesto al client
 | `apps/api/app/schemas/application.py` | Nuevo schema `ApplicationResumeUploadResponse` |
 | `apps/api/app/routers/applications.py` | Usar nuevo schema en endpoint |
 | `apps/web/src/app/candidate/apply/[jobId]/page.tsx` | Loading state + error display |
+
+---
+
+## LOGIN 500 FIX + VERCEL PROJECT MIGRATION (2026-02-20)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Goal:** Fix login 500 error in production + migrate to correct Vercel project
+
+### Root Cause
+
+The `web` Vercel project had `NEXT_PUBLIC_API_URL="N\n"` (garbage value), so the API proxy was forwarding requests to an invalid URL → 500 on all API calls including login.
+
+Additionally, the correct frontend project was `bloqueai-ia` (at `bloqueai-ia.vercel.app`), not the `web` project we'd been deploying to.
+
+### Fix Applied
+
+- [x] Removed `.vercel` link from `apps/web` (pointed to wrong project)
+- [x] Linked repo root to `bloqueai-ia` Vercel project
+- [x] Added Sentry env vars to `bloqueai-ia` (DSN, AUTH_TOKEN, ORG, PROJECT)
+- [x] Verified `bloqueai-ia` already has correct `NEXT_PUBLIC_API_URL=https://bloqueai-api.vercel.app`
+- [x] Deployed to production: `https://bloqueai-ia.vercel.app`
+- [x] Deleted the `web` Vercel project (user requested)
+
+### QA Results (Production - bloqueai-ia.vercel.app)
+
+| Test | Endpoint | Status | Notes |
+|------|----------|--------|-------|
+| Admin login | POST /api/auth/login | 200 OK | admin@example.com / Admin123! |
+| Candidate login | POST /api/auth/login | 200 OK | candidate1@example.com / Candidate123! |
+| Auth /me | GET /api/auth/me | 200 OK | Returns role + email correctly |
+| Invalid login | POST /api/auth/login | 401 | Correctly rejects bad credentials |
+| Unauth access | GET /api/candidate/profile | 401 | Correctly blocks unauthenticated |
+| Public jobs | GET /api/public/jobs | 200 OK | 280 jobs returned with pagination |
+| Employer login | POST /api/auth/login | 200 OK | employer@example.com / Employer123! |
+| Employer jobs | GET /api/employer/jobs | 200 OK | Returns job list |
+| Applications | GET /api/applications/ | 200 OK | Returns array |
+| Health check | GET /api/health/ | 200 OK | DB + Redis connected |
+| Candidate profile | GET /api/candidate/profile | 500 | **Pre-existing backend bug** (not proxy-related) |
+| Login page loads | GET /login | 200 OK | Page renders correctly |
+
+### Known Issues (Pre-existing, resolved)
+
+1. **Candidate profile 500**: `GET /candidate/profile` returned 500 — **FIXED** (see section below)
+2. **Admin dashboard 404**: NOT a bug — frontend page exists at `/admin/dashboard` and correctly calls `/admin/dashboard/metrics` API via `adminApi.getDashboardMetrics()`
+
+---
+
+## CANDIDATE PROFILE 500 FIX (2026-02-20)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+
+### Root Cause
+
+The `GET /candidate/profile` endpoint in `apps/api/app/routers/candidate.py` returned a **dict** but the `response_model=CandidateProfileResponse` inherits from `IDSchema` → `TimestampSchema`, which requires `created_at` and `updated_at` fields. The dict was missing these two required fields, causing Pydantic validation to fail → FastAPI caught the exception → returned generic 500.
+
+The `PATCH /candidate/profile` endpoint worked fine because it returned the ORM `Candidate` object directly, and Pydantic's `from_attributes=True` automatically extracted all fields including timestamps.
+
+### Fix Applied
+
+**File:** `apps/api/app/routers/candidate.py` (line ~97)
+
+Added missing fields to the profile dict:
+```python
+"created_at": candidate.created_at,
+"updated_at": candidate.updated_at,
+```
+
+Also added null-safe access for `resume.source`:
+```python
+"resume_source": latest_resume.source.value if latest_resume and latest_resume.source else None,
+```
+
+### Verification
+
+- [x] `GET /candidate/profile` via backend: 200 OK
+- [x] `GET /api/candidate/profile` via frontend proxy: 200 OK
+- [x] All fields returned correctly (skills, experience, education, etc.)
+- [x] `has_completed_interview`: correctly returns True for candidate with completed interview
+- [x] `resume_source`: correctly returns "UPLOADED"

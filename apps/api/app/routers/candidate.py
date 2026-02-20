@@ -94,8 +94,12 @@ async def get_profile(
     )
 
     # Build response with additional fields
+    # Note: CandidateProfileResponse inherits IDSchema -> TimestampSchema,
+    # so created_at and updated_at are required by the response_model.
     profile_data = {
         "id": candidate.id,
+        "created_at": candidate.created_at,
+        "updated_at": candidate.updated_at,
         "user_id": candidate.user_id,
         "phone_masked": candidate.phone_masked,
         "location": candidate.location,
@@ -113,7 +117,7 @@ async def get_profile(
         "competency_scores": candidate.competency_scores or {},
         # Resume info
         "resume_updated_at": latest_resume.updated_at if latest_resume else None,
-        "resume_source": latest_resume.source.value if latest_resume else None,
+        "resume_source": latest_resume.source.value if latest_resume and latest_resume.source else None,
         # Interview status - based on actual completed interview session
         "has_completed_interview": completed_interview is not None,
     }
