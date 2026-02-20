@@ -461,3 +461,101 @@ User QA reports the following issues still exist despite previous claims:
 | Nuevo | `apps/api/scripts/seed_payroll_mvp.py` | Seed completo: placements + payroll E2E |
 | Modificado | `tasks/todo.md` | QA checklist + evidencia |
 | Modificado | `tasks/lessons.md` | Lecciones aprendidas |
+
+---
+
+## LOGGING & ERROR TRACKING (2026-02-20)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Goal:** Implementar logging estructurado + Sentry en el frontend (Next.js)
+
+### Decisiones de Diseño
+
+**Logger: Pino** (no Winston)
+- Pino es ~5x más rápido que Winston (benchmark: 30k+ logs/s vs ~6k)
+- Nativo JSON — perfecto para Vercel logs y structured logging
+- `pino-pretty` para desarrollo local legible
+- Tamaño: ~50KB vs Winston ~200KB+ (importa para edge/serverless)
+- Next.js oficialmente recomienda Pino en su documentación
+
+**Sentry: @sentry/nextjs**
+- SDK oficial con soporte para App Router, Server Components, y Edge
+- Auto-instrumentación de errores client + server
+- Source maps en producción
+- Filtrado de datos sensibles (tokens, passwords, CVs)
+
+### Plan de Implementación
+
+#### T001: Logging Estructurado con Pino
+
+- [x] **T001.1** Instalar `pino` + `pino-pretty` (dev) en `apps/web`
+- [x] **T001.2** Crear `/apps/web/src/lib/logger.ts`
+  - Formato JSON estructurado: timestamp, level, message, context, requestId
+  - Niveles: debug, info, warn, error
+  - Child loggers con contexto (e.g., `logger.child({ module: 'auth' })`)
+  - Detección automática NODE_ENV para pretty-print en dev
+- [x] **T001.3** Crear `/apps/web/src/middleware.ts` para request logging
+  - Log automático: method, path, duration, status, requestId (UUID)
+  - Header `X-Request-ID` en response
+  - Excluir rutas estáticas (_next/static, favicon, etc.)
+- [x] **T001.4** Integrar logger en el API proxy (`/app/api/[...path]/route.ts`)
+  - Reemplazar `console.error` existentes con logger
+  - Agregar request/response logging con duración
+
+#### T002: Sentry Error Tracking
+
+- [x] **T002.1** Instalar `@sentry/nextjs` en `apps/web`
+- [x] **T002.2** Crear archivos de configuración Sentry:
+  - `apps/web/sentry.client.config.ts` — Browser error tracking
+  - `apps/web/sentry.server.config.ts` — Server error tracking
+  - `apps/web/sentry.edge.config.ts` — Edge runtime tracking
+  - `apps/web/src/instrumentation.ts` — Next.js instrumentation hook
+- [x] **T002.3** Actualizar `apps/web/next.config.js`
+  - Wrappear con `withSentryConfig()`
+  - Habilitar source maps upload en producción
+  - Configurar `tunnelRoute` para evitar ad-blockers
+- [x] **T002.4** Crear error boundaries:
+  - `apps/web/src/app/global-error.tsx` — Sentry global error boundary
+  - `apps/web/src/app/error.tsx` — App-level error boundary
+- [x] **T002.5** Integrar Sentry con el logger
+  - En nivel `error`: auto-llamar `Sentry.captureException()`
+  - Agregar breadcrumbs para `info` y `warn`
+  - Contexto: requestId, user info, environment
+- [x] **T002.6** Configurar filtrado de datos sensibles
+  - `beforeSend` hook para scrubear: tokens, passwords, CV content, emails en body
+  - Deny-list de URLs con datos sensibles
+- [ ] **T002.7** Crear `apps/web/src/app/sentry-example-page/page.tsx` para verificación
+  - Página temporal para probar que Sentry captura errores
+  - Se puede eliminar después de verificar — requiere SENTRY_DSN real
+
+### Archivos a Crear/Modificar
+
+| Acción | Archivo | Propósito |
+|--------|---------|-----------|
+| Crear | `apps/web/src/lib/logger.ts` | Utilidad central de logging |
+| Crear | `apps/web/src/middleware.ts` | Request logging automático |
+| Crear | `apps/web/sentry.client.config.ts` | Sentry config browser |
+| Crear | `apps/web/sentry.server.config.ts` | Sentry config server |
+| Crear | `apps/web/sentry.edge.config.ts` | Sentry config edge |
+| Crear | `apps/web/src/instrumentation.ts` | Next.js instrumentation |
+| Crear | `apps/web/src/app/global-error.tsx` | Error boundary global |
+| Modificar | `apps/web/next.config.js` | Sentry wrapper + source maps |
+| Modificar | `apps/web/src/app/api/[...path]/route.ts` | Usar logger en API proxy |
+| Modificar | `apps/web/package.json` | Nuevas dependencias |
+
+### Variables de Entorno Necesarias
+
+```
+# Sentry (necesarias para producción, opcionales en dev)
+SENTRY_DSN=              # DSN del proyecto Sentry
+SENTRY_AUTH_TOKEN=       # Token para upload de source maps (CI/build)
+SENTRY_ORG=              # Nombre de la org en Sentry
+SENTRY_PROJECT=          # Nombre del proyecto en Sentry
+NEXT_PUBLIC_SENTRY_DSN=  # DSN expuesto al client
+```
+
+### Notas
+- El backend (FastAPI) ya tiene structlog configurado — NO lo tocamos
+- Sentry DSN no estará configurado aún — el código debe funcionar sin él (graceful degradation)
+- Pino en edge functions: usaremos la versión browser-compatible
+- No se agrega Sentry al backend Python en esta iteración
