@@ -524,9 +524,10 @@ User QA reports the following issues still exist despite previous claims:
 - [x] **T002.6** Configurar filtrado de datos sensibles
   - `beforeSend` hook para scrubear: tokens, passwords, CV content, emails en body
   - Deny-list de URLs con datos sensibles
-- [ ] **T002.7** Crear `apps/web/src/app/sentry-example-page/page.tsx` para verificación
-  - Página temporal para probar que Sentry captura errores
-  - Se puede eliminar después de verificar — requiere SENTRY_DSN real
+- [x] **T002.7** Verificación E2E de Sentry
+  - Página de test creada, error lanzado, confirmado en Sentry dashboard
+  - Página de test eliminada después de verificar
+  - Source maps subidas correctamente (Node.js, Edge, Client)
 
 ### Archivos a Crear/Modificar
 
