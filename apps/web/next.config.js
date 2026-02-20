@@ -33,8 +33,12 @@ module.exports = withSentryConfig(nextConfig, {
   // Disable source map upload if no auth token (local dev)
   disableSourceMapUpload: !process.env.SENTRY_AUTH_TOKEN,
 
-  // Automatically tree-shake unused Sentry code
-  disableLogger: true,
+  // Automatically tree-shake unused Sentry debug logging
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
 
   // Hide source maps from clients in production
   hideSourceMaps: true,
