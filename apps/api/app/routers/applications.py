@@ -506,7 +506,16 @@ Proporciona tu analisis en formato JSON."""
         # Parse response
         import json
         result_text = response.choices[0].message.content
-        analysis = json.loads(result_text)
+        try:
+            analysis = json.loads(result_text)
+        except (json.JSONDecodeError, TypeError) as json_err:
+            logger.error(
+                "cv_analysis_json_parse_error",
+                application_id=str(application_id),
+                raw_response=result_text[:500] if result_text else None,
+                error=str(json_err),
+            )
+            raise ValueError(f"OpenAI returned invalid JSON: {json_err}")
 
         # Log the API call
         llm_log = LLMLog(
@@ -570,7 +579,9 @@ Proporciona tu analisis en formato JSON."""
         recommended_jobs = None
         if match_score < match_threshold:
             # Find similar jobs with potentially better match
-            similar_jobs = db.query(Job).filter(
+            similar_jobs = db.query(Job).options(
+                joinedload(Job.company)
+            ).filter(
                 Job.status == JobStatus.ACTIVE,
                 Job.id != job.id
             ).limit(5).all()

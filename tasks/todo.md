@@ -560,3 +560,53 @@ NEXT_PUBLIC_SENTRY_DSN=  # DSN expuesto al client
 - Sentry DSN no estará configurado aún — el código debe funcionar sin él (graceful degradation)
 - Pino en edge functions: usaremos la versión browser-compatible
 - No se agrega Sentry al backend Python en esta iteración
+
+---
+
+## BUG FIXES - CRITICAL (2026-02-20)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Goal:** Resolver bugs críticos en CV upload y botón de entrevista
+
+### T005: Fix CV Upload 500 Error
+
+**Root Cause:** Schema mismatch entre endpoint y `ResumeUploadResponse`
+- El endpoint pasa `ApplicationStatus.CV_UPLOADED` pero el schema espera `ResumeStatus` (enum diferente)
+- El endpoint pasa `application_id` pero `IDSchema` requiere `id`
+- El endpoint pasa `success`, `file_size` que no existen en el schema
+- Resultado: Pydantic validation error → FastAPI devuelve 500
+
+**Fix:**
+- [x] **T005.1** Schema en `schemas/application.py` ya era correcto — verificado
+  - El endpoint importa del archivo correcto, schema tiene `ApplicationStatus`
+  - Existe schema duplicado conflictivo en `schemas/resume.py` con `ResumeStatus` (usado solo por `/candidate/resume`)
+- [x] **T005.2** Fix: analyze endpoint robustecido
+  - Agregado `joinedload(Job.company)` en query de recommended_jobs (evita lazy-load failures)
+  - Agregado try/catch para JSON parsing de respuesta OpenAI con logging detallado
+- [x] **T005.3** Logging estructurado en frontend: `console.error` → `logger.error` en apply page
+- [x] **T005.4** Frontend parsea correctamente — verificado
+
+### T006: Fix Botón de Iniciar Entrevista
+
+**Root Cause:** Falta de loading state + error display invisible
+1. El botón NO tiene estado de loading — mientras el backend llama al LLM (5-10s), el botón parece muerto
+2. El `setError()` se ejecuta pero el error display solo existe dentro de `step === 'upload'` — en `step === 'results'` el error es INVISIBLE
+3. Early return silencioso si `accessToken`/`application` es null
+
+**Fix:**
+- [x] **T006.1** Agregar estado `startingInterview` para loading state del botón
+  - Botón deshabilitado durante request
+  - Spinner + "Iniciando entrevista..." mientras carga
+- [x] **T006.2** Agregar display de error en la sección de results (step === 'results')
+  - Error con icono AlertCircle + mensaje visible debajo de action buttons
+- [x] **T006.3** Reemplazar `console.error` con logger en todos los handlers (init, upload, interview)
+  - Usa `err: unknown` en vez de `err: any` (TypeScript best practice)
+- [x] **T006.4** Build + type-check: 0 errores
+
+### Archivos a Modificar
+
+| Archivo | Cambio |
+|---------|--------|
+| `apps/api/app/schemas/application.py` | Nuevo schema `ApplicationResumeUploadResponse` |
+| `apps/api/app/routers/applications.py` | Usar nuevo schema en endpoint |
+| `apps/web/src/app/candidate/apply/[jobId]/page.tsx` | Loading state + error display |

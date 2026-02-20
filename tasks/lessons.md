@@ -303,3 +303,35 @@
 - 3 deduction types: IMSS 2.5%, ISR 10%, Seguro Vida $150
 - ~60 attendance records over 15 business days
 - 1 payroll run (MONTHLY, Feb 2026) with 2 lines processed
+
+---
+
+## Session: 2026-02-20 - Bug Fixes (CV Upload + Interview Button)
+
+### Patterns Discovered
+
+1. **Duplicate Schemas with Conflicting Types**
+   - `ResumeUploadResponse` exists in BOTH `schemas/application.py` AND `schemas/resume.py`
+   - `application.py` version uses `ApplicationStatus` (correct for application flow)
+   - `resume.py` version uses `ResumeStatus` (correct for profile resume flow)
+   - Lesson: Name schemas uniquely when they represent different domain concepts
+
+2. **Invisible Error Display**
+   - `setError()` was called but the error element only rendered inside `step === 'upload'`
+   - When user was on `step === 'results'`, errors from interview start were invisible
+   - Lesson: Always verify error display exists in EVERY step/view where errors can occur
+
+3. **Missing Loading State = "Button Doesn't Work"**
+   - Backend calls LLM to generate first interview question (5-10s)
+   - Without spinner/disabled state, users think button is broken
+   - Lesson: Any async button action needs loading state, especially with LLM calls
+
+4. **joinedload for Related Queries**
+   - `db.query(Job).filter(...)` without `joinedload(Job.company)` risks lazy-load failures
+   - Especially in list queries where multiple related objects are accessed
+   - Lesson: Always joinedload relationships you plan to access in the same request
+
+5. **Use `err: unknown` not `err: any`**
+   - TypeScript best practice: catch blocks should use `unknown` type
+   - Check with `err instanceof Error` before accessing `.message`
+   - Follows CLAUDE.md "never use any" rule

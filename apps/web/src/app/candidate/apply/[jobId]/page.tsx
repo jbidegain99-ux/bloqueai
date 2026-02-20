@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { publicApi, applicationsApi, candidateApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/auth'
+import { logger } from '@/lib/logger'
 import {
   ArrowLeft,
   Upload,
@@ -78,6 +79,7 @@ export default function ApplyPage() {
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [startingInterview, setStartingInterview] = useState(false)
   const [showExampleCV, setShowExampleCV] = useState(false)
 
   // Redirect if not authenticated
@@ -114,9 +116,10 @@ export default function ApplyPage() {
           setApplication(fullApp as any)
           setStep('results')
         }
-      } catch (err: any) {
-        console.error('Error initializing:', err)
-        setError(err?.message || 'Error al cargar la aplicacion')
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Error al cargar la aplicacion'
+        logger.error({ err, jobId }, 'Apply page initialization failed')
+        setError(message)
       } finally {
         setLoading(false)
       }
@@ -194,9 +197,10 @@ export default function ApplyPage() {
       })
 
       setStep('results')
-    } catch (err: any) {
-      console.error('Error uploading/analyzing CV:', err)
-      setError(err?.message || 'Error al procesar el CV. Intenta de nuevo.')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al procesar el CV. Intenta de nuevo.'
+      logger.error({ err, jobId }, 'CV upload/analysis failed')
+      setError(message)
       setStep('upload')
     } finally {
       setUploading(false)
@@ -208,6 +212,7 @@ export default function ApplyPage() {
     if (!accessToken || !application) return
 
     setError(null)
+    setStartingInterview(true)
 
     try {
       // Start interview with job context and get session ID
@@ -219,9 +224,11 @@ export default function ApplyPage() {
 
       // Redirect to the real interview UI with session ID
       router.push(`/candidate/interview/${session.id}`)
-    } catch (err: any) {
-      console.error('Error starting interview:', err)
-      setError(err?.message || 'Error al iniciar la entrevista')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al iniciar la entrevista'
+      logger.error({ err, jobId }, 'Failed to start interview')
+      setError(message)
+      setStartingInterview(false)
     }
   }
 
@@ -723,11 +730,21 @@ export default function ApplyPage() {
               {canProceedToInterview ? (
                 <Button
                   onClick={handleStartInterview}
+                  disabled={startingInterview}
                   className="flex-1 bg-green-600 hover:bg-green-700"
                   size="lg"
                 >
-                  Iniciar entrevista
-                  <ArrowRight className="h-4 w-4 ml-2" />
+                  {startingInterview ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Iniciando entrevista...
+                    </>
+                  ) : (
+                    <>
+                      Iniciar entrevista
+                      <ArrowRight className="h-4 w-4 ml-2" />
+                    </>
+                  )}
                 </Button>
               ) : (
                 <Button
@@ -751,7 +768,14 @@ export default function ApplyPage() {
               </div>
             )}
 
-            {canProceedToInterview && (
+            {error && (
+              <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                {error}
+              </div>
+            )}
+
+            {canProceedToInterview && !error && (
               <p className="text-sm text-muted-foreground text-center">
                 La entrevista con IA tomara aproximadamente 15-20 minutos
               </p>
