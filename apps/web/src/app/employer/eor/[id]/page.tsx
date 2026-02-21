@@ -27,6 +27,8 @@ import {
   Mail,
   Phone,
   Hash,
+  Loader2,
+  Download,
 } from 'lucide-react'
 
 // ── Tabs ─────────────────────────────────────────────────
@@ -200,6 +202,7 @@ export default function EOREmployeeDetailPage() {
   const [vacations, setVacations] = useState<EORVacationRequest[]>([])
   const [activeTab, setActiveTab] = useState<TabId>('info')
   const [loading, setLoading] = useState(true)
+  const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -437,16 +440,36 @@ export default function EOREmployeeDetailPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    if (accessToken) {
-                      window.open(
-                        `/api/eor/employees/${employeeId}/contract?token=${accessToken}`,
-                        '_blank'
-                      )
+                  disabled={downloading}
+                  onClick={async () => {
+                    if (!accessToken) return
+                    setDownloading(true)
+                    try {
+                      const res = await fetch(`/api/eor/employees/${employeeId}/contract`, {
+                        headers: { Authorization: `Bearer ${accessToken}` },
+                      })
+                      if (!res.ok) throw new Error('Error al descargar')
+                      const blob = await res.blob()
+                      const url = window.URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `contrato-${employee.first_name}-${employee.last_name}.pdf`
+                      document.body.appendChild(a)
+                      a.click()
+                      window.URL.revokeObjectURL(url)
+                      a.remove()
+                    } catch {
+                      setError('Error al descargar el contrato')
+                    } finally {
+                      setDownloading(false)
                     }
                   }}
                 >
-                  Descargar PDF
+                  {downloading ? (
+                    <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Descargando...</>
+                  ) : (
+                    <><Download className="h-4 w-4 mr-1.5" />Descargar PDF</>
+                  )}
                 </Button>
               </div>
             </div>

@@ -1,20 +1,47 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/brand/AppShell'
 import { BrandCard, BrandCardHeader } from '@/components/brand/BrandCard'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/lib/auth'
-import { FileText, Download } from 'lucide-react'
+import { FileText, Download, Loader2 } from 'lucide-react'
 
 export default function EmployeeDocumentsPage() {
   const router = useRouter()
   const { accessToken, isAuthenticated, user } = useAuthStore()
+  const [downloading, setDownloading] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (!isAuthenticated) router.push('/login')
   }, [isAuthenticated, router])
+
+  const handleDownload = async () => {
+    if (!accessToken || !user) return
+    setDownloading(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/eor/employees/${user.id}/contract`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (!res.ok) throw new Error('Error al descargar')
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `contrato-${user.full_name?.replace(/\s+/g, '-') ?? 'empleado'}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      a.remove()
+    } catch {
+      setError('Error al descargar el contrato')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   if (!isAuthenticated) return null
 
@@ -24,6 +51,12 @@ export default function EmployeeDocumentsPage() {
         <h1 className="text-2xl font-bold text-bloque-navy900 mb-6">
           Mis Documentos
         </h1>
+
+        {error && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4">
+            {error}
+          </div>
+        )}
 
         <BrandCard>
           <BrandCardHeader
@@ -48,17 +81,14 @@ export default function EmployeeDocumentsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  if (accessToken && user) {
-                    window.open(
-                      `/api/eor/employees/${user.id}/contract?token=${accessToken}`,
-                      '_blank'
-                    )
-                  }
-                }}
+                disabled={downloading}
+                onClick={handleDownload}
               >
-                <Download className="h-4 w-4 mr-1.5" />
-                Descargar
+                {downloading ? (
+                  <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Descargando...</>
+                ) : (
+                  <><Download className="h-4 w-4 mr-1.5" />Descargar</>
+                )}
               </Button>
             </div>
           </div>
