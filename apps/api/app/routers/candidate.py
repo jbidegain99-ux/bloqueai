@@ -158,26 +158,24 @@ async def upload_resume(
     db: Session = Depends(get_db),
 ) -> Resume:
     """Upload a resume/CV file."""
-    # Validate file type
+    # Read file content and validate
+    content = await file.read()
+
+    from app.utils.cv_validator import validate_cv, CVValidationError
+
+    try:
+        cv_result = validate_cv(content, file.filename or "file", file.content_type)
+    except CVValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    content_type = file.content_type
     allowed_types = {
         "application/pdf": "pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
     }
-
-    content_type = file.content_type
-    if content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tipo de archivo no soportado. Use PDF o DOCX.",
-        )
-
-    # Validate file size (max 10MB)
-    content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El archivo excede el tamaño máximo de 10MB",
-        )
 
     candidate = get_or_create_candidate(db, current_user)
 

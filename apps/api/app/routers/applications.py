@@ -268,34 +268,30 @@ async def upload_resume(
             detail="Aplicacion no encontrada"
         )
 
-    # Validate file type
-    allowed_types = [
-        "application/pdf",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ]
-    content_type = file.content_type or ""
-
-    # Also check extension
-    filename = file.filename or "file"
-    ext = filename.lower().split(".")[-1] if "." in filename else ""
-
-    if content_type not in allowed_types and ext not in ["pdf", "docx"]:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Formato no soportado. Solo se aceptan archivos PDF o DOCX."
-        )
-
-    # Read file content
+    # Read file content and validate
     content = await file.read()
-    file_size = len(content)
+    filename = file.filename or "file"
 
-    # Validate file size (max 10MB)
-    max_size = 10 * 1024 * 1024  # 10MB
-    if file_size > max_size:
+    from app.utils.cv_validator import validate_cv, CVValidationError
+
+    _ERROR_CODE_TO_STATUS = {
+        "invalid_extension": status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        "file_too_large": status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        "invalid_mime": status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        "corrupt_pdf": status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "empty_pdf": status.HTTP_422_UNPROCESSABLE_ENTITY,
+    }
+
+    try:
+        cv_result = validate_cv(content, filename, file.content_type)
+    except CVValidationError as e:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Archivo muy grande. El tamano maximo es 10MB."
+            status_code=_ERROR_CODE_TO_STATUS.get(e.code, status.HTTP_400_BAD_REQUEST),
+            detail=e.message,
         )
+
+    file_size = cv_result.file_size
+    ext = cv_result.extension
 
     # Extract text from file
     resume_text = ""

@@ -1069,3 +1069,78 @@ Also added null-safe access for `resume.source`:
 | Modificado | `apps/web/src/app/dashboard/page.tsx` | Candidate dashboard + employer redirect |
 | Modificado | `apps/web/src/components/brand/AppShell.tsx` | Integración CommandPalette |
 | Modificado | `apps/web/package.json` | Agregado cmdk |
+
+---
+
+## Tests E2E + CV Validation + Activity Feed (2026-02-21)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Goal:** Add E2E test coverage, extract CV validation utility, create Activity Feed component
+
+### T003: CV Validation Utility ✅
+**Status:** DONE
+- [x] Created `apps/api/app/utils/cv_validator.py` with `validate_cv()` function
+- [x] Checks in order: extension → size → MIME magic → corrupt PDF → empty PDF
+- [x] `CVValidationError` exception with `message` (Spanish) + `code` string
+- [x] `CVValidationResult` dataclass with filename, extension, file_size, content_type, text, pages
+- [x] python-magic integration with graceful degradation if libmagic missing
+- [x] pdfplumber for PDF integrity + text extraction checks
+- [x] Integrated into `applications.py` (replaced inline validation lines 271-298)
+- [x] Integrated into `candidate.py` (replaced inline validation lines 162-176)
+- [x] 9 unit tests — all passing
+
+### T050: Activity Feed Component ✅
+**Status:** DONE
+- [x] Created `apps/web/src/components/ui/activity-feed.tsx`
+- [x] 5 activity types: application, interview, offer, hire, note
+- [x] Icon + color config per type (FileText, MessageSquare, Gift, UserCheck, StickyNote)
+- [x] `formatRelativeTime()` in Spanish: "ahora", "hace 5 min", "hace 2 h", "ayer", etc.
+- [x] Framer Motion stagger animations (staggerContainer/staggerItem)
+- [x] `ActivityFeedSkeleton` loading state using Skeleton component
+- [x] Empty state via EmptyState variant="generic"
+- [x] Next.js Link integration when activity.link exists
+- [x] Hover state with subtle bg transition
+
+### T008: Candidate Flow E2E Tests ✅
+**Status:** DONE
+- [x] Created `apps/web/tests/candidate-flow.spec.ts`
+- [x] Login + dashboard redirect test
+- [x] Dashboard metrics verification (Aplicaciones, Entrevista, Match)
+- [x] Profile navigation (CV + Entrevista sections)
+- [x] Jobs list navigation (heading + search input)
+- [x] Applications page navigation
+- [x] Logout flow test
+- [x] Protected route redirect test
+
+### T009: Interview Flow E2E Tests ✅
+**Status:** DONE
+- [x] Created `apps/web/tests/interview-flow.spec.ts`
+- [x] Created `apps/web/tests/fixtures/test-cv.pdf` (minimal valid PDF with text)
+- [x] Navigate to apply flow from jobs (graceful skip if no jobs)
+- [x] Pre-upload step verification ("Preparate" text + "Continuar" button)
+- [x] Upload CV + analysis state (upload fixture → "Analizar CV" → verify state)
+- [x] All tests use graceful skip when no seeded jobs available
+
+### Supporting Changes ✅
+- [x] `.gitignore` — Added `test-results/` and `playwright-report/`
+- [x] `apps/web/package.json` — Added `test:e2e`, `test:e2e:ui`, `test:e2e:headed` scripts
+
+### Verification ✅
+- [x] `python -m pytest tests/test_cv_validator.py -v` — 9/9 tests pass
+- [x] `pnpm build` — 0 TypeScript errors
+- [x] E2E tests created (run with `pnpm test:e2e` when backend available)
+
+### Archivos Creados/Modificados
+
+| Tipo | Archivo | Propósito |
+|------|---------|-----------|
+| Nuevo | `apps/api/app/utils/cv_validator.py` | CV validation utility (validate_cv) |
+| Nuevo | `apps/api/tests/test_cv_validator.py` | 9 unit tests for CV validator |
+| Nuevo | `apps/web/src/components/ui/activity-feed.tsx` | Activity Feed component |
+| Nuevo | `apps/web/tests/candidate-flow.spec.ts` | 7 E2E tests for candidate flow |
+| Nuevo | `apps/web/tests/interview-flow.spec.ts` | 3 E2E tests for interview flow |
+| Nuevo | `apps/web/tests/fixtures/test-cv.pdf` | Minimal valid PDF test fixture |
+| Modificado | `.gitignore` | Added test artifacts |
+| Modificado | `apps/web/package.json` | Added e2e scripts |
+| Modificado | `apps/api/app/routers/applications.py` | Use validate_cv() |
+| Modificado | `apps/api/app/routers/candidate.py` | Use validate_cv() |

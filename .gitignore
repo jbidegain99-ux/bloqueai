@@ -47,6 +47,8 @@ coverage/
 htmlcov/
 .pytest_cache/
 .hypothesis/
+test-results/
+playwright-report/
 
 # Python virtual environments
 venv/
