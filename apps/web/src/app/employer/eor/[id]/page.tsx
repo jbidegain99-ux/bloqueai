@@ -340,7 +340,7 @@ export default function EOREmployeeDetailPage() {
                         : 'text-bloque-navy900'
                     }`}
                   >
-                    {item.negative ? '-' : ''}${Math.abs(item.value).toFixed(2)}
+                    {item.negative ? '-' : ''}${Math.abs(Number(item.value)).toFixed(2)}
                   </p>
                 </div>
               ))}
@@ -388,10 +388,10 @@ export default function EOREmployeeDetailPage() {
               <InfoRow
                 icon={DollarSign}
                 label="Salario Base"
-                value={`$${employee.base_salary.toFixed(2)}`}
+                value={`$${Number(employee.base_salary).toFixed(2)}`}
               />
               <InfoRow icon={FileText} label="Contrato" value={employee.contract_type === 'INDEFINIDO' ? 'Indefinido' : 'Plazo fijo'} />
-              <InfoRow icon={Shield} label="AFP" value={employee.afp_provider === 'AFP_CRECER' ? 'AFP Crecer' : employee.afp_provider === 'AFP_CONFIA' ? 'AFP Confia' : employee.afp_provider} />
+              <InfoRow icon={Shield} label="AFP" value={employee.afp_provider === 'CRECER' ? 'AFP Crecer' : employee.afp_provider === 'CONFIA' ? 'AFP Confia' : employee.afp_provider} />
               <InfoRow icon={CreditCard} label="Banco" value={employee.bank_name ? `${employee.bank_name} - ${employee.bank_account_number}` : null} />
             </BrandCard>
           </div>

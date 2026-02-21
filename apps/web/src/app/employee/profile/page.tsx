@@ -110,7 +110,7 @@ export default function EmployeeProfilePage() {
             <InfoRow
               icon={DollarSign}
               label="Salario Base"
-              value={employee ? `$${employee.base_salary.toFixed(2)}` : undefined}
+              value={employee ? `$${Number(employee.base_salary).toFixed(2)}` : undefined}
             />
             <InfoRow
               icon={Calendar}
@@ -134,9 +134,9 @@ export default function EmployeeProfilePage() {
               icon={Shield}
               label="AFP"
               value={
-                employee?.afp_provider === 'AFP_CRECER'
+                employee?.afp_provider === 'CRECER'
                   ? 'AFP Crecer'
-                  : employee?.afp_provider === 'AFP_CONFIA'
+                  : employee?.afp_provider === 'CONFIA'
                   ? 'AFP Confia'
                   : employee?.afp_provider
               }
