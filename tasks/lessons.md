@@ -482,3 +482,46 @@
 | PageTransition | `components/layout/page-transition.tsx` | Framer Motion, animations.ts |
 | PipelineFunnel | `components/dashboard/pipeline-funnel.tsx` | Skeleton, Framer Motion |
 | KanbanBoard | `components/candidates/kanban-board.tsx` | @dnd-kit, Avatar, Badge, Skeleton, Framer Motion |
+| CommandPalette | `components/ui/command-palette.tsx` | cmdk, Framer Motion, auth store |
+
+---
+
+## Session Fixes 2026-02-21
+
+### Patterns Discovered
+
+1. **cmdk Keyboard Shortcut — Capture Phase Required**
+   - `document.addEventListener('keydown', handler, true)` — the `true` (capture) is essential
+   - Without capture phase, Next.js or other listeners may swallow the event
+   - Must call both `e.preventDefault()` and `e.stopPropagation()` for Ctrl+K
+
+2. **Array.from(new Set()) vs Spread**
+   - `[...new Set(array)]` fails with TS2802 when `downlevelIteration` is not enabled
+   - Always use `Array.from(new Set(array))` for safer TypeScript compatibility
+
+3. **Generic Constraint: `extends object` not `Record<string, unknown>`**
+   - `Record<string, unknown>` rejects interfaces with defined properties
+   - `extends object` accepts any non-primitive — works with all interface types
+   - Applied to DataTable<T>, affects any generic component accepting user-defined types
+
+4. **Employer Dashboard Type Casting**
+   - API responses typed as `{ items?: Record<string, unknown>[] }` for safety
+   - Map over items with `String(j.field ?? '')` / `Number(j.field ?? 0)` coercion
+   - Never cast API response directly to domain interface — always map explicitly
+
+5. **Dashboard Role Routing**
+   - Employers at `/dashboard` get `router.replace('/employer/dashboard')` redirect
+   - Avoids maintaining duplicate employer dashboard code in two locations
+   - `replace` not `push` to keep clean browser history
+
+### Architecture Decisions (Fixes)
+
+1. **Command Palette in AppShell**
+   - Mounted once at AppShell level → available on all authenticated pages
+   - Role-based items computed via `useMemo` with auth store helpers
+   - Logout action uses `router.push('/login')` after `logout()` from store
+
+2. **Premium Component Adoption Pattern**
+   - MetricCard, DataTable, EmptyState used consistently across all dashboards
+   - QuickAction extracted as local component (not shared — too page-specific)
+   - Status badge maps (label + variant) defined as page-level constants

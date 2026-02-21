@@ -1017,3 +1017,55 @@ Also added null-safe access for `resume.source`:
 | Modificado | `apps/web/src/components/brand/AppShell.tsx` | Integración de PageTransition |
 | Modificado | `apps/web/package.json` | Agregado @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities |
 | Eliminado | `apps/web/src/components/ui/page-transition.tsx` | Movido a components/layout/ |
+
+---
+
+## Fixes Post-Semana 3 (2026-02-21)
+
+### FIX-01: Command Palette (Ctrl+K / Cmd+K) ✅
+**Status:** DONE
+- [x] Instalado `cmdk` via `pnpm add -F web cmdk`
+- [x] Componente `apps/web/src/components/ui/command-palette.tsx`
+- [x] Keyboard shortcut Ctrl+K / Cmd+K con capture phase listener
+- [x] Navegación role-aware (candidato, employer, recruiter/admin)
+- [x] Grupos: Navegación, Acciones, Cuenta
+- [x] Keywords en español para búsqueda fuzzy
+- [x] Backdrop + dialog con Framer Motion animations
+- [x] Footer con hints de teclado (↑↓ navegar, ↵ seleccionar, ESC cerrar)
+- [x] Integrado en AppShell (disponible en todas las páginas)
+- [x] Verificado funcionando ✅
+
+### FIX-02: Employer Dashboard Migration ✅
+**Status:** DONE
+- [x] Reescrito `apps/web/src/app/employer/dashboard/page.tsx`
+- [x] Header con saludo + fecha + botón "Nueva Vacante"
+- [x] 4 MetricCards: Total Vacantes, Activas (con trend), En Shortlists, Por Revisar
+- [x] 3 QuickAction cards: Mis Vacantes, Shortlists, Nueva Vacante
+- [x] DataTable con columnas: Vacante, Estado, Candidatos, Creado
+- [x] Status badges con mapeo español (Activo, Borrador, Pendiente, etc.)
+- [x] EmptyState para cuando no hay vacantes
+- [x] Loading/error states con retry
+- [x] Eliminados todos los `any` types
+- [x] Redirect en `/dashboard` para employers → `/employer/dashboard`
+- [x] Verificado funcionando ✅
+
+### FIX-03: Candidate Dashboard Migration ✅
+**Status:** DONE
+- [x] Sección candidato en `apps/web/src/app/dashboard/page.tsx` reescrita
+- [x] 3 MetricCards: Aplicaciones, En Entrevista, Match Score
+- [x] DataTable de aplicaciones con datos reales de `applicationsApi.list()`
+- [x] Columnas: Puesto, Empresa, Estado, Fecha
+- [x] Status badges: Applied, Reviewing, Interview, Offered, Hired, Rejected
+- [x] 3 QuickAction cards: Explorar Puestos, Subir CV, Entrevista IA
+- [x] Loading/error states
+- [x] Verificado funcionando ✅
+
+### Archivos Creados/Modificados (Fixes)
+
+| Tipo | Archivo | Propósito |
+|------|---------|-----------|
+| Nuevo | `apps/web/src/components/ui/command-palette.tsx` | Command Palette con cmdk |
+| Modificado | `apps/web/src/app/employer/dashboard/page.tsx` | Migrado a componentes premium |
+| Modificado | `apps/web/src/app/dashboard/page.tsx` | Candidate dashboard + employer redirect |
+| Modificado | `apps/web/src/components/brand/AppShell.tsx` | Integración CommandPalette |
+| Modificado | `apps/web/package.json` | Agregado cmdk |
