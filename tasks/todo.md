@@ -906,3 +906,114 @@ Also added null-safe access for `resume.source`:
 | Modificado | `apps/web/src/components/ui/skeleton.tsx` | Shimmer animation, CardSkeleton, TableSkeleton |
 | Modificado | `apps/web/src/app/layout.tsx` | Sonner Toaster in root layout |
 | Nuevo | `apps/web/src/components/ui/form-field.tsx` | FormField wrapper with animated errors |
+
+---
+
+## Semana 3 - UI/Dashboard Premium (2026-02-21)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Commit:** `362d713`
+
+### T041: Data Table Premium ✅
+**Status:** DONE
+- [x] Crear archivo base data-table.tsx
+- [x] Implementar sorting (click header: asc → desc → none)
+- [x] Implementar filtros inline (input por columna filtrable)
+- [x] Implementar paginación (controles + números + ellipsis)
+- [x] Implementar selección (checkbox + select-all + indeterminate)
+- [x] Implementar acciones (DropdownMenu con variant destructive)
+- [x] Estados: loading (skeleton), empty (slot), error (retry)
+- [x] Animaciones Framer Motion (staggerContainer/staggerItem)
+- [x] Responsive (overflow-x-auto)
+- [x] Verificado funcionando ✅
+
+### T044: Page Transitions ✅
+**Status:** DONE
+- [x] Crear page-transition.tsx en components/layout/
+- [x] AnimatePresence mode="wait" con usePathname como key
+- [x] Fade + slide sutil al entrar (300ms ease)
+- [x] Exit animation al cambiar de ruta (150ms)
+- [x] will-change para GPU acceleration
+- [x] Integrado en AppShell (automático para todas las páginas)
+- [x] Eliminado archivo viejo de components/ui/
+- [x] Verificado funcionando ✅
+
+### T047: Metric Cards con Sparklines ✅
+**Status:** DONE
+- [x] Card con número grande + label uppercase
+- [x] Sparkline SVG con pathLength animation + area fill
+- [x] Dot animado al final del gráfico
+- [x] Color automático: verde sube, rojo baja
+- [x] Indicador de cambio (TrendingUp/Down/Minus + porcentaje)
+- [x] Icono con fondo brand-50, hover brand-100
+- [x] Loading state (skeleton)
+- [x] Hover animation (shadow-soft → shadow-medium)
+- [x] Prop format para valores custom (%, moneda)
+- [x] Verificado funcionando ✅
+
+### T045: Empty States con Ilustraciones ✅
+**Status:** DONE
+- [x] Componente genérico reutilizable
+- [x] Iconos Lucide grandes en círculo con fondo semántico
+- [x] Título + descripción (defaults por variante, override con props)
+- [x] CTA opcional (botón primary)
+- [x] 7 variantes: candidates, jobs, interviews, search, error, applications, generic
+- [x] Icono customizable via prop
+- [x] Animación de entrada (fade + slide)
+- [x] Verificado funcionando ✅
+
+### T048: Pipeline Funnel Interactivo ✅
+**Status:** DONE
+- [x] Embudo con barras verticales proporcionales
+- [x] 5 etapas: Aplicados → Screening → Entrevista → Completados → Shortlisted
+- [x] Números y porcentajes por etapa
+- [x] Colores degradados (brand → info → warning → success)
+- [x] Tooltips con count, porcentaje, conversión desde etapa anterior
+- [x] Animación de entrada progresiva (barras crecen escalonadamente)
+- [x] Click en etapa para filtrar (onStageClick callback)
+- [x] Loading state (skeleton)
+- [x] Verificado funcionando ✅
+
+### T046: Dashboard Rediseño ✅
+**Status:** DONE
+- [x] Header: "Dashboard" + fecha localizada + botón "Nueva Vacante"
+- [x] 4 MetricCards: Candidatos Activos, Vacantes, Entrevistas, Tasa de Conversión
+- [x] PipelineFunnel (ancho completo) con datos reales del API
+- [x] Entrevistas Recientes (DataTable con sorting, filtros, acciones)
+- [x] Próximas Entrevistas (sidebar con avatares + badges + fechas)
+- [x] Scores Promedio (Match Score + Interview Score con barras de progreso)
+- [x] Datos reales: adminApi.getDashboardMetrics + adminApi.getInterviews
+- [x] Loading states en todos los componentes
+- [x] Error state con retry
+- [x] Dashboards de Candidate y Employer preservados
+- [x] Verificado funcionando ✅
+
+### T049: Candidate Kanban Drag-and-Drop ✅
+**Status:** DONE
+- [x] 6 columnas: Applied, Screening, Interview, Offer, Hired, Rejected
+- [x] Cards de candidato con avatar, nombre, puesto, score, fecha
+- [x] Drag and drop entre columnas (@dnd-kit/core + PointerSensor)
+- [x] Actualización optimista + onStatusChange callback
+- [x] DragOverlay con rotate-2 y shadow-elevated
+- [x] Animaciones fluidas (AnimatePresence + layout)
+- [x] Contador por columna (Badge)
+- [x] Filtro por nombre/email + dropdown por vacante
+- [x] Loading state (skeleton por columna)
+- [x] Column highlight al arrastrar sobre ella
+- [x] Score color coding (verde ≥80%, amarillo ≥60%, rojo <60%)
+- [x] Verificado funcionando ✅
+
+### Archivos Creados/Modificados
+
+| Tipo | Archivo | Propósito |
+|------|---------|-----------|
+| Nuevo | `apps/web/src/components/ui/data-table.tsx` | DataTable genérico con sorting, filtros, paginación, selección |
+| Nuevo | `apps/web/src/components/ui/metric-card.tsx` | MetricCard con sparkline SVG y trend indicator |
+| Nuevo | `apps/web/src/components/ui/empty-state.tsx` | EmptyState con 7 variantes y CTA |
+| Nuevo | `apps/web/src/components/layout/page-transition.tsx` | PageTransition con AnimatePresence |
+| Nuevo | `apps/web/src/components/dashboard/pipeline-funnel.tsx` | PipelineFunnel animado con tooltips |
+| Nuevo | `apps/web/src/components/candidates/kanban-board.tsx` | KanbanBoard con @dnd-kit drag-and-drop |
+| Modificado | `apps/web/src/app/dashboard/page.tsx` | Dashboard rediseñado con componentes premium |
+| Modificado | `apps/web/src/components/brand/AppShell.tsx` | Integración de PageTransition |
+| Modificado | `apps/web/package.json` | Agregado @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities |
+| Eliminado | `apps/web/src/components/ui/page-transition.tsx` | Movido a components/layout/ |
