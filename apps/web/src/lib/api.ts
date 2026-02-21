@@ -1523,4 +1523,243 @@ export const payrollApi = {
     fetchApi<PayrollDetailItem[]>(`/payroll/reports/detail?run_id=${runId}`, { token }),
 }
 
+// ── EOR Types ─────────────────────────────────────────────────
+
+interface EOREmployee {
+  id: string
+  client_company_id: string
+  first_name: string
+  last_name: string
+  email: string
+  phone: string | null
+  dui: string | null
+  nit: string | null
+  birth_date: string | null
+  address: string | null
+  isss_number: string | null
+  afp_provider: string | null
+  afp_number: string | null
+  bank_name: string | null
+  bank_account_number: string | null
+  bank_account_type: string | null
+  position: string | null
+  department: string | null
+  base_salary: number
+  payment_frequency: string
+  start_date: string
+  end_date: string | null
+  contract_type: string
+  contract_end_date: string | null
+  status: string
+  created_at: string | null
+  updated_at: string | null
+}
+
+interface EOREmployeeDetail extends EOREmployee {
+  monthly_cost: {
+    gross_salary: number
+    total_deductions: number
+    net_salary: number
+    employer_contributions: number
+    fee_talentos: number
+    grand_total: number
+  } | null
+  vacation_days_available: number | null
+  vacation_days_used: number | null
+}
+
+interface EORPayrollRun {
+  id: string
+  client_company_id: string
+  period_start: string
+  period_end: string
+  payment_date: string | null
+  status: string
+  total_employees: number
+  total_gross: number
+  total_deductions: number
+  total_net: number
+  total_employer_contributions: number
+  total_fees: number
+  grand_total: number
+  created_at: string | null
+  approved_at: string | null
+  paid_at: string | null
+  items?: EORPayrollItem[]
+}
+
+interface EORPayrollItem {
+  id: string
+  employee_id: string
+  employee_name: string | null
+  base_salary: number
+  overtime_amount: number
+  bonuses: number
+  gross_salary: number
+  isss_employee: number
+  afp_employee: number
+  isr: number
+  other_deductions: number
+  total_deductions: number
+  net_salary: number
+  isss_employer: number
+  afp_employer: number
+  fee_talentos: number
+  total_employer_cost: number
+}
+
+interface EORVacationRequest {
+  id: string
+  employee_id: string
+  employee_name: string | null
+  start_date: string
+  end_date: string
+  days_requested: number
+  reason: string | null
+  status: string
+  reviewed_by: string | null
+  reviewed_at: string | null
+  review_notes: string | null
+  created_at: string | null
+}
+
+interface EORPayslip {
+  item_id: string
+  period_start: string
+  period_end: string
+  gross_salary: number
+  total_deductions: number
+  net_salary: number
+  payment_date: string | null
+  status: string
+}
+
+interface EORCalculatorResult {
+  salary_type: string
+  salario_bruto: number
+  isss_empleado: number
+  afp_empleado: number
+  isr: number
+  total_deducciones: number
+  salario_neto: number
+  isss_patronal: number
+  afp_patronal: number
+  subtotal_empleador: number
+  fee_talentos: number
+  costo_total_mensual: number
+}
+
+// ── EOR API ───────────────────────────────────────────────────
+
+export const eorApi = {
+  // Employees
+  createEmployee: (token: string, data: Record<string, unknown>) =>
+    fetchApi<EOREmployee>('/eor/employees', { method: 'POST', body: data, token }),
+
+  listEmployees: (token: string, params?: {
+    status?: string
+    client_company_id?: string
+    search?: string
+  }) => {
+    const qp = new URLSearchParams()
+    if (params?.status) qp.set('status', params.status)
+    if (params?.client_company_id) qp.set('client_company_id', params.client_company_id)
+    if (params?.search) qp.set('search', params.search)
+    const qs = qp.toString()
+    return fetchApi<EOREmployee[]>(`/eor/employees${qs ? `?${qs}` : ''}`, { token })
+  },
+
+  getEmployee: (token: string, id: string) =>
+    fetchApi<EOREmployeeDetail>(`/eor/employees/${id}`, { token }),
+
+  updateEmployee: (token: string, id: string, data: Record<string, unknown>) =>
+    fetchApi<EOREmployee>(`/eor/employees/${id}`, { method: 'PUT', body: data, token }),
+
+  terminateEmployee: (token: string, id: string, data: {
+    termination_date: string
+    reason: string
+    with_cause: boolean
+  }) =>
+    fetchApi<{ employee_id: string; total_liquidacion: number; message: string }>(
+      `/eor/employees/${id}/terminate`, { method: 'POST', body: data, token }
+    ),
+
+  // Payroll
+  simulatePayroll: (token: string, data: {
+    salario_base: number
+    horas_extra?: number
+    bonificaciones?: number
+    otras_deducciones?: number
+  }) =>
+    fetchApi<EORPayrollItem>('/eor/payroll/simulate', { method: 'POST', body: data, token }),
+
+  createPayrollRun: (token: string, data: {
+    client_company_id: string
+    period_start: string
+    period_end: string
+    payment_date?: string
+    employee_ids?: string[]
+  }) =>
+    fetchApi<EORPayrollRun>('/eor/payroll/runs', { method: 'POST', body: data, token }),
+
+  listPayrollRuns: (token: string, params?: { status?: string; client_company_id?: string }) => {
+    const qp = new URLSearchParams()
+    if (params?.status) qp.set('status', params.status)
+    if (params?.client_company_id) qp.set('client_company_id', params.client_company_id)
+    const qs = qp.toString()
+    return fetchApi<EORPayrollRun[]>(`/eor/payroll/runs${qs ? `?${qs}` : ''}`, { token })
+  },
+
+  getPayrollRun: (token: string, runId: string) =>
+    fetchApi<EORPayrollRun>(`/eor/payroll/runs/${runId}`, { token }),
+
+  approvePayrollRun: (token: string, runId: string) =>
+    fetchApi<{ success: boolean }>(`/eor/payroll/runs/${runId}/approve`, { method: 'POST', token }),
+
+  markPayrollPaid: (token: string, runId: string, paymentDate: string) =>
+    fetchApi<{ success: boolean }>(
+      `/eor/payroll/runs/${runId}/mark-paid?payment_date=${paymentDate}`, { method: 'POST', token }
+    ),
+
+  // Documents
+  getEmployeePayslips: (token: string, employeeId: string) =>
+    fetchApi<EORPayslip[]>(`/eor/employees/${employeeId}/payslips`, { token }),
+
+  // Vacations
+  createVacationRequest: (token: string, data: {
+    employee_id: string
+    start_date: string
+    end_date: string
+    days_requested: number
+    reason?: string
+  }) =>
+    fetchApi<EORVacationRequest>('/eor/vacation-requests', { method: 'POST', body: data, token }),
+
+  listVacationRequests: (token: string, params?: { status?: string; employee_id?: string }) => {
+    const qp = new URLSearchParams()
+    if (params?.status) qp.set('status', params.status)
+    if (params?.employee_id) qp.set('employee_id', params.employee_id)
+    const qs = qp.toString()
+    return fetchApi<EORVacationRequest[]>(`/eor/vacation-requests${qs ? `?${qs}` : ''}`, { token })
+  },
+
+  approveVacation: (token: string, requestId: string) =>
+    fetchApi<{ success: boolean }>(`/eor/vacation-requests/${requestId}/approve`, { method: 'POST', token }),
+
+  rejectVacation: (token: string, requestId: string, reason: string) =>
+    fetchApi<{ success: boolean }>(
+      `/eor/vacation-requests/${requestId}/reject?reason=${encodeURIComponent(reason)}`,
+      { method: 'POST', token }
+    ),
+
+  // Public Calculator
+  calculate: (salary: number, salaryType: string = 'gross') =>
+    fetchApi<EORCalculatorResult>(`/eor/calculator?salary=${salary}&salary_type=${salaryType}`),
+}
+
+export type {
+  EOREmployee, EOREmployeeDetail, EORPayrollRun, EORPayrollItem,
+  EORVacationRequest, EORPayslip, EORCalculatorResult,
+}
+
 export { ApiError }

@@ -22,6 +22,19 @@ from app.models.payroll import (
     Payslip, DeductionType, TaxConfig,
     PayFrequency, ContractType, AttendanceType, PayrollRunStatus, DeductionCalcType,
 )
+from app.models.eor import (
+    EOREmployee,
+    EORPayrollRun,
+    EORPayrollItem,
+    EORVacationRequest,
+    EOREmployeeStatus,
+    EORContractType,
+    EORPaymentFrequency,
+    EORPayrollRunStatus,
+    VacationRequestStatus,
+    AFPProvider,
+    BankAccountType,
+)
 
 __all__ = [
     "User",
@@ -63,4 +76,15 @@ __all__ = [
     "PayrollRunStatus",
     "DeductionCalcType",
     "CVAnalysisCache",
+    "EOREmployee",
+    "EORPayrollRun",
+    "EORPayrollItem",
+    "EORVacationRequest",
+    "EOREmployeeStatus",
+    "EORContractType",
+    "EORPaymentFrequency",
+    "EORPayrollRunStatus",
+    "VacationRequestStatus",
+    "AFPProvider",
+    "BankAccountType",
 ]

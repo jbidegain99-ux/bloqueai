@@ -1144,3 +1144,101 @@ Also added null-safe access for `resume.source`:
 | Modificado | `apps/web/package.json` | Added e2e scripts |
 | Modificado | `apps/api/app/routers/applications.py` | Use validate_cv() |
 | Modificado | `apps/api/app/routers/candidate.py` | Use validate_cv() |
+
+---
+
+## EOR Module — El Salvador (2026-02-21)
+
+Complete Employer of Record module for El Salvador with payroll calculator,
+contract generator, API endpoints, and full UI for employers and employees.
+
+### T-EOR-1: PayrollCalculatorSV Service + Tests ✅
+**Status:** DONE
+- [x] `apps/api/app/services/payroll_sv.py` — Full calculator with SV tax rates
+- [x] ISSS (3%/7.5% employee/employer, $1,000 cap), AFP (7.25%/7.75%)
+- [x] Progressive ISR (4 brackets), Aguinaldo, Vacaciones, Indemnizacion
+- [x] Reverse salary calculation (net → gross via bisection)
+- [x] `apps/api/tests/test_payroll_sv.py` — 20/20 tests passing
+
+### T-EOR-2: Database Models + Migration ✅
+**Status:** DONE
+- [x] `apps/api/app/models/eor.py` — 4 models (EOREmployee, EORPayrollRun, EORPayrollItem, EORVacationRequest)
+- [x] 7 PostgreSQL enums (status, contract type, payment frequency, AFP provider, etc.)
+- [x] `apps/api/alembic/versions/011_add_eor_tables.py` — Migration with indexes
+
+### T-EOR-3: Contract Generator ✅
+**Status:** DONE
+- [x] `apps/api/app/services/contract_generator.py` — Indefinite + fixed-term templates
+- [x] Spanish number-to-words conversion
+- [x] Basic PDF generation with reportlab
+
+### T-EOR-4: API Endpoints + Schemas ✅
+**Status:** DONE
+- [x] `apps/api/app/schemas/eor.py` — Pydantic schemas (Create/Update/Response)
+- [x] `apps/api/app/routers/eor.py` — 19 REST endpoints:
+  - Employees: CRUD + terminate (5)
+  - Payroll: simulate, runs CRUD, approve, mark-paid (6)
+  - Documents: contract PDF, payslips list, payslip PDF (3)
+  - Vacations: create, list, approve, reject (4)
+  - Calculator: public endpoint, no auth (1)
+- [x] Registered in `main.py` and `routers/__init__.py`
+
+### T-EOR-5: Frontend API Client + Types ✅
+**Status:** DONE
+- [x] `apps/web/src/lib/api.ts` — TypeScript interfaces + `eorApi` namespace
+- [x] 7 interfaces (EOREmployee, EOREmployeeDetail, EORPayrollRun, etc.)
+- [x] All API methods with proper typing
+
+### T-EOR-6: EOR Dashboard + Wizard + Detail UI ✅
+**Status:** DONE
+- [x] `apps/web/src/app/employer/eor/page.tsx` — Dashboard with MetricCards + DataTable
+- [x] `apps/web/src/app/employer/eor/new/page.tsx` — 4-step wizard (personal, labor, social/bank, review)
+- [x] `apps/web/src/app/employer/eor/[id]/page.tsx` — Detail with tabs (Info, Payroll, Documents, Vacation)
+- [x] Added EOR nav link to AppShell
+
+### T-EOR-7: Public Calculator Page ✅
+**Status:** DONE
+- [x] `apps/web/src/app/calculator/page.tsx` — Public page (no auth required)
+- [x] Hero section, salary input with gross/net toggle
+- [x] Real-time breakdown (employee + employer sections)
+- [x] CTA section + FAQ accordion
+- [x] SEO-friendly standalone layout
+
+### T-EOR-8: Employee Portal UI ✅
+**Status:** DONE
+- [x] `apps/web/src/app/employee/dashboard/page.tsx` — Greeting, metrics, quick actions
+- [x] `apps/web/src/app/employee/payslips/page.tsx` — DataTable with pay history
+- [x] `apps/web/src/app/employee/documents/page.tsx` — Contract download
+- [x] `apps/web/src/app/employee/vacation/page.tsx` — Balance card, request form, history table
+- [x] `apps/web/src/app/employee/profile/page.tsx` — Personal, labor, social security, banking data
+
+### Verification ✅
+- [x] `python -m pytest tests/test_payroll_sv.py -v` — 20/20 tests pass
+- [x] `python -m pytest tests/test_cv_validator.py -v` — 9/9 tests pass
+- [x] `pnpm build` — 0 TypeScript errors, all pages compile
+
+### Files Summary
+
+| Type | File | Purpose |
+|------|------|---------|
+| New | `apps/api/app/services/payroll_sv.py` | SV payroll calculator |
+| New | `apps/api/tests/test_payroll_sv.py` | 20 unit tests |
+| New | `apps/api/app/models/eor.py` | 4 DB models + 7 enums |
+| New | `apps/api/alembic/versions/011_add_eor_tables.py` | Migration |
+| New | `apps/api/app/schemas/eor.py` | Pydantic schemas |
+| New | `apps/api/app/routers/eor.py` | 19 API endpoints |
+| New | `apps/api/app/services/contract_generator.py` | Contract PDF generator |
+| New | `apps/web/src/app/employer/eor/page.tsx` | EOR dashboard |
+| New | `apps/web/src/app/employer/eor/new/page.tsx` | Add employee wizard |
+| New | `apps/web/src/app/employer/eor/[id]/page.tsx` | Employee detail |
+| New | `apps/web/src/app/calculator/page.tsx` | Public salary calculator |
+| New | `apps/web/src/app/employee/dashboard/page.tsx` | Employee portal dashboard |
+| New | `apps/web/src/app/employee/payslips/page.tsx` | Payslips page |
+| New | `apps/web/src/app/employee/documents/page.tsx` | Documents page |
+| New | `apps/web/src/app/employee/vacation/page.tsx` | Vacation requests page |
+| New | `apps/web/src/app/employee/profile/page.tsx` | Employee profile page |
+| Modified | `apps/web/src/lib/api.ts` | EOR types + eorApi namespace |
+| Modified | `apps/web/src/components/brand/AppShell.tsx` | EOR nav link |
+| Modified | `apps/api/app/models/__init__.py` | EOR model exports |
+| Modified | `apps/api/app/routers/__init__.py` | EOR router export |
+| Modified | `apps/api/app/main.py` | EOR router registration |

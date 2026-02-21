@@ -8,6 +8,7 @@ from app.routers.health import router as health_router
 from app.routers.public import router as public_router
 from app.routers.applications import router as applications_router
 from app.routers.payroll import router as payroll_router
+from app.routers.eor import router as eor_router
 
 __all__ = [
     "auth_router",
@@ -18,4 +19,5 @@ __all__ = [
     "public_router",
     "applications_router",
     "payroll_router",
+    "eor_router",
 ]

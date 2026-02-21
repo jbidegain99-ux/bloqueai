@@ -17,6 +17,7 @@ import {
   Search,
   ClipboardList,
   Building2,
+  Globe,
 } from 'lucide-react'
 import { Logo } from './Logo'
 import { PageTransition } from '@/components/layout/page-transition'
@@ -91,6 +92,7 @@ export function AppShell({ children }: AppShellProps) {
         { label: 'Dashboard', href: '/employer/dashboard', icon: LayoutDashboard },
         { label: 'Trabajos', href: '/employer/jobs', icon: Briefcase },
         { label: 'Shortlists', href: '/employer/shortlists', icon: Users },
+        { label: 'EOR', href: '/employer/eor', icon: Globe },
       ]
     }
 
