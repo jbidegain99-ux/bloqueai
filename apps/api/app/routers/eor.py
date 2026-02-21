@@ -13,6 +13,8 @@ import structlog
 from app.core.database import get_db
 from app.models.user import User, UserRole
 from app.models.eor import (
+    AFPProvider,
+    BankAccountType,
     EOREmployee,
     EOREmployeeStatus,
     EORContractType,
@@ -119,6 +121,12 @@ async def create_employee(
             detail="No se pudo determinar la empresa. Proporcione client_company_id.",
         )
 
+    # Convert string values to enum instances for SQLAlchemy
+    afp = AFPProvider(data.afp_provider) if data.afp_provider else None
+    bank_type = BankAccountType(data.bank_account_type) if data.bank_account_type else None
+    pay_freq = EORPaymentFrequency(data.payment_frequency)
+    contract = EORContractType(data.contract_type)
+
     employee = EOREmployee(
         id=uuid4(),
         client_company_id=company_id,
@@ -131,27 +139,36 @@ async def create_employee(
         birth_date=data.birth_date,
         address=data.address,
         isss_number=data.isss_number,
-        afp_provider=data.afp_provider,
+        afp_provider=afp,
         afp_number=data.afp_number,
         bank_name=data.bank_name,
         bank_account_number=data.bank_account_number,
-        bank_account_type=data.bank_account_type,
+        bank_account_type=bank_type,
         position=data.position,
         department=data.department,
         base_salary=data.base_salary,
-        payment_frequency=data.payment_frequency,
+        payment_frequency=pay_freq,
         start_date=data.start_date,
         end_date=data.end_date,
-        contract_type=data.contract_type,
+        contract_type=contract,
         contract_end_date=data.contract_end_date,
         status=EOREmployeeStatus.ONBOARDING,
         created_by=current_user.id,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
-    db.add(employee)
-    db.commit()
-    db.refresh(employee)
+
+    try:
+        db.add(employee)
+        db.commit()
+        db.refresh(employee)
+    except Exception as e:
+        db.rollback()
+        logger.error("eor_employee_create_failed", error=str(e), email=data.email)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al crear empleado: {str(e)}",
+        )
 
     logger.info("eor_employee_created", employee_id=str(employee.id), email=employee.email)
     return _employee_to_response(employee)
@@ -251,13 +268,32 @@ async def update_employee(
     if not employee:
         raise HTTPException(status_code=404, detail="Empleado no encontrado")
 
+    # Convert string enum fields to proper enum instances
+    enum_converters = {
+        "afp_provider": lambda v: AFPProvider(v) if v else None,
+        "bank_account_type": lambda v: BankAccountType(v) if v else None,
+        "payment_frequency": lambda v: EORPaymentFrequency(v),
+        "contract_type": lambda v: EORContractType(v),
+        "status": lambda v: EOREmployeeStatus(v),
+    }
+
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
+        if field in enum_converters and value is not None:
+            value = enum_converters[field](value)
         setattr(employee, field, value)
 
     employee.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(employee)
+    try:
+        db.commit()
+        db.refresh(employee)
+    except Exception as e:
+        db.rollback()
+        logger.error("eor_employee_update_failed", error=str(e), employee_id=str(employee_id))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al actualizar empleado: {str(e)}",
+        )
 
     logger.info("eor_employee_updated", employee_id=str(employee_id))
     return _employee_to_response(employee)
