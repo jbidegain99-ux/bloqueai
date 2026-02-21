@@ -525,3 +525,75 @@
    - MetricCard, DataTable, EmptyState used consistently across all dashboards
    - QuickAction extracted as local component (not shared — too page-specific)
    - Status badge maps (label + variant) defined as page-level constants
+
+---
+
+## Session: 2026-02-21 - EOR Production Bug Fixes
+
+### Patterns Discovered
+
+1. **SQLAlchemy Enum Columns Require Python Enum Instances**
+   - Passing `"CRECER"` (string) to a column typed `Enum(AFPProvider)` raises `LookupError`
+   - Must convert: `AFPProvider(data.afp_provider)` before constructing the model
+   - Same applies to all enum columns: `BankAccountType`, `EORPaymentFrequency`, `EORContractType`
+   - Pydantic schemas use `str` fields with `@validator` normalization — the router must bridge the gap
+
+2. **Pydantic Decimal Serializes as String in JSON**
+   - `Decimal("1500.00")` becomes `"1500.00"` (string) in JSON response
+   - Frontend calling `.toFixed(2)` on a string silently returns wrong result or crashes
+   - Fix: Always wrap with `Number()` in TypeScript: `Number(employee.base_salary).toFixed(2)`
+   - Applies to any `Decimal`, `Numeric`, or `numeric` DB column
+
+3. **Authenticated File Downloads: fetch + Blob, Not window.open**
+   - `window.open(url?token=...)` does NOT send Authorization header
+   - Backend endpoints expecting `Authorization: Bearer` header reject query param tokens
+   - Correct pattern: `fetch()` with header → `res.blob()` → `URL.createObjectURL()` → `a.click()`
+   - Always clean up: `URL.revokeObjectURL()` + `a.remove()`
+
+4. **Raw PDF Generation with Hardcoded Offsets = Corrupt Files**
+   - Hand-rolling PDF with `%PDF-1.4` header and hardcoded xref byte offsets breaks when content varies
+   - Content stream length changes with different contract data → offsets become wrong
+   - Always use a proper PDF library (reportlab, FPDF, WeasyPrint)
+   - reportlab `SimpleDocTemplate` + `Paragraph` + `Spacer` handles pagination automatically
+
+5. **Alembic Version Can Get Out of Sync with DB State**
+   - Tables from migrations 007-010 existed but `alembic current` showed version 006
+   - This happens when tables are created outside alembic (manual SQL, other tools)
+   - Fix: `alembic stamp <version>` to align the version tracker
+   - Always verify with `alembic current` before running `upgrade head`
+
+6. **SQLAlchemy Enum create_type=False May Be Ignored**
+   - In migration 011, `sa.Enum(..., create_type=False)` was specified but `CREATE TYPE` still ran
+   - When the type already exists → `DuplicateObject: type "afp_provider" already exists`
+   - Workaround: Create tables via direct SQL with `DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$`
+
+7. **Enum Comparison Values Must Match Backend Normalization**
+   - Frontend compared `afp_provider === 'AFP_CRECER'` but backend stores/returns `'CRECER'`
+   - Always check actual API response values, not what you assume the enum name is
+   - SQLAlchemy `Enum.value` may differ from the Python enum member name
+
+8. **try/except + db.rollback() Around db.commit()**
+   - Without rollback on exception, the SQLAlchemy session enters a broken state
+   - Subsequent queries on the same session fail with `InvalidRequestError`
+   - Pattern: `try: db.commit() except Exception: db.rollback(); raise`
+
+9. **Production DB Migrations Need Verification First**
+   - Always run `alembic current` to check version before `upgrade`
+   - Check if tables/types already exist before creating them
+   - Use `DO/EXCEPTION` blocks for idempotent DDL in PostgreSQL
+   - Keep a mental model of what each migration creates
+
+10. **Vercel Auto-Deploys from Git Push**
+    - Connected Vercel projects auto-deploy on `git push`
+    - No manual `vercel deploy --prod` needed for code changes
+    - But DB migrations must be run separately (they don't auto-run)
+    - API: `bloqueai-api.vercel.app`, Frontend: `bloqueai-ia.vercel.app`
+
+### Key Fixes Summary
+
+| Bug | Root Cause | Fix | Commit |
+|-----|-----------|-----|--------|
+| 500 on employee create | String→Enum mismatch in SQLAlchemy | Explicit enum conversion in router | `3414fba` |
+| Detail page crash | Decimal→String + AFP enum names | `Number()` wrap + comparison fix | `a71f6d5` |
+| Contract download 401 | `window.open` doesn't send headers | `fetch` + blob download | `14f7f88` |
+| Corrupt PDF | Hardcoded xref offsets in raw PDF | reportlab SimpleDocTemplate | `21e5095` |

@@ -1217,6 +1217,80 @@ contract generator, API endpoints, and full UI for employers and employees.
 - [x] `python -m pytest tests/test_cv_validator.py -v` — 9/9 tests pass
 - [x] `pnpm build` — 0 TypeScript errors, all pages compile
 
+---
+
+## EOR Bug Fixes — Production (2026-02-21)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Goal:** Fix 4 production bugs in the EOR module after initial deployment
+
+### BUG-01: 500 on POST /api/eor/employees ✅
+**Status:** DONE — Commit `3414fba`
+
+**Root Cause:** Passing raw strings to SQLAlchemy `Enum()` columns that expect Python enum instances.
+- `afp_provider="CRECER"` fails → needs `AFPProvider.CRECER`
+- Same for `bank_account_type`, `payment_frequency`, `contract_type`
+
+**Fix:**
+- [x] Added `AFPProvider`, `BankAccountType` imports to `eor.py`
+- [x] Explicit string→enum conversion before model construction
+- [x] Same pattern applied to `update_employee` with `enum_converters` dict
+- [x] Added try/except with rollback + structured logging around `db.commit()`
+
+**File:** `apps/api/app/routers/eor.py`
+
+### BUG-02: Employee Detail Page Crash ✅
+**Status:** DONE — Commit `a71f6d5`
+
+**Root Cause:** Two issues:
+1. `base_salary` arrives as string `"1500.00"` (Pydantic Decimal serialization), calling `.toFixed(2)` on string crashes
+2. AFP comparisons used old values (`AFP_CRECER`) but backend normalizes to `CRECER`
+
+**Fix:**
+- [x] Wrapped `base_salary` with `Number()` in 3 locations
+- [x] Updated AFP comparisons to match normalized enum values
+- [x] Same fixes applied to `employee/profile/page.tsx`
+
+**Files:**
+- `apps/web/src/app/employer/eor/[id]/page.tsx`
+- `apps/web/src/app/employee/profile/page.tsx`
+
+### BUG-03: Contract Download "Not Authenticated" ✅
+**Status:** DONE — Commit `14f7f88`
+
+**Root Cause:** `window.open(url?token=...)` but backend only accepts `Authorization: Bearer` header.
+
+**Fix:**
+- [x] Replaced with `fetch()` + Authorization header + blob download
+- [x] Added `downloading` state with spinner
+- [x] Applied to both employer detail and employee documents pages
+
+**Files:**
+- `apps/web/src/app/employer/eor/[id]/page.tsx`
+- `apps/web/src/app/employee/documents/page.tsx`
+
+### BUG-04: Corrupt Contract PDF ✅
+**Status:** DONE — Commit `21e5095`
+
+**Root Cause:** Hand-rolled raw PDF with hardcoded xref byte offsets that don't match actual object positions (content stream length varies with contract data).
+
+**Fix:**
+- [x] Replaced `generate_pdf()` with proper `reportlab` `SimpleDocTemplate` implementation
+- [x] Title + body paragraph styles with HTML escaping
+- [x] Multi-page support with automatic pagination
+- [x] Added `reportlab>=4.0.0` to `requirements.txt`
+
+**Files:**
+- `apps/api/app/services/contract_generator.py`
+- `apps/api/requirements.txt`
+
+### Production Database Fixes ✅
+- [x] Production DB was at migration 006 — needed 011 for EOR tables
+- [x] Stamped alembic to 010 (tables from 007-010 already existed)
+- [x] Created EOR tables via direct SQL with `DO/EXCEPTION` blocks (migration 011 failed due to `create_type=False` not respected)
+- [x] Verified alembic at version 011
+- [x] Tested creating + listing EOR employees in production
+
 ### Files Summary
 
 | Type | File | Purpose |

@@ -1,12 +1,80 @@
-# TalentOS Critical Fixes - Changelog
-
-**Date:** 2026-01-29
-**Version:** MVP+ Critical Fixes
-**Branch:** `claude/talentOS-critical-fixes-phz85`
+# TalentOS Changelog
 
 ---
 
-## Summary
+## [2026-02-21] EOR Production Bug Fixes
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+
+### Fixed
+- **500 on POST /api/eor/employees** — String values passed to SQLAlchemy Enum columns; added explicit enum conversion (`3414fba`)
+- **Employee detail page crash** — `base_salary.toFixed()` on string (Decimal serialization) + AFP enum comparison mismatch (`a71f6d5`)
+- **Contract download "Not authenticated"** — `window.open` doesn't send Authorization header; replaced with `fetch` + blob download (`14f7f88`)
+- **Corrupt contract PDF** — Hand-rolled PDF with hardcoded xref offsets; replaced with reportlab `SimpleDocTemplate` (`21e5095`)
+
+### Changed
+- `apps/api/app/routers/eor.py` — Enum conversion + try/except with rollback
+- `apps/api/app/services/contract_generator.py` — reportlab PDF generation
+- `apps/api/requirements.txt` — Added `reportlab>=4.0.0`
+- `apps/web/src/app/employer/eor/[id]/page.tsx` — Number() wrapping, AFP comparisons, blob download
+- `apps/web/src/app/employee/profile/page.tsx` — Number() wrapping, AFP comparisons
+- `apps/web/src/app/employee/documents/page.tsx` — Blob download with auth
+
+### Infrastructure
+- Production DB migrated from version 006 → 011 (EOR tables created via direct SQL)
+- Alembic version tracker stamped to 011
+
+---
+
+## [2026-02-21] Semana 3 — UI/Dashboard Premium + E2E Tests + EOR Module
+
+### Added
+- **DataTable** — Generic sortable/filterable/paginated table component
+- **MetricCard** — Sparkline SVG with trend indicators
+- **EmptyState** — 7 variants with illustrations
+- **PageTransition** — Framer Motion route transitions
+- **PipelineFunnel** — Animated recruitment funnel visualization
+- **KanbanBoard** — Drag-and-drop candidate board with @dnd-kit
+- **CommandPalette** — Ctrl+K navigation with cmdk
+- **ActivityFeed** — Timeline component with relative timestamps in Spanish
+- **E2E Tests** — Candidate flow (7 tests) + Interview flow (3 tests) with Playwright
+- **CV Validator** — Extracted utility with extension/size/MIME/corrupt/empty checks
+- **EOR Module** — Complete Employer of Record for El Salvador (19 endpoints, 10 pages)
+- **Salary Calculator** — Public page with SV tax breakdown
+
+### Changed
+- Admin dashboard redesigned with premium components
+- Employer dashboard migrated to MetricCard + DataTable
+- Candidate dashboard migrated with real API data
+
+---
+
+## [2026-02-20] Infrastructure + Bug Fixes + Vercel Migration
+
+### Added
+- **Pino Logger** — Structured JSON logging for Next.js
+- **Sentry** — Error tracking with source maps (client + server + edge)
+- **CV Cache** — PostgreSQL-based cache for CV analysis results (SHA-256 keyed)
+- **Rate Limiting** — slowapi on OpenAI endpoints (10-50/hour per user)
+- **Health Check** — Service-level status with latency metrics
+
+### Fixed
+- CV upload 500 (schema mismatch + missing joinedload)
+- Interview button dead (missing loading state + invisible error display)
+- Login 500 in production (garbage `NEXT_PUBLIC_API_URL` on wrong Vercel project)
+- Candidate profile 500 (missing `created_at`/`updated_at` in dict response)
+
+### Changed
+- Migrated from `web` to `bloqueai-ia` Vercel project
+- Deleted unused `web` Vercel project
+
+---
+
+## [2026-01-29] MVP+ Critical Fixes (Original)
+
+**Branch:** `claude/talentOS-critical-fixes-phz85`
+
+### Summary
 
 This release addresses critical bugs and implements key UX improvements for the TalentOS recruitment platform.
 
