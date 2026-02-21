@@ -30,6 +30,7 @@
     "@sentry/nextjs": "^10.39.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
+    "cmdk": "^1.1.1",
     "framer-motion": "^12.34.3",
     "lucide-react": "^0.303.0",
     "next": "14.0.4",

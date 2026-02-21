@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { Logo } from './Logo'
 import { PageTransition } from '@/components/layout/page-transition'
+import { CommandPalette } from '@/components/ui/command-palette'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -110,6 +111,7 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="min-h-screen bg-bloque-gray50">
+      <CommandPalette />
       {/* Top Navigation */}
       <header className="bg-bloque-navy900 text-white">
         {/* Main Header */}

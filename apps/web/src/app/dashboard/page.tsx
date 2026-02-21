@@ -4,9 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore, isCandidate, isEmployer, isRecruiter, isAdmin } from '@/lib/auth'
-import { adminApi, employerApi } from '@/lib/api'
+import { adminApi, applicationsApi } from '@/lib/api'
 import { AppShell } from '@/components/brand/AppShell'
-import { BrandCard, BrandCardHeader } from '@/components/brand/BrandCard'
 import { Button } from '@/components/ui/button'
 import { MetricCard } from '@/components/ui/metric-card'
 import { DataTable } from '@/components/ui/data-table'
@@ -60,130 +59,245 @@ interface UpcomingInterview {
   score: number | null
 }
 
+// ── Candidate Application type ────────────────────────────
+
+interface CandidateApplication {
+  id: string
+  status: string
+  match_score: number | null
+  job_title: string
+  created_at: string
+}
+
+const APP_STATUS_BADGE: Record<string, 'success' | 'warning' | 'outline' | 'destructive' | 'secondary'> = {
+  MATCH_PASSED: 'success',
+  INTERVIEW_COMPLETED: 'success',
+  COMPLETED: 'success',
+  ANALYZING: 'warning',
+  INTERVIEW_STARTED: 'warning',
+  CV_UPLOADED: 'outline',
+  CREATED: 'outline',
+  BELOW_THRESHOLD: 'destructive',
+  WITHDRAWN: 'secondary',
+}
+
+const APP_STATUS_LABEL: Record<string, string> = {
+  MATCH_PASSED: 'Match',
+  INTERVIEW_COMPLETED: 'Entrevista OK',
+  COMPLETED: 'Completado',
+  ANALYZING: 'Analizando',
+  INTERVIEW_STARTED: 'En entrevista',
+  CV_UPLOADED: 'CV subido',
+  CREATED: 'Creado',
+  BELOW_THRESHOLD: 'Bajo umbral',
+  WITHDRAWN: 'Retirado',
+}
+
 // ── Candidate Dashboard ───────────────────────────────────
 
 function CandidateDashboard({ userName }: { userName: string }) {
+  const router = useRouter()
+  const { accessToken } = useAuthStore()
+  const [applications, setApplications] = useState<CandidateApplication[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!accessToken) return
+    setLoading(true)
+    applicationsApi.list(accessToken)
+      .then((data) => {
+        const apps = Array.isArray(data) ? data : []
+        setApplications(
+          apps.map((a: Record<string, unknown>) => ({
+            id: String(a.id ?? ''),
+            status: String(a.status ?? ''),
+            match_score: typeof a.match_score === 'number' ? a.match_score : null,
+            job_title: (a.job as Record<string, unknown>)?.title
+              ? String((a.job as Record<string, unknown>).title)
+              : 'Sin puesto',
+            created_at: String(a.created_at ?? ''),
+          }))
+        )
+      })
+      .catch(() => setApplications([]))
+      .finally(() => setLoading(false))
+  }, [accessToken])
+
+  const totalApps = applications.length
+  const inInterview = applications.filter(
+    (a) => a.status === 'INTERVIEW_STARTED' || a.status === 'INTERVIEW_COMPLETED'
+  ).length
+  const matched = applications.filter((a) => a.status === 'MATCH_PASSED').length
+
+  const today = new Date().toLocaleDateString('es-ES', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+
+  const appColumns: DataTableColumn<CandidateApplication>[] = [
+    {
+      key: 'job_title',
+      header: 'Puesto',
+      sortable: true,
+      filterable: true,
+      render: (val) => <span className="font-medium">{String(val)}</span>,
+    },
+    {
+      key: 'status',
+      header: 'Estado',
+      render: (val) => {
+        const label = APP_STATUS_LABEL[String(val)] ?? String(val)
+        const variant = APP_STATUS_BADGE[String(val)] ?? 'outline'
+        return <Badge variant={variant}>{label}</Badge>
+      },
+    },
+    {
+      key: 'match_score',
+      header: 'Score',
+      sortable: true,
+      render: (val) => {
+        if (val == null) return <span className="text-neutral-400">—</span>
+        const score = Number(val)
+        const color =
+          score >= 80 ? 'text-success-600' : score >= 60 ? 'text-warning-600' : 'text-error-500'
+        return <span className={`font-semibold tabular-nums ${color}`}>{score}%</span>
+      },
+    },
+    {
+      key: 'created_at',
+      header: 'Fecha',
+      sortable: true,
+      render: (val) => (
+        <span className="text-xs text-neutral-500">
+          {val
+            ? new Date(String(val)).toLocaleDateString('es-ES', {
+                day: 'numeric',
+                month: 'short',
+              })
+            : '—'}
+        </span>
+      ),
+    },
+  ]
+
   return (
     <>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-bloque-navy900">
-          ¡Hola, {userName.split(' ')[0]}!
-        </h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          Bienvenido a TalentOS. Completa tu perfil para encontrar las mejores oportunidades.
-        </p>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-bloque-navy900">
+            ¡Hola, {userName.split(' ')[0]}!
+          </h1>
+          <p className="text-sm text-neutral-500 mt-0.5 capitalize">{today}</p>
+        </div>
+        <Link href="/candidate/jobs">
+          <Button variant="primary">
+            <Search className="h-4 w-4 mr-1.5" />
+            Explorar Puestos
+          </Button>
+        </Link>
       </div>
-      <div className="grid md:grid-cols-3 gap-6">
-        <BrandCard hover>
-          <BrandCardHeader
-            title="Subir CV"
-            description="Sube tu CV para que nuestra IA extraiga tu perfil"
-          />
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-bloque-gray50 rounded-lg">
-              <FileText className="h-6 w-6 text-bloque-navy900" />
-            </div>
-            <Link href="/candidate/resume">
-              <Button variant="outline">Subir ahora</Button>
-            </Link>
-          </div>
-        </BrandCard>
 
-        <BrandCard hover>
-          <BrandCardHeader
-            title="Entrevista IA"
-            description="Completa una entrevista con nuestra IA para evaluar tus competencias"
-          />
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-bloque-gray50 rounded-lg">
-              <MessageSquare className="h-6 w-6 text-bloque-navy900" />
-            </div>
-            <Link href="/candidate/interview">
-              <Button>Iniciar entrevista</Button>
-            </Link>
-          </div>
-        </BrandCard>
+      {/* Metric Cards */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <MetricCard
+          label="Aplicaciones"
+          value={totalApps}
+          icon={<FileText className="h-5 w-5" />}
+          loading={loading}
+        />
+        <MetricCard
+          label="En Entrevista"
+          value={inInterview}
+          icon={<MessageSquare className="h-5 w-5" />}
+          loading={loading}
+        />
+        <MetricCard
+          label="Match Positivo"
+          value={matched}
+          icon={<Target className="h-5 w-5" />}
+          loading={loading}
+        />
+      </div>
 
-        <BrandCard hover>
-          <BrandCardHeader
-            title="Mi Perfil"
-            description="Revisa tu perfil generado por IA y tus puntuaciones"
-          />
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-bloque-gray50 rounded-lg">
-              <Users className="h-6 w-6 text-bloque-navy900" />
+      {/* Quick Actions */}
+      <div className="grid md:grid-cols-3 gap-4 mb-6">
+        <Link href="/candidate/resume">
+          <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-soft transition-all duration-200 hover:shadow-medium hover:border-neutral-300 cursor-pointer group">
+            <div className="p-2.5 bg-bloque-gray50 rounded-lg group-hover:bg-brand-50 transition-colors">
+              <FileText className="h-5 w-5 text-bloque-navy900" />
             </div>
-            <Link href="/candidate/profile">
-              <Button variant="outline">Ver perfil</Button>
-            </Link>
+            <div>
+              <p className="text-sm font-semibold text-bloque-navy900">Subir CV</p>
+              <p className="text-xs text-neutral-500">Sube tu CV para análisis IA</p>
+            </div>
           </div>
-        </BrandCard>
+        </Link>
+        <Link href="/candidate/interview">
+          <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-soft transition-all duration-200 hover:shadow-medium hover:border-neutral-300 cursor-pointer group">
+            <div className="p-2.5 bg-bloque-gray50 rounded-lg group-hover:bg-brand-50 transition-colors">
+              <MessageSquare className="h-5 w-5 text-bloque-navy900" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-bloque-navy900">Entrevista IA</p>
+              <p className="text-xs text-neutral-500">Evalúa tus competencias</p>
+            </div>
+          </div>
+        </Link>
+        <Link href="/candidate/profile">
+          <div className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-soft transition-all duration-200 hover:shadow-medium hover:border-neutral-300 cursor-pointer group">
+            <div className="p-2.5 bg-bloque-gray50 rounded-lg group-hover:bg-brand-50 transition-colors">
+              <Users className="h-5 w-5 text-bloque-navy900" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-bloque-navy900">Mi Perfil</p>
+              <p className="text-xs text-neutral-500">Revisa tu perfil y scores</p>
+            </div>
+          </div>
+        </Link>
+      </div>
+
+      {/* Applications Table */}
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-bloque-navy900">Mis Aplicaciones</h3>
+          <Link
+            href="/candidate/applications"
+            className="text-xs font-medium text-brand-500 hover:text-brand-600 transition-colors"
+          >
+            Ver todas
+          </Link>
+        </div>
+        <DataTable<CandidateApplication>
+          data={applications}
+          columns={appColumns}
+          keyField="id"
+          loading={loading}
+          pageSize={5}
+          emptyState={
+            <EmptyState
+              variant="applications"
+              title="Sin aplicaciones"
+              description="Explora puestos disponibles y aplica a los que te interesen."
+              action={{ label: 'Explorar puestos', onClick: () => router.push('/candidate/jobs') }}
+            />
+          }
+        />
       </div>
     </>
   )
 }
 
-// ── Employer Dashboard ────────────────────────────────────
+// ── Employer Dashboard (redirect to dedicated page) ──────
 
-function EmployerDashboard() {
-  return (
-    <>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-bloque-navy900">
-          Panel de Reclutamiento
-        </h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          Gestiona tus vacantes y encuentra el mejor talento con IA
-        </p>
-      </div>
-      <div className="grid md:grid-cols-3 gap-6">
-        <BrandCard hover>
-          <BrandCardHeader
-            title="Mis Trabajos"
-            description="Gestiona tus vacantes activas y crea nuevas"
-          />
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-bloque-gray50 rounded-lg">
-              <Briefcase className="h-6 w-6 text-bloque-navy900" />
-            </div>
-            <Link href="/employer/jobs">
-              <Button>Ver trabajos</Button>
-            </Link>
-          </div>
-        </BrandCard>
-
-        <BrandCard hover>
-          <BrandCardHeader
-            title="Shortlists"
-            description="Revisa los candidatos rankeados por IA"
-          />
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-bloque-gray50 rounded-lg">
-              <Users className="h-6 w-6 text-bloque-navy900" />
-            </div>
-            <Link href="/employer/jobs">
-              <Button variant="outline">Ver shortlists</Button>
-            </Link>
-          </div>
-        </BrandCard>
-
-        <BrandCard hover>
-          <BrandCardHeader
-            title="Crear Vacante"
-            description="Publica una nueva posición para recibir candidatos"
-          />
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-bloque-gray50 rounded-lg">
-              <FileText className="h-6 w-6 text-bloque-navy900" />
-            </div>
-            <Link href="/employer/jobs/new">
-              <Button>Crear trabajo</Button>
-            </Link>
-          </div>
-        </BrandCard>
-      </div>
-    </>
-  )
+function EmployerDashboardRedirect() {
+  const router = useRouter()
+  useEffect(() => {
+    router.replace('/employer/dashboard')
+  }, [router])
+  return null
 }
 
 // ── Admin/Recruiter Dashboard (Premium) ───────────────────
@@ -583,7 +697,7 @@ export default function DashboardPage() {
   return (
     <AppShell>
       {isCandidate() && <CandidateDashboard userName={user.full_name} />}
-      {isEmployer() && !isRecruiter() && !isAdmin() && <EmployerDashboard />}
+      {isEmployer() && !isRecruiter() && !isAdmin() && <EmployerDashboardRedirect />}
       {(isRecruiter() || isAdmin()) && <AdminDashboard />}
     </AppShell>
   )
