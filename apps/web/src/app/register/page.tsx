@@ -17,6 +17,15 @@ import {
 } from '@/components/ui/select'
 import { authApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/auth'
+import { validators, validate } from '@/lib/validations'
+
+interface FieldErrors {
+  full_name?: string
+  email?: string
+  password?: string
+  confirmPassword?: string
+  company_name?: string
+}
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -30,16 +39,36 @@ export default function RegisterPage() {
     company_name: '',
   })
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
 
+    // Field-level validation
+    const errs: FieldErrors = {}
+    errs.full_name = validators.required(formData.full_name) ?? undefined
+    errs.email = validate(formData.email, validators.required, validators.email) ?? undefined
+    errs.password = validators.password(formData.password) ?? undefined
     if (formData.password !== formData.confirmPassword) {
-      setError('Las contraseñas no coinciden')
+      errs.confirmPassword = 'Las contrasenas no coinciden'
+    }
+    if (formData.role === 'EMPLOYER' && !formData.company_name.trim()) {
+      errs.company_name = 'Ingresa el nombre de tu empresa'
+    }
+
+    // Remove undefined entries
+    const cleanedErrors: FieldErrors = {}
+    for (const [k, v] of Object.entries(errs)) {
+      if (v) cleanedErrors[k as keyof FieldErrors] = v
+    }
+
+    if (Object.keys(cleanedErrors).length > 0) {
+      setFieldErrors(cleanedErrors)
       return
     }
+    setFieldErrors({})
 
     setLoading(true)
 
@@ -93,9 +122,16 @@ export default function RegisterPage() {
                 type="text"
                 placeholder="Tu nombre"
                 value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, full_name: e.target.value })
+                  if (fieldErrors.full_name) setFieldErrors({ ...fieldErrors, full_name: undefined })
+                }}
+                error={!!fieldErrors.full_name}
                 required
               />
+              {fieldErrors.full_name && (
+                <p className="text-sm text-red-500">{fieldErrors.full_name}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -105,9 +141,16 @@ export default function RegisterPage() {
                 type="email"
                 placeholder="tu@email.com"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, email: e.target.value })
+                  if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: undefined })
+                }}
+                error={!!fieldErrors.email}
                 required
               />
+              {fieldErrors.email && (
+                <p className="text-sm text-red-500">{fieldErrors.email}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -147,13 +190,21 @@ export default function RegisterPage() {
                 type="password"
                 placeholder="Mínimo 8 caracteres"
                 value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, password: e.target.value })
+                  if (fieldErrors.password) setFieldErrors({ ...fieldErrors, password: undefined })
+                }}
+                error={!!fieldErrors.password}
                 required
                 minLength={8}
               />
-              <p className="text-xs text-muted-foreground">
-                Debe contener mayúsculas, minúsculas y números
-              </p>
+              {fieldErrors.password ? (
+                <p className="text-sm text-red-500">{fieldErrors.password}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Debe contener mayúsculas, minúsculas y números
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -163,9 +214,16 @@ export default function RegisterPage() {
                 type="password"
                 placeholder="Repite tu contraseña"
                 value={formData.confirmPassword}
-                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, confirmPassword: e.target.value })
+                  if (fieldErrors.confirmPassword) setFieldErrors({ ...fieldErrors, confirmPassword: undefined })
+                }}
+                error={!!fieldErrors.confirmPassword}
                 required
               />
+              {fieldErrors.confirmPassword && (
+                <p className="text-sm text-red-500">{fieldErrors.confirmPassword}</p>
+              )}
             </div>
 
             <Button type="submit" className="w-full" disabled={loading}>

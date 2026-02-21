@@ -111,9 +111,17 @@ async def create_employee(
     """Create a new EOR employee."""
     _require_eor_access(current_user)
 
+    # Auto-inject client_company_id from the authenticated user if not provided
+    company_id = data.client_company_id or current_user.company_id
+    if not company_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se pudo determinar la empresa. Proporcione client_company_id.",
+        )
+
     employee = EOREmployee(
         id=uuid4(),
-        client_company_id=data.client_company_id,
+        client_company_id=company_id,
         first_name=data.first_name,
         last_name=data.last_name,
         email=data.email,

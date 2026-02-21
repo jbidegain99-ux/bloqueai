@@ -6,7 +6,8 @@ import { AppShell } from '@/components/brand/AppShell'
 import { BrandCard, BrandCardHeader } from '@/components/brand/BrandCard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { FormField } from '@/components/ui/form-field'
+import { MaskedInput } from '@/components/ui/masked-input'
 import {
   Select,
   SelectContent,
@@ -16,7 +17,17 @@ import {
 } from '@/components/ui/select'
 import { useAuthStore, isEmployer } from '@/lib/auth'
 import { eorApi } from '@/lib/api'
-import { ChevronLeft, ChevronRight, Check, Loader2, User, Briefcase, Building2, ClipboardCheck } from 'lucide-react'
+import { validators, validate } from '@/lib/validations'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Check,
+  Loader2,
+  User,
+  Briefcase,
+  Building2,
+  ClipboardCheck,
+} from 'lucide-react'
 
 // ── Step definitions ─────────────────────────────────────
 
@@ -27,12 +38,9 @@ const STEPS = [
   { id: 'review', label: 'Revision', icon: ClipboardCheck },
 ] as const
 
-type StepId = typeof STEPS[number]['id']
-
-// ── Interfaces ───────────────────────────────────────────
+// ── Form data ────────────────────────────────────────────
 
 interface FormData {
-  // Personal
   first_name: string
   last_name: string
   email: string
@@ -41,7 +49,6 @@ interface FormData {
   nit: string
   birth_date: string
   address: string
-  // Labor
   position: string
   department: string
   base_salary: string
@@ -49,7 +56,6 @@ interface FormData {
   payment_frequency: string
   start_date: string
   contract_end_date: string
-  // Social & Bank
   isss_number: string
   afp_provider: string
   afp_number: string
@@ -57,6 +63,8 @@ interface FormData {
   bank_account_number: string
   bank_account_type: string
 }
+
+type FormErrors = Partial<Record<keyof FormData, string | null>>
 
 const INITIAL_FORM: FormData = {
   first_name: '',
@@ -96,7 +104,6 @@ function StepIndicator({
       {steps.map((step, i) => {
         const isDone = i < currentIndex
         const isCurrent = i === currentIndex
-        const Icon = step.icon
         return (
           <div key={step.id} className="flex items-center gap-2">
             <div
@@ -135,7 +142,7 @@ function StepIndicator({
   )
 }
 
-// ── Review item ──────────────────────────────────────────
+// ── Review row ───────────────────────────────────────────
 
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
@@ -155,8 +162,9 @@ export default function NewEOREmployeePage() {
   const { accessToken, isAuthenticated } = useAuthStore()
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<FormData>(INITIAL_FORM)
+  const [errors, setErrors] = useState<FormErrors>({})
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [apiError, setApiError] = useState('')
 
   useEffect(() => {
     if (!isAuthenticated) router.push('/login')
@@ -165,18 +173,68 @@ export default function NewEOREmployeePage() {
 
   const update = (field: keyof FormData, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
+    // Clear error on change
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: undefined }))
+    }
+  }
+
+  // ── Step validation ────────────────────────────────────
+
+  const validateStep = (s: number): FormErrors => {
+    const errs: FormErrors = {}
+
+    if (s === 0) {
+      errs.first_name = validators.required(form.first_name)
+      errs.last_name = validators.required(form.last_name)
+      errs.email = validate(form.email, validators.required, validators.email)
+      if (form.phone) errs.phone = validators.phone(form.phone)
+      if (form.dui) errs.dui = validators.dui(form.dui)
+      if (form.nit) errs.nit = validators.nit(form.nit)
+    }
+
+    if (s === 1) {
+      errs.position = validators.required(form.position)
+      errs.base_salary = validate(
+        form.base_salary,
+        validators.required,
+        validators.salary
+      )
+      errs.start_date = validators.date(form.start_date)
+    }
+
+    if (s === 2) {
+      if (form.bank_account_number)
+        errs.bank_account_number = validators.bankAccount(form.bank_account_number)
+    }
+
+    // Remove null entries
+    const cleaned: FormErrors = {}
+    for (const [key, val] of Object.entries(errs)) {
+      if (val) cleaned[key as keyof FormData] = val
+    }
+    return cleaned
   }
 
   const canAdvance = (): boolean => {
-    if (step === 0) return !!(form.first_name && form.last_name && form.email)
-    if (step === 1) return !!(form.position && form.base_salary && form.start_date)
-    return true
+    const errs = validateStep(step)
+    return Object.keys(errs).length === 0
+  }
+
+  const handleNext = () => {
+    const errs = validateStep(step)
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs)
+      return
+    }
+    setErrors({})
+    setStep((s) => s + 1)
   }
 
   const handleSubmit = async () => {
     if (!accessToken) return
     setLoading(true)
-    setError('')
+    setApiError('')
     try {
       const payload: Record<string, unknown> = {
         first_name: form.first_name,
@@ -204,8 +262,9 @@ export default function NewEOREmployeePage() {
       const created = await eorApi.createEmployee(accessToken, payload)
       router.push(`/employer/eor/${created.id}`)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error al crear empleado'
-      setError(message)
+      const message =
+        err instanceof Error ? err.message : 'Error al crear empleado'
+      setApiError(message)
     } finally {
       setLoading(false)
     }
@@ -225,9 +284,9 @@ export default function NewEOREmployeePage() {
 
         <StepIndicator steps={STEPS} currentIndex={step} />
 
-        {error && (
+        {apiError && (
           <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4">
-            {error}
+            {apiError}
           </div>
         )}
 
@@ -240,87 +299,79 @@ export default function NewEOREmployeePage() {
             />
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="first_name">Nombre *</Label>
+                <FormField label="Nombre" required error={errors.first_name ?? undefined}>
                   <Input
                     id="first_name"
                     value={form.first_name}
                     onChange={(e) => update('first_name', e.target.value)}
                     placeholder="Juan"
-                    required
+                    error={!!errors.first_name}
                   />
-                </div>
-                <div>
-                  <Label htmlFor="last_name">Apellido *</Label>
+                </FormField>
+                <FormField label="Apellido" required error={errors.last_name ?? undefined}>
                   <Input
                     id="last_name"
                     value={form.last_name}
                     onChange={(e) => update('last_name', e.target.value)}
                     placeholder="Perez"
-                    required
+                    error={!!errors.last_name}
                   />
-                </div>
+                </FormField>
               </div>
-              <div>
-                <Label htmlFor="email">Correo electronico *</Label>
+              <FormField label="Correo electronico" required error={errors.email ?? undefined}>
                 <Input
                   id="email"
                   type="email"
                   value={form.email}
                   onChange={(e) => update('email', e.target.value)}
                   placeholder="juan.perez@empresa.com"
-                  required
+                  error={!!errors.email}
                 />
-              </div>
+              </FormField>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="phone">Telefono</Label>
-                  <Input
-                    id="phone"
+                <FormField label="Telefono" error={errors.phone ?? undefined} hint="Formato: 0000-0000">
+                  <MaskedInput
+                    mask="phone"
                     value={form.phone}
-                    onChange={(e) => update('phone', e.target.value)}
-                    placeholder="+503 7000 0000"
+                    onValueChange={(v) => update('phone', v)}
+                    error={!!errors.phone}
                   />
-                </div>
-                <div>
-                  <Label htmlFor="birth_date">Fecha de nacimiento</Label>
+                </FormField>
+                <FormField label="Fecha de nacimiento">
                   <Input
                     id="birth_date"
                     type="date"
                     value={form.birth_date}
                     onChange={(e) => update('birth_date', e.target.value)}
                   />
-                </div>
+                </FormField>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="dui">DUI</Label>
-                  <Input
-                    id="dui"
+                <FormField label="DUI" error={errors.dui ?? undefined} hint="Formato: 00000000-0">
+                  <MaskedInput
+                    mask="dui"
                     value={form.dui}
-                    onChange={(e) => update('dui', e.target.value)}
-                    placeholder="00000000-0"
+                    onValueChange={(v) => update('dui', v)}
+                    error={!!errors.dui}
                   />
-                </div>
-                <div>
-                  <Label htmlFor="nit">NIT</Label>
-                  <Input
-                    id="nit"
+                </FormField>
+                <FormField label="NIT" error={errors.nit ?? undefined} hint="Formato: 0000-000000-000-0">
+                  <MaskedInput
+                    mask="nit"
                     value={form.nit}
-                    onChange={(e) => update('nit', e.target.value)}
-                    placeholder="0000-000000-000-0"
+                    onValueChange={(v) => update('nit', v)}
+                    error={!!errors.nit}
                   />
-                </div>
+                </FormField>
               </div>
-              <div>
-                <Label htmlFor="address">Direccion</Label>
+              <FormField label="Direccion">
                 <Input
                   id="address"
                   value={form.address}
                   onChange={(e) => update('address', e.target.value)}
                   placeholder="Col. Escalon, San Salvador"
                 />
-              </div>
+              </FormField>
             </div>
           </BrandCard>
         )}
@@ -334,41 +385,43 @@ export default function NewEOREmployeePage() {
             />
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="position">Puesto *</Label>
+                <FormField label="Puesto" required error={errors.position ?? undefined}>
                   <Input
                     id="position"
                     value={form.position}
                     onChange={(e) => update('position', e.target.value)}
                     placeholder="Desarrollador Senior"
-                    required
+                    error={!!errors.position}
                   />
-                </div>
-                <div>
-                  <Label htmlFor="department">Departamento</Label>
+                </FormField>
+                <FormField label="Departamento">
                   <Input
                     id="department"
                     value={form.department}
                     onChange={(e) => update('department', e.target.value)}
                     placeholder="Ingenieria"
                   />
-                </div>
+                </FormField>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="base_salary">Salario mensual (USD) *</Label>
+                <FormField
+                  label="Salario mensual (USD)"
+                  required
+                  error={errors.base_salary ?? undefined}
+                  hint="Minimo $365"
+                >
                   <Input
                     id="base_salary"
                     type="number"
                     step="0.01"
+                    min="0"
                     value={form.base_salary}
                     onChange={(e) => update('base_salary', e.target.value)}
                     placeholder="2000.00"
-                    required
+                    error={!!errors.base_salary}
                   />
-                </div>
-                <div>
-                  <Label htmlFor="payment_frequency">Frecuencia de pago</Label>
+                </FormField>
+                <FormField label="Frecuencia de pago">
                   <Select
                     value={form.payment_frequency}
                     onValueChange={(v) => update('payment_frequency', v)}
@@ -381,11 +434,10 @@ export default function NewEOREmployeePage() {
                       <SelectItem value="QUINCENAL">Quincenal</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
+                </FormField>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="contract_type">Tipo de contrato</Label>
+                <FormField label="Tipo de contrato">
                   <Select
                     value={form.contract_type}
                     onValueChange={(v) => update('contract_type', v)}
@@ -398,28 +450,26 @@ export default function NewEOREmployeePage() {
                       <SelectItem value="PLAZO_FIJO">Plazo fijo</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div>
-                  <Label htmlFor="start_date">Fecha de inicio *</Label>
+                </FormField>
+                <FormField label="Fecha de inicio" required error={errors.start_date ?? undefined}>
                   <Input
                     id="start_date"
                     type="date"
                     value={form.start_date}
                     onChange={(e) => update('start_date', e.target.value)}
-                    required
+                    error={!!errors.start_date}
                   />
-                </div>
+                </FormField>
               </div>
               {form.contract_type === 'PLAZO_FIJO' && (
-                <div>
-                  <Label htmlFor="contract_end_date">Fecha fin de contrato</Label>
+                <FormField label="Fecha fin de contrato">
                   <Input
                     id="contract_end_date"
                     type="date"
                     value={form.contract_end_date}
                     onChange={(e) => update('contract_end_date', e.target.value)}
                   />
-                </div>
+                </FormField>
               )}
             </div>
           </BrandCard>
@@ -433,18 +483,16 @@ export default function NewEOREmployeePage() {
               description="ISSS, AFP y cuenta de deposito"
             />
             <div className="space-y-4">
-              <div>
-                <Label htmlFor="isss_number">Numero ISSS</Label>
+              <FormField label="Numero ISSS">
                 <Input
                   id="isss_number"
                   value={form.isss_number}
                   onChange={(e) => update('isss_number', e.target.value)}
                   placeholder="000000000"
                 />
-              </div>
+              </FormField>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="afp_provider">AFP</Label>
+                <FormField label="AFP">
                   <Select
                     value={form.afp_provider}
                     onValueChange={(v) => update('afp_provider', v)}
@@ -457,38 +505,34 @@ export default function NewEOREmployeePage() {
                       <SelectItem value="AFP_CONFIA">AFP Confia</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div>
-                  <Label htmlFor="afp_number">Numero AFP</Label>
+                </FormField>
+                <FormField label="Numero AFP">
                   <Input
                     id="afp_number"
                     value={form.afp_number}
                     onChange={(e) => update('afp_number', e.target.value)}
                     placeholder="000000000"
                   />
-                </div>
+                </FormField>
               </div>
               <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="bank_name">Banco</Label>
+                <FormField label="Banco">
                   <Input
                     id="bank_name"
                     value={form.bank_name}
                     onChange={(e) => update('bank_name', e.target.value)}
                     placeholder="Banco Agricola"
                   />
-                </div>
-                <div>
-                  <Label htmlFor="bank_account_number">No. de cuenta</Label>
-                  <Input
-                    id="bank_account_number"
+                </FormField>
+                <FormField label="No. de cuenta" error={errors.bank_account_number ?? undefined}>
+                  <MaskedInput
+                    mask="bank-account"
                     value={form.bank_account_number}
-                    onChange={(e) => update('bank_account_number', e.target.value)}
-                    placeholder="00000000000"
+                    onValueChange={(v) => update('bank_account_number', v)}
+                    error={!!errors.bank_account_number}
                   />
-                </div>
-                <div>
-                  <Label htmlFor="bank_account_type">Tipo de cuenta</Label>
+                </FormField>
+                <FormField label="Tipo de cuenta">
                   <Select
                     value={form.bank_account_type}
                     onValueChange={(v) => update('bank_account_type', v)}
@@ -501,7 +545,7 @@ export default function NewEOREmployeePage() {
                       <SelectItem value="CORRIENTE">Corriente</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
+                </FormField>
               </div>
             </div>
           </BrandCard>
@@ -525,19 +569,34 @@ export default function NewEOREmployeePage() {
               <ReviewRow label="Departamento" value={form.department} />
               <ReviewRow
                 label="Salario"
-                value={form.base_salary ? `$${parseFloat(form.base_salary).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}
+                value={
+                  form.base_salary
+                    ? `$${parseFloat(form.base_salary).toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                      })}`
+                    : ''
+                }
               />
-              <ReviewRow label="Contrato" value={form.contract_type === 'INDEFINIDO' ? 'Indefinido' : 'Plazo fijo'} />
+              <ReviewRow
+                label="Contrato"
+                value={form.contract_type === 'INDEFINIDO' ? 'Indefinido' : 'Plazo fijo'}
+              />
               <ReviewRow label="Inicio" value={form.start_date} />
             </BrandCard>
             <BrandCard>
               <BrandCardHeader title="Seguridad Social y Banco" />
               <ReviewRow label="ISSS" value={form.isss_number} />
-              <ReviewRow label="AFP" value={form.afp_provider === 'AFP_CRECER' ? 'AFP Crecer' : 'AFP Confia'} />
+              <ReviewRow
+                label="AFP"
+                value={form.afp_provider === 'AFP_CRECER' ? 'AFP Crecer' : 'AFP Confia'}
+              />
               <ReviewRow label="No. AFP" value={form.afp_number} />
               <ReviewRow label="Banco" value={form.bank_name} />
               <ReviewRow label="Cuenta" value={form.bank_account_number} />
-              <ReviewRow label="Tipo" value={form.bank_account_type === 'AHORRO' ? 'Ahorro' : 'Corriente'} />
+              <ReviewRow
+                label="Tipo"
+                value={form.bank_account_type === 'AHORRO' ? 'Ahorro' : 'Corriente'}
+              />
             </BrandCard>
           </div>
         )}
@@ -557,20 +616,12 @@ export default function NewEOREmployeePage() {
           </Button>
 
           {step < STEPS.length - 1 ? (
-            <Button
-              type="button"
-              disabled={!canAdvance()}
-              onClick={() => setStep((s) => s + 1)}
-            >
+            <Button type="button" onClick={handleNext}>
               Siguiente
               <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           ) : (
-            <Button
-              type="button"
-              disabled={loading}
-              onClick={handleSubmit}
-            >
+            <Button type="button" disabled={loading} onClick={handleSubmit}>
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />

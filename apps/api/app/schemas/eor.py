@@ -5,7 +5,9 @@ from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
 
-from pydantic import Field
+import re
+
+from pydantic import Field, validator
 
 from app.schemas.base import BaseSchema
 
@@ -14,7 +16,7 @@ from app.schemas.base import BaseSchema
 
 
 class EOREmployeeCreate(BaseSchema):
-    client_company_id: UUID
+    client_company_id: Optional[UUID] = None  # Auto-injected from user if not provided
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     email: str = Field(..., max_length=255)
@@ -40,6 +42,43 @@ class EOREmployeeCreate(BaseSchema):
     end_date: Optional[date] = None
     contract_type: str = "INDEFINIDO"
     contract_end_date: Optional[date] = None
+
+    @validator("payment_frequency", pre=True)
+    def normalize_payment_frequency(cls, v: str) -> str:
+        mapping = {"MENSUAL": "MONTHLY", "QUINCENAL": "BIWEEKLY"}
+        return mapping.get(v, v)
+
+    @validator("afp_provider", pre=True)
+    def normalize_afp_provider(cls, v: Optional[str]) -> Optional[str]:
+        if not v:
+            return v
+        mapping = {"AFP_CRECER": "CRECER", "AFP_CONFIA": "CONFIA"}
+        return mapping.get(v, v)
+
+    @validator("dui")
+    def validate_dui(cls, v: Optional[str]) -> Optional[str]:
+        if v and not re.match(r"^\d{8}-\d$", v):
+            raise ValueError("DUI debe tener formato 00000000-0")
+        return v
+
+    @validator("nit")
+    def validate_nit(cls, v: Optional[str]) -> Optional[str]:
+        if v and not re.match(r"^\d{4}-\d{6}-\d{3}-\d$", v):
+            raise ValueError("NIT debe tener formato 0000-000000-000-0")
+        return v
+
+    @validator("email")
+    def validate_email(cls, v: str) -> str:
+        if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", v):
+            raise ValueError("Email invalido")
+        return v
+
+    @validator("contract_type")
+    def validate_contract_type(cls, v: str) -> str:
+        allowed = {"INDEFINIDO", "PLAZO_FIJO"}
+        if v not in allowed:
+            raise ValueError(f"contract_type debe ser uno de: {allowed}")
+        return v
 
 
 class EOREmployeeUpdate(BaseSchema):

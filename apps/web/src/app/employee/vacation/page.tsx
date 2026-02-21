@@ -15,6 +15,7 @@ import type { DataTableColumn } from '@/components/ui/data-table'
 import { useAuthStore } from '@/lib/auth'
 import { eorApi } from '@/lib/api'
 import type { EOREmployeeDetail, EORVacationRequest } from '@/lib/api'
+import { validators } from '@/lib/validations'
 import {
   CalendarDays,
   Plus,
@@ -133,6 +134,19 @@ export default function EmployeeVacationPage() {
 
   const handleSubmit = async () => {
     if (!accessToken || !user) return
+
+    // Validate fields
+    const dateErr = validators.date(formData.start_date) || validators.date(formData.end_date)
+    const daysErr = validators.positiveInt(formData.days_requested)
+    if (dateErr || daysErr) {
+      setError(dateErr || daysErr || 'Campos invalidos')
+      return
+    }
+    if (formData.end_date < formData.start_date) {
+      setError('La fecha de fin debe ser posterior a la fecha de inicio')
+      return
+    }
+
     setSubmitting(true)
     setError('')
     try {
