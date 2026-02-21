@@ -309,50 +309,57 @@ class ContractGenerator:
         )
 
     def generate_pdf(self, contract_text: str) -> bytes:
-        """Convert contract text to PDF.
+        """Convert contract text to a valid multi-page PDF using reportlab."""
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 
-        Uses pdfplumber-compatible raw PDF generation.
-        In production, consider weasyprint or reportlab for
-        better formatting.
-        """
-        # Simple text → PDF conversion
-        lines = contract_text.strip().split("\n")
-        # Build content stream
-        y = 750
-        stream_parts: list[bytes] = []
-        for line in lines:
-            if y < 50:
-                break  # Simple single-page for now
-            safe = line.strip().encode("latin-1", errors="replace")
-            if not safe:
-                y -= 14
-                continue
-            stream_parts.append(
-                b"BT /F1 10 Tf 50 " + str(y).encode() + b" Td ("
-                + safe + b") Tj ET\n"
-            )
-            y -= 14
-
-        stream_content = b"".join(stream_parts)
-        stream_len = len(stream_content)
-
-        pdf = (
-            b"%PDF-1.4\n"
-            b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-            b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
-            b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]"
-            b"/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n"
-            b"4 0 obj<</Length " + str(stream_len).encode() + b">>\n"
-            b"stream\n" + stream_content + b"\nendstream\nendobj\n"
-            b"5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
-            b"xref\n0 6\n"
-            b"0000000000 65535 f \n"
-            b"0000000009 00000 n \n"
-            b"0000000058 00000 n \n"
-            b"0000000115 00000 n \n"
-            b"0000000266 00000 n \n"
-            b"0000000000 00000 n \n"
-            b"trailer<</Size 6/Root 1 0 R>>\n"
-            b"startxref\n9\n%%EOF"
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=72,
+            leftMargin=72,
+            topMargin=72,
+            bottomMargin=72,
         )
-        return pdf
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            "ContractTitle",
+            parent=styles["Heading1"],
+            fontSize=13,
+            spaceAfter=18,
+            alignment=1,  # center
+        )
+        body_style = ParagraphStyle(
+            "ContractBody",
+            parent=styles["Normal"],
+            fontSize=10,
+            leading=14,
+            spaceAfter=6,
+        )
+
+        story: list = []
+        paragraphs = contract_text.strip().split("\n\n")
+
+        for i, para in enumerate(paragraphs):
+            text = para.strip()
+            if not text:
+                continue
+            # Replace newlines within a paragraph with <br/>
+            text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            text = text.replace("\n", "<br/>")
+            # First paragraph is the title
+            style = title_style if i == 0 else body_style
+            story.append(Paragraph(text, style))
+            story.append(Spacer(1, 6))
+
+        # Signature block
+        story.append(Spacer(1, 0.5 * inch))
+
+        doc.build(story)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        return pdf_bytes
