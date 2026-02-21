@@ -19,6 +19,7 @@ import {
   Building2,
 } from 'lucide-react'
 import { Logo } from './Logo'
+import { PageTransition } from '@/components/layout/page-transition'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -215,7 +216,9 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
-        {children}
+        <PageTransition>
+          {children}
+        </PageTransition>
       </main>
 
       {/* Footer */}
