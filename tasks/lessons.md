@@ -406,3 +406,79 @@
    - Each service (DB, OpenAI, Storage) gets its own `ServiceStatus` with status + latency
    - Overall status derived from individual: all healthy → healthy, DB only → degraded, DB down → unhealthy
    - `time.monotonic()` for accurate latency measurement (not affected by wall clock changes)
+
+---
+
+## Session: 2026-02-21 - Semana 3 UI/Dashboard Premium (T041-T049)
+
+### Patterns Discovered
+
+1. **Generic Constraint `extends object` vs `extends Record<string, unknown>`**
+   - `Record<string, unknown>` requires an index signature — TypeScript interfaces DON'T satisfy it
+   - `extends object` works with any interface (e.g., `DataTable<UpcomingInterview>`)
+   - Lesson: Use `extends object` for generic component constraints, not `Record<string, unknown>`
+
+2. **pnpm in Monorepo — Use `pnpm add -F <workspace>`**
+   - This project uses pnpm with `pnpm-workspace.yaml`, not npm
+   - Running `npm install` fails with postinstall script errors (`run-s`, `husky` not found)
+   - Correct command: `pnpm add -F web @dnd-kit/core` (installs in the `web` workspace)
+   - Always check for `pnpm-lock.yaml` before using npm
+
+3. **PageTransition in Next.js App Router**
+   - `exit` variants in Framer Motion ONLY work with `AnimatePresence`
+   - In App Router, wrap children with `AnimatePresence mode="wait"` + key by `usePathname()`
+   - Best place: inside the shared layout shell (AppShell), not in each page
+   - `will-change: opacity, transform` for GPU acceleration
+
+4. **SVG Sparkline with Framer Motion**
+   - Use `motion.path` with `pathLength` animation (0 → 1) for draw effect
+   - Area fill: close the path to bottom corners, use semi-transparent fill
+   - Color based on trend: compare `data[last]` vs `data[first]`
+   - End dot with `motion.circle` + delayed `scale` animation
+
+5. **DnD Kit Column Detection**
+   - Prefix column droppable IDs with `column-` to distinguish from card IDs
+   - In `onDragOver`, check if `over.id` starts with `column-` vs finding card's column
+   - `PointerSensor` with `activationConstraint: { distance: 5 }` prevents accidental drags
+   - Optimistic update: modify local state immediately, then call API via callback
+
+6. **Integrate Transitions at Shell Level, Not Page Level**
+   - Adding `<PageTransition>` inside `AppShell` means ALL pages get transitions automatically
+   - No need to import in every `page.tsx` — reduces boilerplate and forgotten imports
+   - If a page needs to opt out, it can wrap its content in a `motion.div` with `initial={false}`
+
+### Architecture Decisions
+
+1. **DataTable Generic API**
+   - Single generic component `DataTable<T>` handles all table needs
+   - `columns` array with `render` function for custom cell content
+   - `actions` array with `onClick(row)` for row-level actions
+   - Internal state for sort/filter/pagination — no external state management needed
+   - `emptyState` slot for custom empty illustrations (composable with EmptyState component)
+
+2. **EmptyState Variant Pattern**
+   - Config object maps variant keys to defaults (icon, title, description, colors)
+   - All props are overridable — variant provides sensible defaults
+   - One component, 7 variants — avoids 7 separate empty state components
+
+3. **MetricCard Format Prop**
+   - Default: `value.toLocaleString('es-ES')` for numbers
+   - `format` prop for custom display: `format={(v) => \`${v.toFixed(1)}%\`}`
+   - Keeps component generic — works for counts, percentages, currency
+
+4. **KanbanBoard Data Shape**
+   - Input: `Record<string, KanbanCandidate[]>` — column key → candidates
+   - Output: `onStatusChange(candidateId, fromColumn, toColumn)` callback
+   - Consumer decides how to handle the API call — Kanban is pure view layer
+   - Optimistic update built-in, rollback can be done by passing new `candidates` prop
+
+### Component Inventory (Semana 3)
+
+| Component | Location | Depends On |
+|-----------|----------|------------|
+| DataTable | `components/ui/data-table.tsx` | DropdownMenu, Skeleton, Framer Motion |
+| MetricCard | `components/ui/metric-card.tsx` | Skeleton, Framer Motion |
+| EmptyState | `components/ui/empty-state.tsx` | Button, Framer Motion |
+| PageTransition | `components/layout/page-transition.tsx` | Framer Motion, animations.ts |
+| PipelineFunnel | `components/dashboard/pipeline-funnel.tsx` | Skeleton, Framer Motion |
+| KanbanBoard | `components/candidates/kanban-board.tsx` | @dnd-kit, Avatar, Badge, Skeleton, Framer Motion |
