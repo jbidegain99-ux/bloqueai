@@ -4,7 +4,7 @@ from enum import Enum as PyEnum
 
 from sqlalchemy import Column, DateTime, String, Text, Enum, Integer, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, deferred
 from pgvector.sqlalchemy import Vector
 
 from app.models.base import BaseModel
@@ -143,8 +143,8 @@ class Job(BaseModel):
     # Display name for candidates (always shows this instead of real company name)
     display_company_name = Column(String(255), default="Bloque Internacional", nullable=True)
 
-    # Embedding for AI matching
-    job_embedding = Column(Vector(1536), nullable=True)
+    # Embedding for AI matching (deferred to avoid loading 1536-float vectors in normal queries)
+    job_embedding = deferred(Column(Vector(1536), nullable=True))
     embedding_updated_at = Column(DateTime, nullable=True)
 
     # Rubric association
