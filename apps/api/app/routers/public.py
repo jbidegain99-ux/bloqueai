@@ -96,6 +96,50 @@ async def public_health() -> MessageResponse:
     return MessageResponse(message="OK")
 
 
+@router.get("/debug-jobs")
+async def debug_jobs(db: Session = Depends(get_db)):
+    """Temporary debug endpoint to diagnose /jobs 500 error."""
+    import traceback
+    try:
+        query = (
+            db.query(Job)
+            .filter(Job.status == JobStatus.ACTIVE)
+            .join(Company)
+        )
+        total = query.count()
+        jobs = query.order_by(Job.created_at.desc()).limit(1).all()
+        if not jobs:
+            return {"status": "ok", "total": total, "message": "No active jobs"}
+        job = jobs[0]
+        # Try each field that could fail
+        result = {"total": total, "fields": {}}
+        for field in ["id", "title", "slug", "description", "department", "status",
+                      "category", "seniority", "modality", "location", "country",
+                      "salary_min", "salary_max", "salary_currency", "must_haves",
+                      "nice_to_haves", "benefits", "is_featured", "display_company_name",
+                      "created_at"]:
+            try:
+                val = getattr(job, field, "MISSING")
+                result["fields"][field] = f"{type(val).__name__}: {str(val)[:100]}"
+            except Exception as e:
+                result["fields"][field] = f"ERROR: {e}"
+        # Try company relationship
+        try:
+            result["company"] = str(job.company.name) if job.company else "None"
+        except Exception as e:
+            result["company"] = f"ERROR: {e}"
+        # Try the description slicing that might fail
+        try:
+            desc = job.description
+            _ = desc[:300] if desc else ""
+            result["desc_slice"] = "ok"
+        except Exception as e:
+            result["desc_slice"] = f"ERROR: {e}"
+        return result
+    except Exception as e:
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
 @router.get("/jobs")
 async def list_jobs(
     page: int = Query(1, ge=1),
