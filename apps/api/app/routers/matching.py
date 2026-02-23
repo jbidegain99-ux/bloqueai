@@ -14,7 +14,7 @@ from app.models.user import User
 from app.services.matching_service import matching_service, MatchFilters
 from app.utils.deps import get_current_user, require_employer
 
-router = APIRouter(prefix="/api/matching", tags=["matching"])
+router = APIRouter(prefix="/matching", tags=["matching"])
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────

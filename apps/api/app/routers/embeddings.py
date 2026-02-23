@@ -11,7 +11,7 @@ from app.models.user import User
 from app.services.profile_embedding_service import profile_embedding_service
 from app.utils.deps import get_current_user, require_admin
 
-router = APIRouter(prefix="/api/embeddings", tags=["embeddings"])
+router = APIRouter(prefix="/embeddings", tags=["embeddings"])
 
 
 class BulkGenerateRequest(BaseModel):
