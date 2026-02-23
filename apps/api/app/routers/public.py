@@ -5,8 +5,8 @@ from uuid import uuid4, UUID
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy.orm import Session, load_only
+from sqlalchemy import or_, func
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 import structlog
@@ -24,6 +24,22 @@ logger = structlog.get_logger()
 limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/public", tags=["Public"])
+
+# Columns to load for job listings (excludes embedding vectors)
+_JOB_LIST_COLUMNS = [
+    Job.id, Job.title, Job.slug, Job.description, Job.department,
+    Job.category, Job.seniority, Job.modality, Job.location, Job.country,
+    Job.salary_min, Job.salary_max, Job.salary_currency,
+    Job.must_haves, Job.nice_to_haves, Job.benefits,
+    Job.is_featured, Job.display_company_name, Job.created_at,
+    Job.company_id, Job.status,
+]
+
+# Columns to load for job detail (excludes embedding vectors)
+_JOB_DETAIL_COLUMNS = _JOB_LIST_COLUMNS + [
+    Job.responsibilities, Job.timezone, Job.match_threshold,
+    Job.custom_questions, Job.rubric_id,
+]
 
 
 @router.post("/leads", response_model=LeadCreateResponse)
@@ -96,50 +112,6 @@ async def public_health() -> MessageResponse:
     return MessageResponse(message="OK")
 
 
-@router.get("/debug-jobs")
-async def debug_jobs(db: Session = Depends(get_db)):
-    """Temporary debug endpoint to diagnose /jobs 500 error."""
-    import traceback
-    try:
-        query = (
-            db.query(Job)
-            .filter(Job.status == JobStatus.ACTIVE)
-            .join(Company)
-        )
-        total = query.count()
-        jobs = query.order_by(Job.created_at.desc()).limit(1).all()
-        if not jobs:
-            return {"status": "ok", "total": total, "message": "No active jobs"}
-        job = jobs[0]
-        # Try each field that could fail
-        result = {"total": total, "fields": {}}
-        for field in ["id", "title", "slug", "description", "department", "status",
-                      "category", "seniority", "modality", "location", "country",
-                      "salary_min", "salary_max", "salary_currency", "must_haves",
-                      "nice_to_haves", "benefits", "is_featured", "display_company_name",
-                      "created_at"]:
-            try:
-                val = getattr(job, field, "MISSING")
-                result["fields"][field] = f"{type(val).__name__}: {str(val)[:100]}"
-            except Exception as e:
-                result["fields"][field] = f"ERROR: {e}"
-        # Try company relationship
-        try:
-            result["company"] = str(job.company.name) if job.company else "None"
-        except Exception as e:
-            result["company"] = f"ERROR: {e}"
-        # Try the description slicing that might fail
-        try:
-            desc = job.description
-            _ = desc[:300] if desc else ""
-            result["desc_slice"] = "ok"
-        except Exception as e:
-            result["desc_slice"] = f"ERROR: {e}"
-        return result
-    except Exception as e:
-        return {"error": str(e), "traceback": traceback.format_exc()}
-
-
 @router.get("/jobs")
 async def list_jobs(
     page: int = Query(1, ge=1),
@@ -159,16 +131,17 @@ async def list_jobs(
 
     Public endpoint - no authentication required.
     """
-    query = (
+    # Base filter — shared between count and select queries
+    base_filter = (
         db.query(Job)
-        .filter(Job.status == JobStatus.ACTIVE)
         .join(Company)
+        .filter(Job.status == JobStatus.ACTIVE)
     )
 
     # Apply search filter
     if search:
         search_term = f"%{search.lower()}%"
-        query = query.filter(
+        base_filter = base_filter.filter(
             or_(
                 Job.title.ilike(search_term),
                 Job.description.ilike(search_term),
@@ -180,7 +153,7 @@ async def list_jobs(
     if category:
         try:
             cat_enum = JobCategory(category.upper())
-            query = query.filter(Job.category == cat_enum)
+            base_filter = base_filter.filter(Job.category == cat_enum)
         except ValueError:
             pass  # Invalid category, ignore
 
@@ -188,7 +161,7 @@ async def list_jobs(
     if seniority:
         try:
             sen_enum = SeniorityLevel(seniority.upper())
-            query = query.filter(Job.seniority == sen_enum)
+            base_filter = base_filter.filter(Job.seniority == sen_enum)
         except ValueError:
             pass
 
@@ -196,31 +169,32 @@ async def list_jobs(
     if modality:
         try:
             mod_enum = JobModality(modality.upper())
-            query = query.filter(Job.modality == mod_enum)
+            base_filter = base_filter.filter(Job.modality == mod_enum)
         except ValueError:
             pass
 
     # Apply location filter
     if location:
-        query = query.filter(Job.location.ilike(f"%{location}%"))
+        base_filter = base_filter.filter(Job.location.ilike(f"%{location}%"))
 
     # Apply country filter
     if country:
-        query = query.filter(Job.country.ilike(f"%{country}%"))
+        base_filter = base_filter.filter(Job.country.ilike(f"%{country}%"))
 
     # Apply salary filters
     if salary_min is not None:
-        query = query.filter(Job.salary_max >= salary_min)
+        base_filter = base_filter.filter(Job.salary_max >= salary_min)
     if salary_max is not None:
-        query = query.filter(Job.salary_min <= salary_max)
+        base_filter = base_filter.filter(Job.salary_min <= salary_max)
 
-    # Get total count
-    total = query.count()
+    # Get total count — use func.count to avoid loading all columns
+    total = base_filter.with_entities(func.count(Job.id)).scalar()
 
-    # Apply pagination
+    # Apply pagination with load_only to exclude embedding vectors
     offset = (page - 1) * page_size
     jobs = (
-        query
+        base_filter
+        .options(load_only(*_JOB_LIST_COLUMNS))
         .order_by(Job.is_featured.desc(), Job.created_at.desc())
         .offset(offset)
         .limit(page_size)
@@ -234,7 +208,11 @@ async def list_jobs(
                 "id": str(job.id),
                 "title": job.title,
                 "slug": job.slug,
-                "description": job.description[:300] + "..." if len(job.description) > 300 else job.description,
+                "description": (
+                    job.description[:300] + "..."
+                    if job.description and len(job.description) > 300
+                    else (job.description or "")
+                ),
                 "department": job.department,
                 "category": job.category.value if job.category else None,
                 "seniority": job.seniority.value if job.seniority else None,
@@ -250,7 +228,7 @@ async def list_jobs(
                 "is_featured": job.is_featured,
                 "company": {
                     "id": str(job.company.id),
-                    "name": getattr(job, 'display_company_name', None) or "Bloque Internacional",
+                    "name": job.display_company_name or "Bloque Internacional",
                     "slug": job.company.slug,
                     "industry": job.company.industry,
                     "logo_url": job.company.logo_url,
@@ -274,6 +252,7 @@ async def get_job_detail(
     """Get detailed job information."""
     job = (
         db.query(Job)
+        .options(load_only(*_JOB_DETAIL_COLUMNS))
         .filter(Job.id == job_id)
         .filter(Job.status == JobStatus.ACTIVE)
         .first()
@@ -290,7 +269,7 @@ async def get_job_detail(
     effective_threshold = job.match_threshold if job.match_threshold is not None else SYSTEM_DEFAULT_THRESHOLD
 
     # Get display name (hide real company from candidates)
-    display_name = getattr(job, 'display_company_name', None) or "Bloque Internacional"
+    display_name = job.display_company_name or "Bloque Internacional"
 
     return {
         "id": str(job.id),

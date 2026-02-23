@@ -55,6 +55,81 @@ logger = structlog.get_logger()
 limiter = Limiter(key_func=get_user_id_or_ip)
 
 
+def ensure_embedding_columns():
+    """Ensure embedding columns exist in the database.
+
+    The vector embedding columns were added in migrations 014/015 but these
+    may not have been run on the production database. This check adds the
+    columns if they're missing so the ORM doesn't fail on queries.
+    """
+    from app.core.database import engine
+    from sqlalchemy import text, inspect
+
+    try:
+        inspector = inspect(engine)
+
+        # Check jobs table
+        job_columns = {c["name"] for c in inspector.get_columns("jobs")}
+        with engine.begin() as conn:
+            if "job_embedding" not in job_columns:
+                logger.info("Adding missing job_embedding column to jobs table")
+                conn.execute(text(
+                    "ALTER TABLE jobs ADD COLUMN job_embedding bytea NULL"
+                ))
+            if "embedding_updated_at" not in job_columns:
+                logger.info("Adding missing embedding_updated_at column to jobs table")
+                conn.execute(text(
+                    "ALTER TABLE jobs ADD COLUMN embedding_updated_at TIMESTAMP NULL"
+                ))
+
+        # Check candidates table
+        candidate_columns = {c["name"] for c in inspector.get_columns("candidates")}
+        with engine.begin() as conn:
+            if "profile_embedding" not in candidate_columns:
+                logger.info("Adding missing profile_embedding column to candidates table")
+                conn.execute(text(
+                    "ALTER TABLE candidates ADD COLUMN profile_embedding bytea NULL"
+                ))
+            if "embedding_updated_at" not in candidate_columns:
+                logger.info("Adding missing embedding_updated_at column to candidates table")
+                conn.execute(text(
+                    "ALTER TABLE candidates ADD COLUMN embedding_updated_at TIMESTAMP NULL"
+                ))
+
+        # Check candidate_job_matches table exists
+        if "candidate_job_matches" not in inspector.get_table_names():
+            logger.info("Creating missing candidate_job_matches table")
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    CREATE TABLE candidate_job_matches (
+                        id UUID PRIMARY KEY,
+                        candidate_id UUID NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+                        job_id UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                        overall_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+                        semantic_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+                        skills_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+                        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                        match_metadata JSONB DEFAULT '{}',
+                        recruiter_notes TEXT,
+                        reviewed_at TIMESTAMP,
+                        created_at TIMESTAMP NOT NULL DEFAULT now(),
+                        updated_at TIMESTAMP NOT NULL DEFAULT now(),
+                        UNIQUE (candidate_id, job_id)
+                    )
+                """))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_match_job_score "
+                    "ON candidate_job_matches (job_id, overall_score)"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_match_candidate_score "
+                    "ON candidate_job_matches (candidate_id, overall_score)"
+                ))
+
+    except Exception as e:
+        logger.warning("ensure_embedding_columns_failed", error=str(e))
+
+
 def run_seed_on_startup():
     """Run seed script on startup to ensure base data exists."""
     from app.core.database import SessionLocal
@@ -284,6 +359,8 @@ def seed_plans(db):
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info("Starting TalentOS API", version="1.0.0")
+    # Ensure schema is up to date (adds missing embedding columns if needed)
+    ensure_embedding_columns()
     # Run seed on startup
     run_seed_on_startup()
     yield
