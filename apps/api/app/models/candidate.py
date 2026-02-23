@@ -1,8 +1,9 @@
 """Candidate model with profile information."""
 
-from sqlalchemy import Column, String, Text, ForeignKey
+from sqlalchemy import Column, DateTime, String, Text, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 
 from app.models.base import BaseModel
 
@@ -43,6 +44,10 @@ class Candidate(BaseModel):
     ai_summary = Column(Text, nullable=True)
     ai_skills = Column(JSONB, default=list)  # Skills with confidence scores
     competency_scores = Column(JSONB, default=dict)  # Scores by competency
+
+    # Embedding for AI matching
+    profile_embedding = Column(Vector(1536), nullable=True)
+    embedding_updated_at = Column(DateTime, nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="candidate")

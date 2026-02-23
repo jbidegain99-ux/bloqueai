@@ -10,6 +10,7 @@ from app.routers.applications import router as applications_router
 from app.routers.payroll import router as payroll_router
 from app.routers.eor import router as eor_router
 from app.routers.billing import router as billing_router
+from app.routers.embeddings import router as embeddings_router
 
 __all__ = [
     "auth_router",
@@ -22,4 +23,5 @@ __all__ = [
     "payroll_router",
     "eor_router",
     "billing_router",
+    "embeddings_router",
 ]

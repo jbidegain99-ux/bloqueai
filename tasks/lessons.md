@@ -630,3 +630,33 @@
 5. **role="alert" for Error Messages**
    - Screen readers need `role="alert"` to announce error messages dynamically
    - Apply to both field-level errors and form-level error banners
+
+---
+
+## Session: 2026-02-23 - pgvector + Embeddings (Prompt 24)
+
+### Key Patterns
+
+1. **pgvector Installation in Docker**
+   - `postgres:16-alpine` does NOT include pgvector — must compile from source or use `pgvector/pgvector:pg16`
+   - When compiling inside container: `make install` may fail on LLVM bitcode step — use `with_llvm=no`
+   - For docker-compose, prefer the official pgvector Docker image: `pgvector/pgvector:pg16`
+
+2. **Alembic Migrations with pgvector Vector Type**
+   - Alembic's `sa.Column()` doesn't natively support pgvector `Vector` type
+   - Use raw SQL: `op.execute("ALTER TABLE ... ADD COLUMN ... vector(1536)")`
+   - For `embedding_updated_at` use standard `sa.Column(sa.DateTime())`
+   - HNSW index creation also requires raw SQL with `op.execute()`
+
+3. **Adapting Prompt Templates to Actual Codebase**
+   - Prompts assume generic names (e.g., `OPENAI_API_KEY`, `CandidateProfile`)
+   - Always check actual: config key names, model names, table names, import paths
+   - This project uses `llm_api_key` + `llm_base_url` (not separate `OPENAI_API_KEY`)
+   - Table is `candidates` (not `candidate_profiles`), jobs use `must_haves` JSONB (not `requirements` Text)
+
+4. **EmbeddingService Design**
+   - Singleton pattern for embedding service (module-level instance)
+   - In-memory cache with MD5 hash keys to avoid duplicate API calls
+   - `use_cache=False` option for force regeneration
+   - Batch API: send multiple texts in one `embeddings.create()` call
+   - Always handle enum `.value` when building text from JSONB fields that may contain enum instances

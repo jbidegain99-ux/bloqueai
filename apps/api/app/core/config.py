@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     llm_api_key: Optional[str] = None
     llm_model: str = "gpt-4o-mini"
 
+    # Embeddings
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+
     # Avatar Integration (video AI avatar for interviews)
     avatar_enabled: bool = False
     avatar_provider: str = "mock"  # mock, heygen, or did

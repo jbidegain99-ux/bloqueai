@@ -1395,3 +1395,103 @@ contract generator, API endpoints, and full UI for employers and employees.
 ### Verification ✅
 - [x] `pnpm build` — 0 TypeScript errors
 - [x] `npx playwright test --project=chromium` — **76/76 tests pass** (57.3s)
+
+---
+
+## pgvector + Embeddings Infrastructure — Prompt 24 (2026-02-23)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Goal:** Set up vector search infrastructure for AI-powered candidate-job matching
+
+### T24.1-2: pgvector Extension + Docker ✅
+**Status:** DONE
+- [x] Installed pgvector v0.8.0 in Docker PostgreSQL container (compiled from source)
+- [x] Updated `docker-compose.yml` to use `pgvector/pgvector:pg16` image
+- [x] Migration 013: `CREATE EXTENSION IF NOT EXISTS vector`
+
+### T24.3-4: Embedding Service + Config ✅
+**Status:** DONE
+- [x] `apps/api/app/services/embedding_service.py` — OpenAI embedding service
+  - Uses `settings.llm_api_key` + `settings.llm_base_url` (existing config)
+  - Added `embedding_model` + `embedding_dimensions` to Settings
+  - In-memory cache with MD5 hash keys
+  - Single + batch embedding generation
+  - Cosine similarity via numpy
+- [x] Added `pgvector==0.3.6` + `numpy==1.26.4` to requirements.txt
+
+### T24.5-7: Model Updates + Migration ✅
+**Status:** DONE
+- [x] `apps/api/app/models/candidate.py` — Added `profile_embedding Vector(1536)` + `embedding_updated_at`
+- [x] `apps/api/app/models/job.py` — Added `job_embedding Vector(1536)` + `embedding_updated_at`
+- [x] Migration 014: Added embedding columns to `candidates` and `jobs` tables
+
+### T24.8: HNSW Indexes ✅
+**Status:** DONE
+- [x] Migration 015: Created HNSW indexes with `vector_cosine_ops`
+  - `idx_candidate_embedding_hnsw` on `candidates.profile_embedding`
+  - `idx_job_embedding_hnsw` on `jobs.job_embedding`
+  - Parameters: m=16, ef_construction=64
+
+### T24.9: Profile Embedding Service ✅
+**Status:** DONE
+- [x] `apps/api/app/services/profile_embedding_service.py`
+  - `_build_candidate_text()`: headline, summary, skills, experience, education, ai_summary
+  - `_build_job_text()`: title, description, must_haves, nice_to_haves, responsibilities, location, modality, category, seniority
+  - Single + bulk generation for both candidates and jobs
+  - Force regeneration option
+
+### T24.10: API Endpoints ✅
+**Status:** DONE
+- [x] `apps/api/app/routers/embeddings.py` — 4 endpoints:
+  - `POST /api/embeddings/generate/candidate/{id}` — Auth required
+  - `POST /api/embeddings/generate/job/{id}` — Auth required
+  - `POST /api/embeddings/generate/bulk` — Admin only
+  - `GET /api/embeddings/stats` — Admin only
+- [x] Registered in `routers/__init__.py` and `main.py`
+
+### T24.11: Tests ✅
+**Status:** DONE
+- [x] `apps/api/tests/test_embedding_service.py` — 12 tests:
+  - Embedding generation with correct dimensions
+  - Cache hit/miss behavior
+  - Cache bypass
+  - Empty/whitespace text validation
+  - Cosine similarity (identical, orthogonal, opposite vectors)
+  - Cache clear
+  - Batch embeddings (empty + multiple)
+  - Text truncation
+
+### Verification ✅
+- [x] `alembic upgrade head` — 3 migrations applied (013, 014, 015)
+- [x] pgvector extension v0.8.0 installed and verified
+- [x] `\d candidates` shows `profile_embedding vector(1536)` + HNSW index
+- [x] `\d jobs` shows `job_embedding vector(1536)` + HNSW index
+- [x] `python -m pytest tests/test_embedding_service.py -v` — **12/12 tests pass**
+- [x] App loads with all 4 embedding routes registered
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `apps/api/app/services/embedding_service.py` | Core OpenAI embedding service with cache |
+| `apps/api/app/services/profile_embedding_service.py` | Candidate/Job text builder + embedding generator |
+| `apps/api/app/routers/embeddings.py` | 4 API endpoints for embedding management |
+| `apps/api/alembic/versions/013_add_pgvector_extension.py` | Enable pgvector extension |
+| `apps/api/alembic/versions/014_add_embedding_columns.py` | Add vector columns to candidates/jobs |
+| `apps/api/alembic/versions/015_add_vector_indexes.py` | Create HNSW indexes |
+| `apps/api/tests/test_embedding_service.py` | 12 unit tests |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `apps/api/app/models/candidate.py` | Added profile_embedding + embedding_updated_at |
+| `apps/api/app/models/job.py` | Added job_embedding + embedding_updated_at |
+| `apps/api/app/core/config.py` | Added embedding_model + embedding_dimensions |
+| `apps/api/app/routers/__init__.py` | Registered embeddings_router |
+| `apps/api/app/main.py` | Included embeddings_router |
+| `apps/api/requirements.txt` | Added pgvector + numpy |
+| `docker-compose.yml` | Changed postgres image to pgvector/pgvector:pg16 |
+
+### Ready For
+- Prompt 25: Matching engine using vector similarity search

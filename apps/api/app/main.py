@@ -24,6 +24,7 @@ from app.routers import (
     payroll_router,
     eor_router,
     billing_router,
+    embeddings_router,
 )
 
 # Configure structured logging
@@ -390,6 +391,7 @@ app.include_router(applications_router)
 app.include_router(payroll_router)
 app.include_router(eor_router)
 app.include_router(billing_router)
+app.include_router(embeddings_router)
 
 
 # Root endpoint
