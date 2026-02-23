@@ -1861,6 +1861,76 @@ export const billingApi = {
     ),
 }
 
+// Matching API
+export interface MatchResult {
+  candidate_id: string
+  job_id: string
+  overall_score: number
+  semantic_score: number
+  skills_score: number
+  candidate_name: string | null
+  job_title: string | null
+  matched_skills: string[]
+  missing_skills: string[]
+  metadata: Record<string, unknown>
+}
+
+export interface SavedMatch {
+  id: string
+  candidate_id: string
+  job_id: string
+  overall_score: number
+  semantic_score: number
+  skills_score: number
+  status: string
+  match_metadata: Record<string, unknown> | null
+  recruiter_notes: string | null
+  reviewed_at: string | null
+  created_at: string
+}
+
+export const matchingApi = {
+  getCandidatesForJob: (token: string, jobId: string, params?: { min_score?: number; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.min_score) qs.set('min_score', String(params.min_score))
+    if (params?.limit) qs.set('limit', String(params.limit))
+    const query = qs.toString()
+    return fetchApi<MatchResult[]>(`/matching/candidates-for-job/${jobId}${query ? `?${query}` : ''}`, { token })
+  },
+
+  getJobsForCandidate: (token: string, candidateId: string, params?: { min_score?: number; limit?: number; modality?: string }) => {
+    const qs = new URLSearchParams()
+    if (params?.min_score) qs.set('min_score', String(params.min_score))
+    if (params?.limit) qs.set('limit', String(params.limit))
+    if (params?.modality) qs.set('modality', params.modality)
+    const query = qs.toString()
+    return fetchApi<MatchResult[]>(`/matching/jobs-for-candidate/${candidateId}${query ? `?${query}` : ''}`, { token })
+  },
+
+  getMatchScore: (token: string, candidateId: string, jobId: string) =>
+    fetchApi<MatchResult>(`/matching/score/${candidateId}/${jobId}`, { token }),
+
+  saveMatch: (token: string, data: { candidate_id: string; job_id: string; overall_score: number; semantic_score?: number; skills_score?: number }) =>
+    fetchApi<{ id: string; candidate_id: string; job_id: string; overall_score: number; status: string; created_at: string }>(
+      '/matching/save', { method: 'POST', body: data, token }
+    ),
+
+  updateMatchStatus: (token: string, matchId: string, data: { status: string; recruiter_notes?: string }) =>
+    fetchApi<{ id: string; status: string; recruiter_notes: string | null; reviewed_at: string }>(
+      `/matching/status/${matchId}`, { method: 'PATCH', body: data, token }
+    ),
+
+  getMatchesForJob: (token: string, jobId: string, status?: string) => {
+    const qs = status ? `?status=${status}` : ''
+    return fetchApi<SavedMatch[]>(`/matching/job/${jobId}/matches${qs}`, { token })
+  },
+
+  getMatchesForCandidate: (token: string, candidateId: string, status?: string) => {
+    const qs = status ? `?status=${status}` : ''
+    return fetchApi<SavedMatch[]>(`/matching/candidate/${candidateId}/matches${qs}`, { token })
+  },
+}
+
 export type {
   EOREmployee, EOREmployeeDetail, EORPayrollRun, EORPayrollItem,
   EORVacationRequest, EORPayslip, EORCalculatorResult,

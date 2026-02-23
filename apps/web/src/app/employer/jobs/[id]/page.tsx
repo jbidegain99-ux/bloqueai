@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuthStore } from '@/lib/auth'
 import { employerApi } from '@/lib/api'
-import { ArrowLeft, Users, Download, RefreshCw, MapPin, Star, AlertTriangle, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Users, Download, RefreshCw, MapPin, Star, AlertTriangle, CheckCircle, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import {
   Select,
@@ -223,6 +223,12 @@ export default function JobDetailPage() {
           {job.status === 'DRAFT' && (
             <Button onClick={publishJob}>Publicar</Button>
           )}
+          <Link href={`/employer/jobs/${jobId}/matches`}>
+            <Button variant="outline">
+              <Sparkles className="h-4 w-4 mr-2" />
+              Candidatos IA
+            </Button>
+          </Link>
           <Button variant="outline" onClick={generateShortlist} disabled={generating}>
             <RefreshCw className={`h-4 w-4 mr-2 ${generating ? 'animate-spin' : ''}`} />
             {generating ? 'Generando...' : 'Generar Shortlist'}
