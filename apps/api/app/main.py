@@ -23,6 +23,7 @@ from app.routers import (
     applications_router,
     payroll_router,
     eor_router,
+    billing_router,
 )
 
 # Configure structured logging
@@ -128,11 +129,153 @@ def run_seed_on_startup():
             db.commit()
             logger.info("Admin user created: admin@bloqueai.com / Admin123!")
 
+        # Seed billing plans
+        seed_plans(db)
+
     except Exception as e:
         logger.error("seed_startup_error", error=str(e))
         db.rollback()
     finally:
         db.close()
+
+
+def seed_plans(db):
+    """Seed default billing plans if they don't exist."""
+    from app.models.billing import Plan, PlanTier
+
+    existing = db.query(Plan).first()
+    if existing:
+        return
+
+    logger.info("Creating default billing plans...")
+
+    plans_data = [
+        {
+            "name": "Free",
+            "tier": PlanTier.FREE,
+            "description": "Para empezar a explorar TalentOS",
+            "price_monthly": 0.0,
+            "price_annual": 0.0,
+            "limits": {
+                "jobs": 3,
+                "candidates": 50,
+                "interviews_per_month": 10,
+                "ai_reports": 5,
+                "users": 2,
+            },
+            "features": [
+                "basic_ats",
+                "candidate_search",
+                "manual_shortlist",
+            ],
+        },
+        {
+            "name": "Growth",
+            "tier": PlanTier.GROWTH,
+            "description": "Para equipos en crecimiento",
+            "price_monthly": 99.0,
+            "price_annual": 990.0,
+            "limits": {
+                "jobs": 15,
+                "candidates": 500,
+                "interviews_per_month": 100,
+                "ai_reports": 50,
+                "users": 10,
+            },
+            "features": [
+                "basic_ats",
+                "candidate_search",
+                "manual_shortlist",
+                "ai_matching",
+                "ai_interviews",
+                "bulk_import",
+                "job_copilot",
+                "email_templates",
+            ],
+        },
+        {
+            "name": "Professional",
+            "tier": PlanTier.PROFESSIONAL,
+            "description": "Para empresas que necesitan todo el poder de la IA",
+            "price_monthly": 249.0,
+            "price_annual": 2490.0,
+            "limits": {
+                "jobs": -1,
+                "candidates": -1,
+                "interviews_per_month": -1,
+                "ai_reports": -1,
+                "users": 50,
+            },
+            "features": [
+                "basic_ats",
+                "candidate_search",
+                "manual_shortlist",
+                "ai_matching",
+                "ai_interviews",
+                "bulk_import",
+                "job_copilot",
+                "email_templates",
+                "advanced_analytics",
+                "custom_rubrics",
+                "api_access",
+                "payroll",
+                "eor",
+            ],
+        },
+        {
+            "name": "Enterprise",
+            "tier": PlanTier.ENTERPRISE,
+            "description": "Solución personalizada para grandes organizaciones",
+            "price_monthly": 0.0,
+            "price_annual": 0.0,
+            "limits": {
+                "jobs": -1,
+                "candidates": -1,
+                "interviews_per_month": -1,
+                "ai_reports": -1,
+                "users": -1,
+            },
+            "features": [
+                "basic_ats",
+                "candidate_search",
+                "manual_shortlist",
+                "ai_matching",
+                "ai_interviews",
+                "bulk_import",
+                "job_copilot",
+                "email_templates",
+                "advanced_analytics",
+                "custom_rubrics",
+                "api_access",
+                "payroll",
+                "eor",
+                "custom_branding",
+                "sso",
+                "dedicated_support",
+                "sla",
+            ],
+        },
+    ]
+
+    for plan_data in plans_data:
+        plan = Plan(
+            id=uuid4(),
+            name=plan_data["name"],
+            tier=plan_data["tier"],
+            description=plan_data["description"],
+            price_monthly=plan_data["price_monthly"],
+            price_annual=plan_data["price_annual"],
+            currency="USD",
+            is_active=True,
+            limits=plan_data["limits"],
+            features=plan_data["features"],
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.add(plan)
+
+    db.commit()
+    logger.info("Default billing plans created successfully")
 
 
 @asynccontextmanager
@@ -246,6 +389,7 @@ app.include_router(public_router)
 app.include_router(applications_router)
 app.include_router(payroll_router)
 app.include_router(eor_router)
+app.include_router(billing_router)
 
 
 # Root endpoint

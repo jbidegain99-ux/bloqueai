@@ -1757,9 +1757,114 @@ export const eorApi = {
     fetchApi<EORCalculatorResult>(`/eor/calculator?salary=${salary}&salary_type=${salaryType}`),
 }
 
+// ── Billing Types ─────────────────────────────────────────────
+
+interface BillingPlan {
+  id: string
+  name: string
+  tier: string
+  description: string | null
+  price_monthly: number
+  price_annual: number
+  currency: string
+  is_active: boolean
+  limits: Record<string, number>
+  features: string[]
+  created_at: string
+}
+
+interface BillingSubscription {
+  id: string
+  company_id: string
+  plan_id: string
+  plan: BillingPlan
+  status: string
+  is_annual: boolean
+  trial_ends_at: string | null
+  current_period_start: string | null
+  current_period_end: string | null
+  canceled_at: string | null
+  cancel_at_period_end: boolean
+  created_at: string
+  updated_at: string
+}
+
+interface BillingInvoice {
+  id: string
+  subscription_id: string
+  company_id: string
+  amount: number
+  currency: string
+  status: string
+  period_start: string | null
+  period_end: string | null
+  paid_at: string | null
+  description: string | null
+  created_at: string
+}
+
+interface UsageCheck {
+  feature: string
+  has_access: boolean
+  plan_tier: string
+  message: string | null
+}
+
+interface LimitCheck {
+  limit_type: string
+  current_usage: number
+  max_allowed: number
+  has_capacity: boolean
+  plan_tier: string
+}
+
+// ── Billing API ───────────────────────────────────────────────
+
+export const billingApi = {
+  getPlans: () =>
+    fetchApi<BillingPlan[]>('/billing/plans'),
+
+  getSubscription: (token: string) =>
+    fetchApi<BillingSubscription | null>('/billing/subscription', { token }),
+
+  subscribe: (token: string, data: { plan_id: string; is_annual?: boolean }) =>
+    fetchApi<BillingSubscription>('/billing/subscribe', {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  upgrade: (token: string, data: { new_plan_id: string; is_annual?: boolean }) =>
+    fetchApi<BillingSubscription>('/billing/upgrade', {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  cancel: (token: string, data: { cancel_at_period_end?: boolean; reason?: string }) =>
+    fetchApi<BillingSubscription>('/billing/cancel', {
+      method: 'POST',
+      body: data,
+      token,
+    }),
+
+  getInvoices: (token: string, limit?: number) =>
+    fetchApi<BillingInvoice[]>(`/billing/invoices${limit ? `?limit=${limit}` : ''}`, { token }),
+
+  checkFeature: (token: string, feature: string) =>
+    fetchApi<UsageCheck>(`/billing/check-feature?feature=${encodeURIComponent(feature)}`, { token }),
+
+  checkLimit: (token: string, limitType: string, currentCount: number) =>
+    fetchApi<LimitCheck>(
+      `/billing/check-limit?limit_type=${encodeURIComponent(limitType)}&current_count=${currentCount}`,
+      { token }
+    ),
+}
+
 export type {
   EOREmployee, EOREmployeeDetail, EORPayrollRun, EORPayrollItem,
   EORVacationRequest, EORPayslip, EORCalculatorResult,
+  BillingPlan, BillingSubscription, BillingInvoice, UsageCheck, LimitCheck,
 }
 
 export { ApiError }

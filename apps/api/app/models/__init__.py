@@ -35,6 +35,15 @@ from app.models.eor import (
     AFPProvider,
     BankAccountType,
 )
+from app.models.billing import (
+    Plan,
+    Subscription,
+    Invoice,
+    UsageRecord,
+    PlanTier,
+    SubscriptionStatus,
+    InvoiceStatus,
+)
 
 __all__ = [
     "User",
@@ -87,4 +96,11 @@ __all__ = [
     "VacationRequestStatus",
     "AFPProvider",
     "BankAccountType",
+    "Plan",
+    "Subscription",
+    "Invoice",
+    "UsageRecord",
+    "PlanTier",
+    "SubscriptionStatus",
+    "InvoiceStatus",
 ]
