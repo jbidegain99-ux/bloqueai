@@ -44,7 +44,7 @@ interface ClientOption {
 
 export default function PayrollEmployeesPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [clients, setClients] = useState<ClientOption[]>([])
   const [selectedClient, setSelectedClient] = useState('')
@@ -58,10 +58,11 @@ export default function PayrollEmployeesPage() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) { router.push('/login'); return }
     if (!isRecruiter()) { router.push('/dashboard'); return }
     loadClients()
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadClients = async () => {
     if (!accessToken) return
@@ -163,7 +164,7 @@ export default function PayrollEmployeesPage() {
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-bloque-gold"
             />
-            <button onClick={handleSearch} className="p-2 bg-bloque-navy900 text-white rounded-lg hover:bg-bloque-navy900/90">
+            <button onClick={handleSearch} className="p-2 bg-bloque-navy900 text-white rounded-lg hover:bg-bloque-navy900/90" aria-label="Buscar">
               <Search className="h-4 w-4" />
             </button>
           </div>

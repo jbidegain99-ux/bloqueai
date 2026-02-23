@@ -14,9 +14,11 @@ interface AuthState {
   accessToken: string | null
   refreshToken: string | null
   isAuthenticated: boolean
+  isHydrated: boolean
   setAuth: (user: User, accessToken: string, refreshToken: string) => void
   updateTokens: (accessToken: string, refreshToken: string) => void
   logout: () => void
+  setHydrated: () => void
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -26,6 +28,7 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       isAuthenticated: false,
+      isHydrated: false,
 
       setAuth: (user, accessToken, refreshToken) =>
         set({
@@ -48,10 +51,15 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: null,
           isAuthenticated: false,
         }),
+
+      setHydrated: () => set({ isHydrated: true }),
     }),
     {
       name: 'talentos-auth',
       storage: createJSONStorage(() => localStorage),
+      onRehydrateStorage: () => (state) => {
+        state?.setHydrated()
+      },
     }
   )
 )
@@ -65,8 +73,11 @@ export function isCandidate(): boolean {
 }
 
 export function isEmployer(): boolean {
-  const role = useAuthStore.getState().user?.role
-  return role === 'EMPLOYER' || role === 'RECRUITER' || role === 'ADMIN'
+  return useAuthStore.getState().user?.role === 'EMPLOYER'
+}
+
+export function useAuthHydrated(): boolean {
+  return useAuthStore((state) => state.isHydrated)
 }
 
 export function isRecruiter(): boolean {

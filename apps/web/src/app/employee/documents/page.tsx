@@ -10,13 +10,14 @@ import { FileText, Download, Loader2 } from 'lucide-react'
 
 export default function EmployeeDocumentsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated, user } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated, user } = useAuthStore()
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) router.push('/login')
-  }, [isAuthenticated, router])
+  }, [isHydrated, isAuthenticated, router])
 
   const handleDownload = async () => {
     if (!accessToken || !user) return
@@ -43,7 +44,7 @@ export default function EmployeeDocumentsPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   return (
     <AppShell>

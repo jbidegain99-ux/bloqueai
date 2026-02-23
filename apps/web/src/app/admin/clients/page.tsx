@@ -89,7 +89,7 @@ const INDUSTRIES = [
 
 export default function ClientsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -120,6 +120,7 @@ export default function ClientsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -131,7 +132,7 @@ export default function ClientsPage() {
     }
 
     loadClients()
-  }, [isAuthenticated, accessToken, router, page, showNonClients])
+  }, [isHydrated, isAuthenticated, accessToken, router, page, showNonClients])
 
   const loadClients = async () => {
     if (!accessToken) return
@@ -292,7 +293,7 @@ export default function ClientsPage() {
     })
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   return (
     <AppShell>

@@ -92,7 +92,7 @@ const columns: DataTableColumn<EORVacationRequest>[] = [
 
 export default function EmployeeVacationPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated, user } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated, user } = useAuthStore()
   const [employee, setEmployee] = useState<EOREmployeeDetail | null>(null)
   const [vacations, setVacations] = useState<EORVacationRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -108,12 +108,13 @@ export default function EmployeeVacationPage() {
   })
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
     }
     loadData()
-  }, [isAuthenticated, accessToken])
+  }, [isHydrated, isAuthenticated, accessToken])
 
   const loadData = useCallback(async () => {
     if (!accessToken || !user) return
@@ -167,7 +168,7 @@ export default function EmployeeVacationPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   return (
     <AppShell>

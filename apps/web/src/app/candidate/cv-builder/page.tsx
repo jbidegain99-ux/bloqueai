@@ -117,7 +117,7 @@ const generateId = () => Math.random().toString(36).substr(2, 9)
 
 export default function CVBuilderPage() {
   const router = useRouter()
-  const { isAuthenticated, accessToken, user } = useAuthStore()
+  const { isAuthenticated, isHydrated, accessToken, user } = useAuthStore()
 
   const [step, setStep] = useState<WizardStep>('personal')
   const [loading, setLoading] = useState(false)
@@ -146,10 +146,11 @@ export default function CVBuilderPage() {
 
   // Redirect if not authenticated
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login?redirect=/candidate/cv-builder')
     }
-  }, [isAuthenticated, router])
+  }, [isAuthenticated, isHydrated, router])
 
   // Load draft from localStorage
   useEffect(() => {
@@ -451,7 +452,7 @@ export default function CVBuilderPage() {
     URL.revokeObjectURL(url)
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   // Success state - CV generated
   if (generatedCV) {

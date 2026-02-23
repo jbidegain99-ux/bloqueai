@@ -65,18 +65,19 @@ const columns: DataTableColumn<EORPayslip>[] = [
 
 export default function EmployeePayslipsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated, user } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated, user } = useAuthStore()
   const [payslips, setPayslips] = useState<EORPayslip[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
     }
     loadData()
-  }, [isAuthenticated, accessToken])
+  }, [isHydrated, isAuthenticated, accessToken])
 
   const loadData = useCallback(async () => {
     if (!accessToken || !user) return
@@ -92,7 +93,7 @@ export default function EmployeePayslipsPage() {
     }
   }, [accessToken, user])
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   return (
     <AppShell>

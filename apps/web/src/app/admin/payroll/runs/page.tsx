@@ -43,7 +43,7 @@ interface ClientOption {
 
 export default function PayrollRunsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [runs, setRuns] = useState<PayrollRun[]>([])
   const [clients, setClients] = useState<ClientOption[]>([])
   const [selectedClient, setSelectedClient] = useState('')
@@ -56,10 +56,11 @@ export default function PayrollRunsPage() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) { router.push('/login'); return }
     if (!isRecruiter()) { router.push('/dashboard'); return }
     loadClients()
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadClients = async () => {
     if (!accessToken) return

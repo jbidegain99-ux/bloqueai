@@ -1316,3 +1316,82 @@ contract generator, API endpoints, and full UI for employers and employees.
 | Modified | `apps/api/app/models/__init__.py` | EOR model exports |
 | Modified | `apps/api/app/routers/__init__.py` | EOR router export |
 | Modified | `apps/api/app/main.py` | EOR router registration |
+
+---
+
+## QA Bug Fixes — Prompt 23 (2026-02-23)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Goal:** Fix 5 bugs found during E2E QA testing session (76 tests, 100% pass)
+
+### BUG-C01: Zustand Hydration Race Condition ✅ (CRITICAL)
+**Status:** DONE
+
+**Root Cause:** `useAuthStore` persist middleware hydrates async from localStorage. Auth guards in useEffect fire before hydration completes, redirecting valid sessions to `/login` on page refresh.
+
+**Fix:**
+- [x] Added `isHydrated: boolean` to AuthState (default `false`)
+- [x] Added `setHydrated` action
+- [x] Added `onRehydrateStorage` callback to set `isHydrated: true`
+- [x] Exported `useAuthHydrated()` hook
+- [x] Updated 34 auth-guarded pages:
+  - Added `isHydrated` to `useAuthStore()` destructuring
+  - Added `if (!isHydrated) return` before auth check in useEffect
+  - Added `isHydrated` to useEffect dependency arrays
+  - Changed render guards to `if (!isHydrated || !isAuthenticated) return null`
+
+**Files Modified:**
+- `apps/web/src/lib/auth.ts` — hydration state + hook
+- 34 page files across admin/, employer/, candidate/, employee/, dashboard/
+
+### BUG-H01: Admin Sees Employer Nav ✅ (HIGH)
+**Status:** DONE
+
+**Root Cause:** `isEmployer()` included ADMIN and RECRUITER roles. In AppShell, `isEmployer()` checked before `isAdmin()`, so admin users always got employer nav.
+
+**Fix:**
+- [x] Changed `isEmployer()` to return true ONLY for `EMPLOYER` role
+- [x] Reordered `getRoleNav()`: isAdmin → isRecruiter → isEmployer → isCandidate
+
+**Files Modified:**
+- `apps/web/src/lib/auth.ts`
+- `apps/web/src/components/brand/AppShell.tsx`
+
+### BUG-M01: Landing Missing Register CTA ✅ (MEDIUM)
+**Status:** DONE
+
+**Fix:**
+- [x] Added "Registrarse" button next to "Iniciar sesión" in desktop nav
+- [x] Changed hero CTA from "Iniciar sesion" to "Comenzar gratis" linking to `/register`
+- [x] Added "Registrarse" button in mobile menu
+
+**File Modified:** `apps/web/src/app/page.tsx`
+
+### BUG-M02: Icon Buttons Missing aria-label ✅ (MEDIUM)
+**Status:** DONE
+
+**Fix:**
+- [x] Mobile menu hamburger: `aria-label="Abrir menú"`
+- [x] Payroll search button: `aria-label="Buscar"`
+
+**Files Modified:**
+- `apps/web/src/app/page.tsx`
+- `apps/web/src/app/admin/payroll/employees/page.tsx`
+
+### BUG-L01: Login A11y Violations ✅ (LOW)
+**Status:** DONE
+
+**Fix:**
+- [x] FormField error `<p>`: `role="alert"`
+- [x] Login form error div: `role="alert"`
+
+**Files Modified:**
+- `apps/web/src/components/ui/form-field.tsx`
+- `apps/web/src/app/login/page.tsx`
+
+### Additional Fix: tsconfig.json
+- [x] Excluded `e2e/` directory from TypeScript build (was causing build failure due to Playwright test types)
+
+### Verification ✅
+- [x] `pnpm build` — 0 TypeScript errors
+- [x] `npx playwright test --project=chromium` — **76/76 tests pass** (57.3s)

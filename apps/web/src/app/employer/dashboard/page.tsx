@@ -133,7 +133,7 @@ function QuickAction({
 
 export default function EmployerDashboardPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated, user } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated, user } = useAuthStore()
   const [jobs, setJobs] = useState<JobRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -146,6 +146,7 @@ export default function EmployerDashboardPage() {
   })
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -155,7 +156,7 @@ export default function EmployerDashboardPage() {
       return
     }
     loadData()
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadData = useCallback(async () => {
     if (!accessToken) return
@@ -182,7 +183,7 @@ export default function EmployerDashboardPage() {
     }
   }, [accessToken])
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   // Computed stats
   const totalJobs = jobs.length

@@ -37,7 +37,7 @@ interface Rubric {
 
 export default function RubricsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [rubrics, setRubrics] = useState<Rubric[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedRubric, setSelectedRubric] = useState<Rubric | null>(null)
@@ -55,6 +55,7 @@ export default function RubricsPage() {
   })
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -66,7 +67,7 @@ export default function RubricsPage() {
     }
 
     loadRubrics()
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadRubrics = async () => {
     if (!accessToken) return
@@ -161,7 +162,7 @@ export default function RubricsPage() {
     setFormData({ ...formData, criteria: newCriteria })
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (

@@ -597,3 +597,36 @@
 | Detail page crash | Decimal→String + AFP enum names | `Number()` wrap + comparison fix | `a71f6d5` |
 | Contract download 401 | `window.open` doesn't send headers | `fetch` + blob download | `14f7f88` |
 | Corrupt PDF | Hardcoded xref offsets in raw PDF | reportlab SimpleDocTemplate | `21e5095` |
+
+---
+
+## Session: 2026-02-23 - QA Bug Fixes (Prompt 23)
+
+### Patterns Discovered
+
+1. **Zustand Persist Hydration Race Condition**
+   - `zustand/middleware/persist` hydrates async from localStorage
+   - Store starts with default values (isAuthenticated: false) on SSR/page load
+   - useEffect auth guards fire BEFORE hydration, causing false redirects to /login
+   - Fix: Add `isHydrated` flag with `onRehydrateStorage` callback, check before redirecting
+   - Pattern: `if (!isHydrated) return` as FIRST line in auth guard useEffect
+
+2. **Role Check Order Matters**
+   - `isEmployer()` included ADMIN and RECRUITER roles for convenience
+   - This meant `isEmployer()` returned true for admins, checked BEFORE `isAdmin()`
+   - Fix: Make role checks exclusive (isEmployer = EMPLOYER only) and check most specific first
+   - Order: isAdmin → isRecruiter → isEmployer → isCandidate
+
+3. **tsconfig.json Must Exclude E2E Test Directories**
+   - Playwright test files (e2e/) use types not available in Next.js build context
+   - Including them in tsconfig causes build failures (e.g., `Window` type extensions)
+   - Fix: Add `"e2e"` to `exclude` array in tsconfig.json
+
+4. **aria-label on Icon-Only Buttons**
+   - Buttons with only an icon (no text) need `aria-label` for screen readers
+   - Easy to miss in initial development, caught by accessibility tests
+   - Always add `aria-label` when button content is purely visual
+
+5. **role="alert" for Error Messages**
+   - Screen readers need `role="alert"` to announce error messages dynamically
+   - Apply to both field-level errors and form-level error banners

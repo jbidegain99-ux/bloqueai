@@ -194,7 +194,7 @@ function BillingPageSkeleton() {
 
 export default function BillingSettingsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
 
   const [state, setState] = useState<BillingState>({
     subscription: null,
@@ -243,12 +243,13 @@ export default function BillingSettingsPage() {
   }, [accessToken])
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
     }
     fetchBillingData()
-  }, [isAuthenticated, router, fetchBillingData])
+  }, [isHydrated, isAuthenticated, router, fetchBillingData])
 
   const handleCancelSubscription = async () => {
     if (!accessToken || !state.subscription) return
@@ -278,7 +279,7 @@ export default function BillingSettingsPage() {
   }
 
   // ── Auth guard ──────────────────────────────────────────
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   // ── Loading ─────────────────────────────────────────────
   if (state.loading) return <BillingPageSkeleton />

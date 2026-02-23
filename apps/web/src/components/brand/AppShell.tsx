@@ -78,13 +78,29 @@ export function AppShell({ children }: AppShellProps) {
     { label: 'Clientes', href: '/admin/clients', icon: Building2 },
   ]
 
-  // Role-specific navigation
+  // Role-specific navigation (order matters: most specific role first)
   const getRoleNav = () => {
-    if (isCandidate()) {
+    if (isAdmin()) {
       return [
-        { label: 'Explorar Puestos', href: '/candidate/jobs', icon: Search },
-        { label: 'Mis Aplicaciones', href: '/candidate/applications', icon: ClipboardList },
-        { label: 'Mi Perfil', href: '/candidate/profile', icon: User },
+        { label: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
+        { label: 'Trabajos', href: '/employer/jobs', icon: Briefcase },
+        { label: 'Clientes', href: '/admin/clients', icon: Building2 },
+        { label: 'Rúbricas', href: '/admin/rubrics', icon: Settings },
+        { label: 'Entrevistas', href: '/admin/interviews', icon: MessageSquare },
+        { label: 'KPIs', href: '/admin/kpis', icon: BarChart3 },
+        { label: 'Placements', href: '/admin/placements', icon: FileText },
+      ]
+    }
+
+    if (isRecruiter()) {
+      return [
+        { label: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
+        { label: 'Trabajos', href: '/employer/jobs', icon: Briefcase },
+        { label: 'Clientes', href: '/admin/clients', icon: Building2 },
+        { label: 'Rúbricas', href: '/admin/rubrics', icon: Settings },
+        { label: 'Entrevistas', href: '/admin/interviews', icon: MessageSquare },
+        { label: 'KPIs', href: '/admin/kpis', icon: BarChart3 },
+        { label: 'Placements', href: '/admin/placements', icon: FileText },
       ]
     }
 
@@ -98,15 +114,11 @@ export function AppShell({ children }: AppShellProps) {
       ]
     }
 
-    if (isRecruiter() || isAdmin()) {
+    if (isCandidate()) {
       return [
-        { label: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
-        { label: 'Trabajos', href: '/employer/jobs', icon: Briefcase },
-        { label: 'Clientes', href: '/admin/clients', icon: Building2 },
-        { label: 'Rúbricas', href: '/admin/rubrics', icon: Settings },
-        { label: 'Entrevistas', href: '/admin/interviews', icon: MessageSquare },
-        { label: 'KPIs', href: '/admin/kpis', icon: BarChart3 },
-        { label: 'Placements', href: '/admin/placements', icon: FileText },
+        { label: 'Explorar Puestos', href: '/candidate/jobs', icon: Search },
+        { label: 'Mis Aplicaciones', href: '/candidate/applications', icon: ClipboardList },
+        { label: 'Mi Perfil', href: '/candidate/profile', icon: User },
       ]
     }
 

@@ -195,7 +195,7 @@ export default function EOREmployeeDetailPage() {
   const router = useRouter()
   const params = useParams()
   const employeeId = params.id as string
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
 
   const [employee, setEmployee] = useState<EOREmployeeDetail | null>(null)
   const [payslips, setPayslips] = useState<EORPayslip[]>([])
@@ -206,10 +206,11 @@ export default function EOREmployeeDetailPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) router.push('/login')
     else if (!isEmployer()) router.push('/dashboard')
     else loadEmployee()
-  }, [isAuthenticated, accessToken, employeeId])
+  }, [isHydrated, isAuthenticated, accessToken, employeeId])
 
   const loadEmployee = useCallback(async () => {
     if (!accessToken || !employeeId) return
@@ -251,7 +252,7 @@ export default function EOREmployeeDetailPage() {
     if (activeTab === 'vacation') loadVacations()
   }, [activeTab, loadPayslips, loadVacations])
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (

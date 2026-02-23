@@ -99,12 +99,18 @@ export default function LandingPage() {
                   Iniciar sesion
                 </Button>
               </Link>
+              <Link href="/register">
+                <Button size="sm" className="bg-bloque-gold500 text-bloque-navy900 hover:bg-bloque-gold500/90">
+                  Registrarse
+                </Button>
+              </Link>
             </div>
 
             {/* Mobile menu button */}
             <button
               className="md:hidden p-2"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              aria-label="Abrir menú"
             >
               {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             </button>
@@ -132,6 +138,11 @@ export default function LandingPage() {
                   Iniciar sesion
                 </Button>
               </Link>
+              <Link href="/register">
+                <Button size="sm" className="w-full bg-bloque-gold500 text-bloque-navy900 hover:bg-bloque-gold500/90">
+                  Registrarse
+                </Button>
+              </Link>
             </div>
           </div>
         )}
@@ -156,9 +167,9 @@ export default function LandingPage() {
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </a>
-              <Link href="/login">
+              <Link href="/register">
                 <Button size="lg" variant="outline" className="border-white text-white hover:bg-white/10 w-full sm:w-auto">
-                  Iniciar sesion
+                  Comenzar gratis
                 </Button>
               </Link>
             </div>

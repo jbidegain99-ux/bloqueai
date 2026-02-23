@@ -107,7 +107,7 @@ const SALARY_PERIODS = [
 
 export default function PlacementsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [placements, setPlacements] = useState<Placement[]>([])
   const [loading, setLoading] = useState(true)
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null)
@@ -145,6 +145,7 @@ export default function PlacementsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -157,7 +158,7 @@ export default function PlacementsPage() {
 
     loadPlacements()
     loadReport()
-  }, [isAuthenticated, accessToken, router, page])
+  }, [isHydrated, isAuthenticated, accessToken, router, page])
 
   const loadPlacements = async (currentFilters?: Filters) => {
     if (!accessToken) return
@@ -361,7 +362,7 @@ export default function PlacementsPage() {
     )
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   return (
     <AppShell>

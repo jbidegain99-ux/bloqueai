@@ -69,7 +69,7 @@ export default function ApplyPage() {
   const params = useParams()
   const jobId = params.jobId as string
 
-  const { isAuthenticated, accessToken } = useAuthStore()
+  const { isAuthenticated, isHydrated, accessToken } = useAuthStore()
   const [job, setJob] = useState<Job | null>(null)
   const [application, setApplication] = useState<Application | null>(null)
   const [step, setStep] = useState<ApplyStep>('pre-upload')
@@ -84,10 +84,11 @@ export default function ApplyPage() {
 
   // Redirect if not authenticated
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push(`/login?redirect=/candidate/apply/${jobId}`)
     }
-  }, [isAuthenticated, router, jobId])
+  }, [isAuthenticated, isHydrated, router, jobId])
 
   // Load job info and create/get application
   useEffect(() => {
@@ -254,7 +255,7 @@ export default function ApplyPage() {
   const canProceedToInterview = application?.status === 'MATCH_PASSED' ||
     (application?.match_score !== null && application?.match_score !== undefined && application.match_score >= matchThreshold)
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (

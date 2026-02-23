@@ -44,17 +44,18 @@ function InfoRow({
 
 export default function EmployeeProfilePage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated, user } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated, user } = useAuthStore()
   const [employee, setEmployee] = useState<EOREmployeeDetail | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
     }
     loadData()
-  }, [isAuthenticated, accessToken])
+  }, [isHydrated, isAuthenticated, accessToken])
 
   const loadData = async () => {
     if (!accessToken || !user) return
@@ -69,7 +70,7 @@ export default function EmployeeProfilePage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (

@@ -47,7 +47,7 @@ export default function InterviewSessionPage() {
   const params = useParams()
   const sessionId = params.sessionId as string
 
-  const { isAuthenticated, accessToken } = useAuthStore()
+  const { isAuthenticated, isHydrated, accessToken } = useAuthStore()
   const [session, setSession] = useState<InterviewSession | null>(null)
   const [messages, setMessages] = useState<InterviewMessage[]>([])
   const [inputValue, setInputValue] = useState('')
@@ -68,10 +68,11 @@ export default function InterviewSessionPage() {
 
   // Redirect if not authenticated
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
     }
-  }, [isAuthenticated, router])
+  }, [isAuthenticated, isHydrated, router])
 
   // Load session
   useEffect(() => {
@@ -167,7 +168,7 @@ export default function InterviewSessionPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (

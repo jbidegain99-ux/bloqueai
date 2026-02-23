@@ -55,7 +55,7 @@ export default function PayrollRunDetailPage() {
   const router = useRouter()
   const params = useParams()
   const runId = params.id as string
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [run, setRun] = useState<RunDetail | null>(null)
   const [lines, setLines] = useState<LineItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,10 +64,11 @@ export default function PayrollRunDetailPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) { router.push('/login'); return }
     if (!isRecruiter()) { router.push('/dashboard'); return }
     loadRunDetail()
-  }, [isAuthenticated, accessToken, router, runId])
+  }, [isHydrated, isAuthenticated, accessToken, router, runId])
 
   const loadRunDetail = async () => {
     if (!accessToken || !runId) return

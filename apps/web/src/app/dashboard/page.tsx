@@ -682,13 +682,14 @@ function AdminDashboard() {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { user, isAuthenticated } = useAuthStore()
+  const { user, isAuthenticated, isHydrated } = useAuthStore()
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
     }
-  }, [isAuthenticated, router])
+  }, [isHydrated, isAuthenticated, router])
 
   if (!isAuthenticated || !user) {
     return null

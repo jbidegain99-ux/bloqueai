@@ -25,7 +25,7 @@ interface SystemSetting {
 
 export default function SettingsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [settings, setSettings] = useState<SystemSetting[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
@@ -33,6 +33,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -44,7 +45,7 @@ export default function SettingsPage() {
     }
 
     loadSettings()
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadSettings = async () => {
     if (!accessToken) return
@@ -147,7 +148,7 @@ export default function SettingsPage() {
     upload: 'Carga de Archivos',
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (

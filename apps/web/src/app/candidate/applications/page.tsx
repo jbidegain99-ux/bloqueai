@@ -125,7 +125,7 @@ function getActionLabel(status: string): string {
 
 export default function ApplicationsPage() {
   const router = useRouter()
-  const { isAuthenticated, accessToken } = useAuthStore()
+  const { isAuthenticated, isHydrated, accessToken } = useAuthStore()
   const [applications, setApplications] = useState<Application[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -133,10 +133,11 @@ export default function ApplicationsPage() {
 
   // Redirect if not authenticated
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
     }
-  }, [isAuthenticated, router])
+  }, [isAuthenticated, isHydrated, router])
 
   // Load applications
   useEffect(() => {
@@ -193,7 +194,7 @@ export default function ApplicationsPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   const activeApps = applications.filter(a => !['WITHDRAWN', 'REJECTED', 'COMPLETED'].includes(a.status))
   const completedApps = applications.filter(a => ['WITHDRAWN', 'REJECTED', 'COMPLETED'].includes(a.status))

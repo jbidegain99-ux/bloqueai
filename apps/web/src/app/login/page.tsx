@@ -148,6 +148,7 @@ export default function LoginPage() {
               <form onSubmit={handleSubmit} className="space-y-4" noValidate>
                 {error && (
                   <motion.div
+                    role="alert"
                     initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="bg-error-50 text-error-600 p-3 rounded-lg text-sm border border-error-500/20"

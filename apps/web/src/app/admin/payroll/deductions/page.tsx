@@ -35,7 +35,7 @@ interface ClientOption {
 
 export default function PayrollDeductionsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [deductions, setDeductions] = useState<DeductionType[]>([])
   const [clients, setClients] = useState<ClientOption[]>([])
   const [selectedClient, setSelectedClient] = useState('')
@@ -47,10 +47,11 @@ export default function PayrollDeductionsPage() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) { router.push('/login'); return }
     if (!isRecruiter()) { router.push('/dashboard'); return }
     loadClients()
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadClients = async () => {
     if (!accessToken) return

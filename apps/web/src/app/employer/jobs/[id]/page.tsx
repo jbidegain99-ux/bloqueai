@@ -33,7 +33,7 @@ export default function JobDetailPage() {
   const router = useRouter()
   const params = useParams()
   const jobId = params.id as string
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [job, setJob] = useState<any>(null)
   const [shortlist, setShortlist] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -43,13 +43,14 @@ export default function JobDetailPage() {
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
     }
 
     loadData()
-  }, [isAuthenticated, accessToken, jobId, router])
+  }, [isHydrated, isAuthenticated, accessToken, jobId, router])
 
   const loadData = async () => {
     if (!accessToken || !jobId) return
@@ -126,7 +127,7 @@ export default function JobDetailPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (

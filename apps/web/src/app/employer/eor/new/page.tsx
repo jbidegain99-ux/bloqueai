@@ -159,7 +159,7 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
 
 export default function NewEOREmployeePage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<FormData>(INITIAL_FORM)
   const [errors, setErrors] = useState<FormErrors>({})
@@ -167,9 +167,10 @@ export default function NewEOREmployeePage() {
   const [apiError, setApiError] = useState('')
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) router.push('/login')
     else if (!isEmployer()) router.push('/dashboard')
-  }, [isAuthenticated, router])
+  }, [isHydrated, isAuthenticated, router])
 
   const update = (field: keyof FormData, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -270,7 +271,7 @@ export default function NewEOREmployeePage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   return (
     <AppShell>

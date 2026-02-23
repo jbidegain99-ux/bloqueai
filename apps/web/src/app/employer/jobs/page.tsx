@@ -14,11 +14,12 @@ import { Plus, Users, MapPin, DollarSign, Clock, ChevronRight } from 'lucide-rea
 
 export default function JobsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -30,7 +31,7 @@ export default function JobsPage() {
     }
 
     loadJobs()
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadJobs = async () => {
     if (!accessToken) return
@@ -59,7 +60,7 @@ export default function JobsPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   return (
     <AppShell>

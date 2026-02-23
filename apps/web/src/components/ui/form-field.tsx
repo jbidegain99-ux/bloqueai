@@ -25,6 +25,7 @@ export function FormField({ label, error, hint, required, className, children }:
         {error ? (
           <motion.p
             key="error"
+            role="alert"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
