@@ -31,6 +31,7 @@ export const ROUTES = {
     eor: '/employer/eor',
     eorNew: '/employer/eor/new',
     billing: '/employer/settings/billing',
+    jobMatches: (jobId: string) => `/employer/jobs/${jobId}/matches`,
   },
   candidate: {
     dashboard: '/dashboard',
@@ -39,6 +40,7 @@ export const ROUTES = {
     applications: '/candidate/applications',
     resume: '/candidate/resume',
     cvBuilder: '/candidate/cv-builder',
+    recommended: '/candidate/recommended',
   },
   admin: {
     dashboard: '/admin/dashboard',
