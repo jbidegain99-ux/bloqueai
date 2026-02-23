@@ -44,6 +44,7 @@ from app.models.billing import (
     SubscriptionStatus,
     InvoiceStatus,
 )
+from app.models.match import CandidateJobMatch, MatchStatus
 
 __all__ = [
     "User",
@@ -103,4 +104,6 @@ __all__ = [
     "PlanTier",
     "SubscriptionStatus",
     "InvoiceStatus",
+    "CandidateJobMatch",
+    "MatchStatus",
 ]
