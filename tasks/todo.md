@@ -1495,3 +1495,189 @@ contract generator, API endpoints, and full UI for employers and employees.
 
 ### Ready For
 - Prompt 25: Matching engine using vector similarity search
+
+---
+
+## Matching Engine — Prompt 25 (2026-02-23)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Goal:** Build candidate-job matching engine using pgvector cosine similarity
+
+### T25.1: CandidateJobMatch Model ✅
+**Status:** DONE
+- [x] `apps/api/app/models/match.py` — Model with MatchStatus enum
+  - UUID PK via BaseModel, cascade deletes
+  - `candidate_id` FK → candidates.id, `job_id` FK → jobs.id
+  - `overall_score`, `semantic_score`, `skills_score` (Float)
+  - `status` String (pending/reviewed/shortlisted/rejected/applied/hired)
+  - `match_metadata` JSONB, `recruiter_notes` Text
+  - UniqueConstraint on (candidate_id, job_id)
+  - Performance indexes on (job_id, overall_score) and (candidate_id, overall_score)
+
+### T25.2: Migration 016 ✅
+**Status:** DONE
+- [x] `apps/api/alembic/versions/016_add_matches_table.py`
+  - Creates `candidate_job_matches` table
+  - Unique index on (candidate_id, job_id)
+  - Score-based indexes for sorted queries
+
+### T25.3: MatchingService ✅
+**Status:** DONE
+- [x] `apps/api/app/services/matching_service.py`
+  - Scoring weights: 60% semantic, 25% skills, 15% other
+  - `find_candidates_for_job()` — pgvector cosine distance via raw SQL
+  - `find_jobs_for_candidate()` — filters ACTIVE jobs, supports modality filter
+  - `calculate_match_score()` — direct cosine similarity between two embeddings
+  - `_calculate_skills_score()` — case-insensitive set intersection
+  - MIN_COSINE_SIMILARITY = 0.3 threshold
+  - JOINs `users` table for `full_name`
+
+### T25.4: API Router ✅
+**Status:** DONE
+- [x] `apps/api/app/routers/matching.py` — 7 endpoints under `/matching`:
+  1. `GET /candidates-for-job/{job_id}` — Find matching candidates
+  2. `GET /jobs-for-candidate/{candidate_id}` — Find matching jobs
+  3. `GET /score/{candidate_id}/{job_id}` — Specific match score
+  4. `POST /save` — Save match to DB
+  5. `PATCH /status/{match_id}` — Update status + notes
+  6. `GET /job/{job_id}/matches` — Saved matches for a job
+  7. `GET /candidate/{candidate_id}/matches` — Saved matches for a candidate
+
+### T25.5: Unit Tests ✅
+**Status:** DONE
+- [x] `apps/api/tests/test_matching_service.py` — 16 tests:
+  - Skills score: full, partial, no match, case insensitive, no requirements
+  - Score normalization and weight validation
+  - Edge cases for empty inputs
+
+### Production Fix: ensure_embedding_columns() ✅
+- [x] Added startup function in `main.py` that auto-creates missing embedding columns
+  - Inspects DB schema via `sqlalchemy.inspect()`
+  - Creates columns via raw SQL if missing (production DB didn't have migrations 014/015)
+  - Also ensures `candidate_job_matches` table exists
+- [x] Added `load_only()` in `public.py` to exclude Vector columns from queries
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `apps/api/app/models/match.py` | CandidateJobMatch model + MatchStatus enum |
+| `apps/api/alembic/versions/016_add_matches_table.py` | Migration |
+| `apps/api/app/services/matching_service.py` | Core matching engine |
+| `apps/api/app/routers/matching.py` | 7 API endpoints |
+| `apps/api/tests/test_matching_service.py` | 16 unit tests |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `apps/api/app/models/__init__.py` | Export CandidateJobMatch, MatchStatus |
+| `apps/api/app/routers/__init__.py` | Register matching_router |
+| `apps/api/app/main.py` | Include matching_router + ensure_embedding_columns() |
+| `apps/api/app/routers/public.py` | load_only() to exclude vector columns |
+| `apps/web/next.config.js` | Added rewrites() for API proxy |
+
+### Ready For
+- Prompt 26: Matching UI
+
+---
+
+## Matching UI — Prompt 26 (2026-02-23)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Goal:** Create frontend UI for candidate-job matching (employer matches + candidate recommendations)
+
+### T26.1: Match Score Badge ✅
+**Status:** DONE
+- [x] `apps/web/src/components/matching/match-score-badge.tsx`
+  - Color coding: green ≥85%, blue ≥70%, amber ≥50%, gray <50%
+  - Labels: Excelente, Muy bueno, Bueno, Regular
+  - Size variants: sm, md, lg
+  - `data-testid="match-score-badge"` for E2E testing
+
+### T26.2: Candidate Match Card ✅
+**Status:** DONE
+- [x] `apps/web/src/components/matching/candidate-match-card.tsx`
+  - Avatar with initials, name, score badge
+  - Matched skills (up to 4 + overflow count)
+  - Missing skills with red badges
+  - Semantic + Skills score breakdown
+  - Status badge (shortlisted/rejected)
+  - Hover actions: shortlist (+), reject (X), view profile (>)
+  - Opacity-60 for rejected candidates
+
+### T26.3: Job Match Card ✅
+**Status:** DONE
+- [x] `apps/web/src/components/matching/job-match-card.tsx`
+  - Company icon, job title, score badge
+  - Modality badge (Remoto/Hibrido/Presencial)
+  - Salary range formatting
+  - Matched skills display
+  - Score breakdown (semantic + skills)
+  - Apply button with stopPropagation
+
+### T26.4: Employer Matches Page ✅
+**Status:** DONE
+- [x] `apps/web/src/app/employer/jobs/[id]/matches/page.tsx`
+  - Stats cards: Total matches, Shortlisted, Rejected
+  - Score filter dropdown (Todos, 50%+, 70%+, 85%+)
+  - Tabs: Todos, Shortlist, Rechazados
+  - Shortlist/Reject mutations with toast feedback
+  - Loading skeletons, empty states
+  - Auth guard with hydration check
+
+### T26.5: Candidate Recommended Jobs Page ✅
+**Status:** DONE
+- [x] `apps/web/src/app/candidate/recommended/page.tsx`
+  - Fetches candidate profile first to get candidateId
+  - Remote-only toggle (Switch component)
+  - Min score filter dropdown
+  - Refresh button
+  - Loading skeletons, empty state with "Completar perfil" CTA
+  - Auth guard with hydration check
+
+### T26.6: Matching API Client ✅
+**Status:** DONE
+- [x] Added to `apps/web/src/lib/api.ts`:
+  - `MatchResult` and `SavedMatch` interfaces
+  - `matchingApi` namespace with 7 methods:
+    - `getCandidatesForJob()`, `getJobsForCandidate()`
+    - `getMatchScore()`, `saveMatch()`, `updateMatchStatus()`
+    - `getMatchesForJob()`, `getMatchesForCandidate()`
+
+### T26.7: Navigation Integration ✅
+**Status:** DONE
+- [x] Added "Recomendados" link with Sparkles icon to candidate nav in AppShell
+- [x] Added "Candidatos IA" button to employer job detail page → `/employer/jobs/${jobId}/matches`
+
+### T26.8: Switch Component ✅
+**Status:** DONE
+- [x] `apps/web/src/components/ui/switch.tsx` — Created (was missing from component library)
+  - Role="switch", aria-checked, keyboard accessible
+  - bloque-navy900 active color
+
+### Verification ✅
+- [x] `npm run build` — 0 TypeScript errors, all pages compile
+- [x] `/candidate/recommended` and `/employer/jobs/[id]/matches` included in build output
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `apps/web/src/components/matching/match-score-badge.tsx` | Score badge with color coding |
+| `apps/web/src/components/matching/candidate-match-card.tsx` | Candidate card for employer view |
+| `apps/web/src/components/matching/job-match-card.tsx` | Job card for candidate view |
+| `apps/web/src/app/employer/jobs/[id]/matches/page.tsx` | Employer matches page |
+| `apps/web/src/app/candidate/recommended/page.tsx` | Candidate recommended jobs page |
+| `apps/web/src/components/ui/switch.tsx` | Switch toggle component |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `apps/web/src/lib/api.ts` | matchingApi + MatchResult/SavedMatch types |
+| `apps/web/src/components/brand/AppShell.tsx` | Sparkles import + "Recomendados" nav item |
+| `apps/web/src/app/employer/jobs/[id]/page.tsx` | "Candidatos IA" button |
+
+### Ready For
+- Prompt 27: Video Interviews setup
