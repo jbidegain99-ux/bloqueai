@@ -115,7 +115,7 @@ class InterviewAnalysisResponse(BaseModel):
 # ============== Endpoints ==============
 
 
-@router.post("/", response_model=InterviewCreateResponse)
+@router.post("", response_model=InterviewCreateResponse)
 async def create_interview(
     request: InterviewCreateRequest,
     background_tasks: BackgroundTasks,
@@ -383,7 +383,7 @@ async def get_interview_status(
     )
 
 
-@router.get("/")
+@router.get("")
 async def list_interviews(
     status: Optional[str] = None,
     db: Session = Depends(get_db),
