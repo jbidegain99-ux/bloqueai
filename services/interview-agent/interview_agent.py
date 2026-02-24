@@ -3,7 +3,7 @@ Pipecat-based AI Interview Agent.
 
 Conducts live video interviews with candidates using voice:
 1. Listens to candidate audio via Deepgram STT
-2. Processes conversation with Claude (Anthropic LLM)
+2. Processes conversation with OpenAI LLM
 3. Responds with natural voice via ElevenLabs TTS
 4. Communicates via LiveKit WebRTC transport
 """
@@ -30,7 +30,7 @@ class InterviewAgent:
     AI-powered interview agent that conducts live video interviews.
 
     Uses Pipecat pipeline:
-    Audio In -> Deepgram STT -> Claude LLM -> ElevenLabs TTS -> Audio Out
+    Audio In -> Deepgram STT -> LLM Context -> OpenAI LLM -> ElevenLabs TTS -> Audio Out
     """
 
     def __init__(
@@ -116,10 +116,16 @@ When you've asked all questions, thank the candidate and end the interview natur
         # --- Import pipecat modules ---
         try:
             logger.info("agent_importing_pipecat")
-            from pipecat.frames.frames import LLMMessagesFrame
+            from pipecat.audio.vad.silero import SileroVADAnalyzer
+            from pipecat.frames.frames import TTSSpeakFrame
             from pipecat.pipeline.pipeline import Pipeline
             from pipecat.pipeline.runner import PipelineRunner
             from pipecat.pipeline.task import PipelineParams, PipelineTask
+            from pipecat.processors.aggregators.llm_context import LLMContext
+            from pipecat.processors.aggregators.llm_response_universal import (
+                LLMContextAggregatorPair,
+                LLMUserAggregatorParams,
+            )
             from pipecat.services.deepgram.stt import DeepgramSTTService
             from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
             from pipecat.services.openai.llm import OpenAILLMService
@@ -223,7 +229,22 @@ When you've asked all questions, thank the candidate and end the interview natur
             )
             raise
 
+        # --- Build LLM context with system prompt ---
+        messages = [
+            {"role": "system", "content": self._build_system_prompt()},
+        ]
+        context = LLMContext(messages)
+
+        # Context aggregators: wire STT text into LLM context, capture LLM output
+        context_aggregator = LLMContextAggregatorPair(
+            context,
+            user_params=LLMUserAggregatorParams(
+                vad_analyzer=SileroVADAnalyzer(),
+            ),
+        )
+
         # --- Build pipeline ---
+        # Order: input → STT → user_aggregator → LLM → TTS → output → assistant_aggregator
         logger.info("agent_building_pipeline")
 
         try:
@@ -231,9 +252,11 @@ When you've asked all questions, thank the candidate and end the interview natur
                 [
                     transport.input(),
                     stt,
+                    context_aggregator.user(),
                     llm,
                     tts,
                     transport.output(),
+                    context_aggregator.assistant(),
                 ]
             )
             logger.info("agent_pipeline_built")
@@ -247,27 +270,27 @@ When you've asked all questions, thank the candidate and end the interview natur
             )
             raise
 
-        # --- Set initial context ---
-        messages = [
-            {"role": "system", "content": self._build_system_prompt()},
-            {
-                "role": "assistant",
-                "content": (
-                    f"Hola {self.candidate_name}! Soy tu entrevistador "
-                    f"virtual de TalentOS. Gracias por tomarte el tiempo "
-                    f"para esta entrevista para el puesto de {self.job_title}. "
-                    f"Estas listo para comenzar?"
-                ),
-            },
-        ]
-
         task = PipelineTask(
             pipeline,
             params=PipelineParams(allow_interruptions=True),
         )
 
-        # Start with greeting
-        await task.queue_frame(LLMMessagesFrame(messages))
+        # --- Greeting: speak when first participant joins ---
+        greeting = (
+            f"Hola {self.candidate_name}! Soy tu entrevistador "
+            f"virtual de TalentOS. Gracias por tomarte el tiempo "
+            f"para esta entrevista para el puesto de {self.job_title}. "
+            f"Estas listo para comenzar?"
+        )
+
+        @transport.event_handler("on_first_participant_joined")
+        async def on_first_participant_joined(transport_obj, participant_id):
+            logger.info(
+                "agent_participant_joined",
+                participant_id=participant_id,
+                room=self.room_name,
+            )
+            await task.queue_frame(TTSSpeakFrame(greeting))
 
         logger.info(
             "agent_pipeline_running",
