@@ -106,6 +106,7 @@ async def create_job(
         responsibilities=request.responsibilities,
         benefits=request.benefits,
         custom_questions=request.custom_questions,
+        interview_type=request.interview_type,
         rubric_id=request.rubric_id,
         status=JobStatus.DRAFT,
     )
