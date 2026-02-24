@@ -414,12 +414,17 @@ async def start_video_interview(
             detail="Este puesto no esta configurado para video entrevistas",
         )
 
-    # Look up candidate's application
+    # Look up candidate's active application (exclude withdrawn/rejected, newest first)
     candidate = get_or_create_candidate(db, current_user)
     application = (
         db.query(Application)
         .filter(Application.candidate_id == candidate.id)
         .filter(Application.job_id == body.job_id)
+        .filter(Application.status.notin_([
+            ApplicationStatus.WITHDRAWN,
+            ApplicationStatus.REJECTED,
+        ]))
+        .order_by(Application.created_at.desc())
         .first()
     )
 
@@ -429,7 +434,10 @@ async def start_video_interview(
             detail="No se encontro tu aplicacion para este puesto",
         )
 
-    if application.status != ApplicationStatus.MATCH_PASSED:
+    if application.status not in [
+        ApplicationStatus.MATCH_PASSED,
+        ApplicationStatus.INTERVIEW_STARTED,
+    ]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Tu aplicacion no esta en estado valido para iniciar entrevista",
