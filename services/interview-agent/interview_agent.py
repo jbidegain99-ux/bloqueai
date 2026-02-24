@@ -217,6 +217,7 @@ When you've asked all questions, thank the candidate and end the interview natur
             tts = ElevenLabsTTSService(
                 api_key=settings.elevenlabs_api_key,
                 voice_id=settings.elevenlabs_voice_id,
+                sample_rate=24000,
             )
             logger.info("agent_elevenlabs_ok", has_key=bool(settings.elevenlabs_api_key))
         except Exception as e:
