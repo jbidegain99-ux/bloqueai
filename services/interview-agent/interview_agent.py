@@ -176,7 +176,9 @@ When you've asked all questions, thank the candidate and end the interview natur
                 room_name=self.room_name,
                 params=LiveKitParams(
                     audio_in_enabled=True,
+                    audio_in_sample_rate=16000,
                     audio_out_enabled=True,
+                    audio_out_sample_rate=24000,
                 ),
             )
             logger.info("agent_livekit_transport_created")
