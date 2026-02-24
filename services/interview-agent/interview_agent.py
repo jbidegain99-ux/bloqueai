@@ -9,12 +9,20 @@ Conducts live video interviews with candidates using voice:
 """
 
 import asyncio
+import traceback
 import structlog
 from typing import Optional, List, Dict
 
 from config import settings
 
 logger = structlog.get_logger()
+
+# Verify pipecat is importable at module load time
+try:
+    import pipecat  # noqa: F401
+    logger.info("pipecat_available", version=getattr(pipecat, "__version__", "unknown"))
+except ImportError as e:
+    logger.error("pipecat_not_installed", error=str(e))
 
 
 class InterviewAgent:
@@ -98,7 +106,16 @@ When you've asked all questions, thank the candidate and end the interview natur
         Returns:
             Dict with transcript, questions_asked, and status
         """
+        logger.info(
+            "agent_run_starting",
+            room=self.room_name,
+            candidate=self.candidate_name,
+            job_title=self.job_title,
+        )
+
+        # --- Import pipecat modules ---
         try:
+            logger.info("agent_importing_pipecat")
             from pipecat.frames.frames import LLMMessagesFrame
             from pipecat.pipeline.pipeline import Pipeline
             from pipecat.pipeline.task import PipelineTask
@@ -106,55 +123,101 @@ When you've asked all questions, thank the candidate and end the interview natur
             from pipecat.services.elevenlabs import ElevenLabsTTSService
             from pipecat.services.anthropic import AnthropicLLMService
             from pipecat.transports.services.livekit import LiveKitTransport
+            logger.info("agent_pipecat_imported_ok")
         except ImportError as e:
+            tb = traceback.format_exc()
             logger.error(
                 "pipecat_import_error",
                 error=str(e),
-                message="Pipecat packages not installed. Install with: "
-                "pip install pipecat-ai[livekit,deepgram,anthropic,elevenlabs]",
+                traceback=tb,
             )
             raise RuntimeError(f"Pipecat not installed: {e}") from e
 
-        # Initialize transport
-        transport = LiveKitTransport(
-            url=settings.livekit_url,
-            api_key=settings.livekit_api_key,
-            api_secret=settings.livekit_api_secret,
-            room_name=self.room_name,
-            participant_identity="ai-interviewer",
-            participant_name="AI Interviewer",
+        # --- Initialize LiveKit transport ---
+        logger.info(
+            "agent_connecting_livekit",
+            room=self.room_name,
+            livekit_url=settings.livekit_url,
+            has_api_key=bool(settings.livekit_api_key),
+            has_api_secret=bool(settings.livekit_api_secret),
         )
 
-        # Initialize STT (Speech-to-Text)
-        stt = DeepgramSTTService(
-            api_key=settings.deepgram_api_key,
-            language="es",  # Spanish for LATAM
-        )
+        try:
+            transport = LiveKitTransport(
+                url=settings.livekit_url,
+                api_key=settings.livekit_api_key,
+                api_secret=settings.livekit_api_secret,
+                room_name=self.room_name,
+                participant_identity="ai-interviewer",
+                participant_name="AI Interviewer",
+            )
+            logger.info("agent_livekit_transport_created")
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.error(
+                "agent_livekit_transport_error",
+                error=str(e),
+                error_type=type(e).__name__,
+                traceback=tb,
+            )
+            raise
 
-        # Initialize LLM
-        llm = AnthropicLLMService(
-            api_key=settings.llm_api_key,
-            model="claude-sonnet-4-20250514",
-        )
+        # --- Initialize services ---
+        logger.info("agent_initializing_services")
 
-        # Initialize TTS (Text-to-Speech)
-        tts = ElevenLabsTTSService(
-            api_key=settings.elevenlabs_api_key,
-            voice_id=settings.elevenlabs_voice_id,
-        )
+        try:
+            stt = DeepgramSTTService(
+                api_key=settings.deepgram_api_key,
+                language="es",  # Spanish for LATAM
+            )
+            logger.info("agent_deepgram_ok", has_key=bool(settings.deepgram_api_key))
 
-        # Build pipeline: Audio In -> STT -> LLM -> TTS -> Audio Out
-        pipeline = Pipeline(
-            [
-                transport.input(),  # Receive audio from candidate
-                stt,  # Speech to text
-                llm,  # Claude processes and responds
-                tts,  # Text to speech
-                transport.output(),  # Send audio back to candidate
-            ]
-        )
+            llm = AnthropicLLMService(
+                api_key=settings.llm_api_key,
+                model="claude-sonnet-4-20250514",
+            )
+            logger.info("agent_anthropic_ok", has_key=bool(settings.llm_api_key))
 
-        # Set initial context with greeting
+            tts = ElevenLabsTTSService(
+                api_key=settings.elevenlabs_api_key,
+                voice_id=settings.elevenlabs_voice_id,
+            )
+            logger.info("agent_elevenlabs_ok", has_key=bool(settings.elevenlabs_api_key))
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.error(
+                "agent_service_init_error",
+                error=str(e),
+                error_type=type(e).__name__,
+                traceback=tb,
+            )
+            raise
+
+        # --- Build pipeline ---
+        logger.info("agent_building_pipeline")
+
+        try:
+            pipeline = Pipeline(
+                [
+                    transport.input(),
+                    stt,
+                    llm,
+                    tts,
+                    transport.output(),
+                ]
+            )
+            logger.info("agent_pipeline_built")
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.error(
+                "agent_pipeline_build_error",
+                error=str(e),
+                error_type=type(e).__name__,
+                traceback=tb,
+            )
+            raise
+
+        # --- Set initial context ---
         messages = [
             {"role": "system", "content": self._build_system_prompt()},
             {
@@ -174,17 +237,28 @@ When you've asked all questions, thank the candidate and end the interview natur
         await task.queue_frame(LLMMessagesFrame(messages))
 
         logger.info(
-            "interview_agent_started",
+            "agent_pipeline_running",
             room=self.room_name,
             job_title=self.job_title,
             candidate=self.candidate_name,
         )
 
-        # Run until interview complete
-        await task.run()
+        # --- Run until interview complete ---
+        try:
+            await task.run()
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.error(
+                "agent_pipeline_run_error",
+                room=self.room_name,
+                error=str(e),
+                error_type=type(e).__name__,
+                traceback=tb,
+            )
+            raise
 
         logger.info(
-            "interview_agent_completed",
+            "agent_pipeline_finished",
             room=self.room_name,
             questions_asked=self.questions_asked,
         )

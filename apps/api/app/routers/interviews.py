@@ -339,8 +339,13 @@ async def start_interview(
         room_name=interview.room_name,
     )
 
+    # Fire-and-forget: use a short read timeout.
+    # Cloud Run /start blocks for the full interview (10-30 min) to keep
+    # CPU allocated. A ReadTimeout here means the connection was accepted
+    # and the agent is running — that's the expected happy path.
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        timeout = httpx.Timeout(connect=10.0, read=5.0, write=10.0, pool=10.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(
                 agent_url,
                 json=agent_payload,
@@ -348,11 +353,19 @@ async def start_interview(
             )
             resp.raise_for_status()
 
+        # If we get a response, the agent finished very quickly (or errored)
         logger.info(
-            "agent_service_dispatched",
+            "agent_service_responded",
             interview_id=str(interview.id),
             status_code=resp.status_code,
             response=resp.text[:200],
+        )
+    except httpx.ReadTimeout:
+        # Expected — agent is running, Cloud Run keeps request open
+        logger.info(
+            "agent_service_dispatched",
+            interview_id=str(interview.id),
+            message="ReadTimeout as expected — agent is running on Cloud Run",
         )
     except Exception as exc:
         logger.error(
