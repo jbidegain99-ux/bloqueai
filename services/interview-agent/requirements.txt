@@ -5,6 +5,6 @@ pydantic-settings==2.1.0
 httpx==0.26.0
 structlog==24.1.0
 openai>=1.12.0
-pipecat-ai[livekit,deepgram,anthropic,elevenlabs]>=0.0.30
+pipecat-ai[livekit,deepgram,anthropic,elevenlabs]==0.0.103
 livekit>=0.6.0
 livekit-api>=0.6.0
