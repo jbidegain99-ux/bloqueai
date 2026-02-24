@@ -82,6 +82,11 @@ def ensure_embedding_columns():
                 conn.execute(text(
                     "ALTER TABLE jobs ADD COLUMN embedding_updated_at TIMESTAMP NULL"
                 ))
+            if "interview_type" not in job_columns:
+                logger.info("Adding missing interview_type column to jobs table")
+                conn.execute(text(
+                    "ALTER TABLE jobs ADD COLUMN interview_type VARCHAR(10) NOT NULL DEFAULT 'chat'"
+                ))
 
         # Check candidates table
         candidate_columns = {c["name"] for c in inspector.get_columns("candidates")}
