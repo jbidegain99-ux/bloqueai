@@ -1,9 +1,16 @@
 /**
  * LiveKit configuration and utilities for video interviews.
+ *
+ * All API calls go through the Next.js /api proxy to avoid CORS issues.
+ * We hardcode '/api' for client-side because this module is only used
+ * in 'use client' components.
  */
 import { ConnectionState } from 'livekit-client'
 
 export const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || ''
+
+// Always use the /api proxy — this module is only imported by client components
+const API_BASE = '/api'
 
 export interface InterviewRoomInfo {
   token: string
@@ -29,11 +36,7 @@ export async function joinInterviewRoom(
   interviewId: string,
   token: string
 ): Promise<InterviewRoomInfo> {
-  const API_URL = typeof window === 'undefined'
-    ? process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    : '/api'
-
-  const response = await fetch(`${API_URL}/interviews/${interviewId}/join`, {
+  const response = await fetch(`${API_BASE}/interviews/${interviewId}/join`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -56,11 +59,7 @@ export async function startInterviewer(
   interviewId: string,
   token: string
 ): Promise<{ status: string; message: string }> {
-  const API_URL = typeof window === 'undefined'
-    ? process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    : '/api'
-
-  const response = await fetch(`${API_URL}/interviews/${interviewId}/start`, {
+  const response = await fetch(`${API_BASE}/interviews/${interviewId}/start`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -89,11 +88,7 @@ export async function getInterviewStatus(
   transcript_available: boolean
   recording_available: boolean
 }> {
-  const API_URL = typeof window === 'undefined'
-    ? process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    : '/api'
-
-  const response = await fetch(`${API_URL}/interviews/${interviewId}/status`, {
+  const response = await fetch(`${API_BASE}/interviews/${interviewId}/status`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -114,12 +109,8 @@ export async function listVideoInterviews(
   token: string,
   status?: string
 ): Promise<{ items: VideoInterviewItem[]; total: number }> {
-  const API_URL = typeof window === 'undefined'
-    ? process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    : '/api'
-
   const qs = status ? `?status=${status}` : ''
-  const response = await fetch(`${API_URL}/interviews${qs}`, {
+  const response = await fetch(`${API_BASE}/interviews${qs}`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -194,11 +185,7 @@ export async function analyzeInterview(
   interviewId: string,
   token: string
 ): Promise<InterviewAnalysis> {
-  const API_URL = typeof window === 'undefined'
-    ? process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    : '/api'
-
-  const response = await fetch(`${API_URL}/interviews/${interviewId}/analyze`, {
+  const response = await fetch(`${API_BASE}/interviews/${interviewId}/analyze`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -220,11 +207,7 @@ export async function getInterviewResults(
   interviewId: string,
   token: string
 ): Promise<InterviewResults> {
-  const API_URL = typeof window === 'undefined'
-    ? process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-    : '/api'
-
-  const response = await fetch(`${API_URL}/interviews/${interviewId}/results`, {
+  const response = await fetch(`${API_BASE}/interviews/${interviewId}/results`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
