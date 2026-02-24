@@ -118,6 +118,7 @@ When you've asked all questions, thank the candidate and end the interview natur
             logger.info("agent_importing_pipecat")
             from pipecat.frames.frames import LLMMessagesFrame
             from pipecat.pipeline.pipeline import Pipeline
+            from pipecat.pipeline.runner import PipelineRunner
             from pipecat.pipeline.task import PipelineParams, PipelineTask
             from pipecat.services.deepgram.stt import DeepgramSTTService
             from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
@@ -258,7 +259,10 @@ When you've asked all questions, thank the candidate and end the interview natur
             },
         ]
 
-        task = PipelineTask(pipeline)
+        task = PipelineTask(
+            pipeline,
+            params=PipelineParams(allow_interruptions=True),
+        )
 
         # Start with greeting
         await task.queue_frame(LLMMessagesFrame(messages))
@@ -270,9 +274,10 @@ When you've asked all questions, thank the candidate and end the interview natur
             candidate=self.candidate_name,
         )
 
-        # --- Run until interview complete ---
+        # --- Run via PipelineRunner (handles event loop params) ---
+        runner = PipelineRunner()
         try:
-            await task.run()
+            await runner.run(task)
         except Exception as e:
             tb = traceback.format_exc()
             logger.error(
