@@ -118,11 +118,12 @@ When you've asked all questions, thank the candidate and end the interview natur
             logger.info("agent_importing_pipecat")
             from pipecat.frames.frames import LLMMessagesFrame
             from pipecat.pipeline.pipeline import Pipeline
-            from pipecat.pipeline.task import PipelineTask
-            from pipecat.services.deepgram import DeepgramSTTService
-            from pipecat.services.elevenlabs import ElevenLabsTTSService
-            from pipecat.services.anthropic import AnthropicLLMService
-            from pipecat.transports.services.livekit import LiveKitTransport
+            from pipecat.pipeline.task import PipelineParams, PipelineTask
+            from pipecat.services.deepgram.stt import DeepgramSTTService
+            from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
+            from pipecat.services.anthropic.llm import AnthropicLLMService
+            from pipecat.transports.livekit.transport import LiveKitParams, LiveKitTransport
+            from livekit import api as livekit_api
             logger.info("agent_pipecat_imported_ok")
         except ImportError as e:
             tb = traceback.format_exc()
@@ -133,9 +134,9 @@ When you've asked all questions, thank the candidate and end the interview natur
             )
             raise RuntimeError(f"Pipecat not installed: {e}") from e
 
-        # --- Initialize LiveKit transport ---
+        # --- Generate LiveKit token for the agent ---
         logger.info(
-            "agent_connecting_livekit",
+            "agent_generating_livekit_token",
             room=self.room_name,
             livekit_url=settings.livekit_url,
             has_api_key=bool(settings.livekit_api_key),
@@ -143,13 +144,39 @@ When you've asked all questions, thank the candidate and end the interview natur
         )
 
         try:
+            token = (
+                livekit_api.AccessToken(
+                    settings.livekit_api_key,
+                    settings.livekit_api_secret,
+                )
+                .with_identity("ai-interviewer")
+                .with_name("AI Interviewer")
+                .with_grants(
+                    livekit_api.VideoGrants(room_join=True, room=self.room_name)
+                )
+                .to_jwt()
+            )
+            logger.info("agent_livekit_token_generated")
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.error(
+                "agent_livekit_token_error",
+                error=str(e),
+                error_type=type(e).__name__,
+                traceback=tb,
+            )
+            raise
+
+        # --- Initialize LiveKit transport ---
+        try:
             transport = LiveKitTransport(
                 url=settings.livekit_url,
-                api_key=settings.livekit_api_key,
-                api_secret=settings.livekit_api_secret,
+                token=token,
                 room_name=self.room_name,
-                participant_identity="ai-interviewer",
-                participant_name="AI Interviewer",
+                params=LiveKitParams(
+                    audio_in_enabled=True,
+                    audio_out_enabled=True,
+                ),
             )
             logger.info("agent_livekit_transport_created")
         except Exception as e:
