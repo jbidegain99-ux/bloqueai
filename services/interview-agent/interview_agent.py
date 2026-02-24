@@ -122,7 +122,7 @@ When you've asked all questions, thank the candidate and end the interview natur
             from pipecat.pipeline.task import PipelineParams, PipelineTask
             from pipecat.services.deepgram.stt import DeepgramSTTService
             from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
-            from pipecat.services.anthropic.llm import AnthropicLLMService
+            from pipecat.services.openai.llm import OpenAILLMService
             from pipecat.transports.livekit.transport import LiveKitParams, LiveKitTransport
             from livekit import api as livekit_api
             logger.info("agent_pipecat_imported_ok")
@@ -200,11 +200,11 @@ When you've asked all questions, thank the candidate and end the interview natur
             )
             logger.info("agent_deepgram_ok", has_key=bool(settings.deepgram_api_key))
 
-            llm = AnthropicLLMService(
+            llm = OpenAILLMService(
                 api_key=settings.llm_api_key,
-                model="claude-sonnet-4-20250514",
+                model="gpt-4o-mini",
             )
-            logger.info("agent_anthropic_ok", has_key=bool(settings.llm_api_key))
+            logger.info("agent_openai_ok", has_key=bool(settings.llm_api_key))
 
             tts = ElevenLabsTTSService(
                 api_key=settings.elevenlabs_api_key,
