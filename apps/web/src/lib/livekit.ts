@@ -119,7 +119,7 @@ export async function listVideoInterviews(
     : '/api'
 
   const qs = status ? `?status=${status}` : ''
-  const response = await fetch(`${API_URL}/interviews/${qs}`, {
+  const response = await fetch(`${API_URL}/interviews${qs}`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
