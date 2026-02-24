@@ -279,6 +279,8 @@ async def start_interview(
     if interview.status not in [
         VideoInterviewStatus.SCHEDULED.value,
         VideoInterviewStatus.READY.value,
+        VideoInterviewStatus.IN_PROGRESS.value,
+        VideoInterviewStatus.ERROR.value,
     ]:
         raise HTTPException(
             status_code=400,
@@ -305,9 +307,11 @@ async def start_interview(
     job = application.job
     candidate = application.candidate
 
-    # Update status
+    # Update status (reset fields for retries of failed attempts)
     interview.status = VideoInterviewStatus.IN_PROGRESS.value
     interview.started_at = datetime.utcnow()
+    interview.ended_at = None
+    interview.error_message = None
     db.commit()
 
     # Get candidate name from user relationship
