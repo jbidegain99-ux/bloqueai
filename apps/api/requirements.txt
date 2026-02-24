@@ -56,6 +56,13 @@ httpx==0.26.0
 pgvector==0.3.6
 numpy==1.26.4
 
+# LiveKit (Video Interviews)
+livekit>=0.6.0
+livekit-api>=0.6.0
+
+# Pipecat (AI Interview Pipeline)
+pipecat-ai[livekit,deepgram,anthropic,elevenlabs]>=0.0.30
+
 # Utilities
 python-dotenv==1.0.0
 tenacity==8.2.3

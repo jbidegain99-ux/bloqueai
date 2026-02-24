@@ -45,6 +45,7 @@ from app.models.billing import (
     InvoiceStatus,
 )
 from app.models.match import CandidateJobMatch, MatchStatus
+from app.models.video_interview import VideoInterview, VideoInterviewStatus
 
 __all__ = [
     "User",
@@ -106,4 +107,6 @@ __all__ = [
     "InvoiceStatus",
     "CandidateJobMatch",
     "MatchStatus",
+    "VideoInterview",
+    "VideoInterviewStatus",
 ]

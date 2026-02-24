@@ -50,6 +50,18 @@ class Settings(BaseSettings):
     heygen_api_key: Optional[str] = None
     did_api_key: Optional[str] = None
 
+    # LiveKit (Video Interviews - WebRTC)
+    livekit_url: Optional[str] = None
+    livekit_api_key: Optional[str] = None
+    livekit_api_secret: Optional[str] = None
+
+    # Deepgram (Speech-to-Text)
+    deepgram_api_key: Optional[str] = None
+
+    # ElevenLabs (Text-to-Speech)
+    elevenlabs_api_key: Optional[str] = None
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+
     # API Settings
     api_host: str = "0.0.0.0"
     api_port: int = 8000
@@ -86,6 +98,11 @@ class Settings(BaseSettings):
     def storage_enabled(self) -> bool:
         """Check if storage is configured."""
         return bool(self.minio_endpoint and self.minio_access_key and self.minio_secret_key)
+
+    @property
+    def livekit_configured(self) -> bool:
+        """Check if LiveKit is configured for video interviews."""
+        return bool(self.livekit_url and self.livekit_api_key and self.livekit_api_secret)
 
 
 @lru_cache()

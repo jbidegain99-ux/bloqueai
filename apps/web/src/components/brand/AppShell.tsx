@@ -20,6 +20,7 @@ import {
   Globe,
   CreditCard,
   Sparkles,
+  Video,
 } from 'lucide-react'
 import { Logo } from './Logo'
 import { PageTransition } from '@/components/layout/page-transition'
@@ -120,6 +121,7 @@ export function AppShell({ children }: AppShellProps) {
         { label: 'Explorar Puestos', href: '/candidate/jobs', icon: Search },
         { label: 'Mis Aplicaciones', href: '/candidate/applications', icon: ClipboardList },
         { label: 'Recomendados', href: '/candidate/recommended', icon: Sparkles },
+        { label: 'Entrevistas', href: '/candidate/interviews', icon: Video },
         { label: 'Mi Perfil', href: '/candidate/profile', icon: User },
       ]
     }

@@ -660,3 +660,111 @@
    - `use_cache=False` option for force regeneration
    - Batch API: send multiple texts in one `embeddings.create()` call
    - Always handle enum `.value` when building text from JSONB fields that may contain enum instances
+
+---
+
+## Session: 2026-02-24 - Video Interview Infrastructure (Prompt 27)
+
+### Patterns Used
+
+1. **Lazy Imports for Optional Heavy Dependencies**
+   - Pipecat and its sub-packages (deepgram, elevenlabs, anthropic) are heavy
+   - Import them lazily inside `async def run()` with try/except ImportError
+   - This allows the app to start even if pipecat isn't installed (graceful degradation)
+   - Pattern: services that depend on optional packages should lazy-import at usage time
+
+2. **Singleton Service Pattern for External APIs**
+   - `get_livekit_service()` returns a module-level singleton
+   - Service checks configuration in `__init__` and logs warning if not configured
+   - No crash on startup — allows other features to work without LiveKit
+   - Same pattern used by `get_embedding_service()` in embeddings module
+
+3. **Background Tasks for Long-Running AI Processes**
+   - `BackgroundTasks.add_task()` for the interview agent pipeline
+   - Agent runs in background while HTTP response returns immediately
+   - Background task creates its own DB session (SessionLocal) to avoid session scope issues
+   - Always wrap in try/except with status update on error
+
+4. **Pipecat Dependency Chain Impact**
+   - Installing `pipecat-ai[livekit,deepgram,anthropic,elevenlabs]` bumps:
+     - `pydantic` from 2.5.3 → 2.12.5
+     - `openai` from 1.12.0 → 2.23.0
+     - `numpy` from 1.26.4 → 2.2.6
+   - Existing code still works with newer versions (backward compatible)
+   - Always verify full app loads after heavy dependency installs
+
+5. **VideoInterview vs InterviewSession**
+   - Existing `InterviewSession` model handles text-based AI interviews
+   - New `VideoInterview` model handles LiveKit-based video interviews
+   - Both link to `Application` — different modalities for the same flow
+   - Named `VideoInterview` (not `Interview`) to avoid confusion with existing model
+
+---
+
+## Session: 2026-02-24 - Video Interview UI (Prompt 28)
+
+### Patterns Discovered
+
+1. **CustomEvent Bridge for Cross-Component Communication**
+   - `RoomEventHandler` (inside LiveKitRoom context) receives `DataReceived` events
+   - Cannot pass data directly to `TranscriptPanel` (different component tree positions)
+   - Solution: dispatch `window.CustomEvent('interview-transcript', { detail })` from handler
+   - TranscriptPanel listens via `window.addEventListener('interview-transcript', ...)`
+   - Simpler than lifting state up through multiple layers or adding a global store
+
+2. **LiveKit React SDK Component Hierarchy**
+   - `LiveKitRoom` must be the outermost wrapper — all hooks require its context
+   - `useTracks()`, `useParticipants()`, `useRoomContext()` only work inside `LiveKitRoom`
+   - `RoomAudioRenderer` must be inside `LiveKitRoom` for audio playback
+   - `ControlBar` provides built-in mic/camera/leave controls with `variation="verbose"`
+
+3. **Media Stream Cleanup Before LiveKit Connection**
+   - PreJoinCheck acquires `getUserMedia()` for camera/mic preview
+   - MUST call `stream.getTracks().forEach(t => t.stop())` before LiveKit connects
+   - If preview tracks aren't stopped, LiveKit can't acquire the same devices
+   - Pattern: stop tracks in `handleJoin()`, then call `onReady()` callback
+
+4. **Adapting Prompt Code to Existing Patterns**
+   - Prompt code used `localStorage.getItem('token')` → adapted to zustand `useAuthStore()`
+   - Prompt code used Integer IDs → adapted to UUID strings
+   - Prompt code imported `alert.tsx`/`scroll-area.tsx` → used plain divs (components don't exist)
+   - Prompt code used `any` types → used `unknown` with `instanceof` checks per CLAUDE.md
+   - Always scan prompt code for patterns that don't match the actual codebase
+
+5. **State Machine Pattern for Multi-Step UIs**
+   - Interview page uses explicit `InterviewState` type: loading | pre-join | joining | in-room | completed | error
+   - Each state renders a completely different UI (not conditional visibility)
+   - State transitions are explicit via `setState('next-state')`
+   - Error state always provides both "back" and "retry" actions
+
+---
+
+## Session: 2026-02-24 - Interview Analysis (Prompt 29)
+
+### Patterns Discovered
+
+1. **Codebase Uses OpenAI-Compatible API, Not Anthropic Directly**
+   - Prompt assumed `Anthropic(api_key=...)` but codebase uses `llm_api_key` + `llm_base_url`
+   - Settings: `llm_base_url`, `llm_api_key`, `llm_model` (defaults to gpt-4o-mini)
+   - Solution: Use `OpenAI(api_key=..., base_url=...)` client for analysis service
+   - Any OpenAI-compatible provider works (OpenAI, Azure, local, etc.)
+
+2. **Job Model Uses `must_haves` Not `requirements`**
+   - Prompt assumed `job.requirements` (List[str]) but actual field is `job.must_haves` (JSONB)
+   - Always verify actual model fields before implementing — prompts describe ideal, not actual
+
+3. **Candidate Name Through User Relationship**
+   - Candidate model has NO `full_name` — it lives on `candidate.user.full_name`
+   - Must eager-load with `joinedload(Candidate.user)` to avoid N+1
+   - Same applies to `candidate.user_id` for auth checks
+
+4. **Role-Based Response Differentiation**
+   - Single endpoint `/results` returns different data based on user role
+   - Employers: full analysis (scores, recommendation, red flags, all details)
+   - Candidates: limited feedback (impression, 2 strengths, 1 tip)
+   - Avoids needing separate endpoints while protecting sensitive scoring data
+
+5. **Analysis Caching on First Request**
+   - `/analyze` endpoint checks if `ai_scores` and `ai_summary` already exist
+   - If so, returns cached result immediately (no re-analysis, no extra LLM cost)
+   - Pattern: idempotent analysis — calling twice is safe and cheap

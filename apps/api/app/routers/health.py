@@ -92,6 +92,51 @@ async def health_check(db: Session = Depends(get_db)) -> HealthResponse:
     )
 
 
+@router.get("/video")
+async def video_services_health() -> dict:
+    """Check video interview services availability."""
+    import os
+
+    status: dict[str, str] = {
+        "livekit": "unknown",
+        "deepgram": "unknown",
+        "elevenlabs": "unknown",
+    }
+
+    # Check LiveKit
+    try:
+        from app.services.livekit_service import get_livekit_service
+
+        livekit = get_livekit_service()
+        if settings.livekit_configured:
+            # Simple token generation test
+            livekit.create_token("test-health-room", "test-user", "Test")
+            status["livekit"] = "healthy"
+        else:
+            status["livekit"] = "not_configured"
+    except Exception as e:
+        status["livekit"] = f"error: {str(e)[:100]}"
+
+    # Check Deepgram
+    if settings.deepgram_api_key:
+        status["deepgram"] = "configured"
+    else:
+        status["deepgram"] = "not_configured"
+
+    # Check ElevenLabs
+    if settings.elevenlabs_api_key:
+        status["elevenlabs"] = "configured"
+    else:
+        status["elevenlabs"] = "not_configured"
+
+    all_healthy = all(v in ("healthy", "configured") for v in status.values())
+
+    return {
+        "status": "healthy" if all_healthy else "degraded",
+        "services": status,
+    }
+
+
 @router.get("/ready")
 async def readiness_check() -> dict:
     """Kubernetes readiness probe."""

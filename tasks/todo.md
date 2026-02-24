@@ -1765,3 +1765,282 @@ All **85 pre-existing tests** continue to pass — 0 regressions.
 - All tests handle empty results/data gracefully using either/or assertions
 - Tests follow existing patterns from auth.fixture.ts (loginAs + navigateTo, never page.goto on protected pages)
 - 30s timeouts on embedding/matching endpoints to allow for auto-generation
+
+---
+
+## Video Interviews - Infraestructura (Prompt 27) (2026-02-24)
+
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
+**Goal:** Configure LiveKit + Pipecat infrastructure for AI video interviews
+
+### T27.1: Configurar cuentas LiveKit, Deepgram, ElevenLabs ✅
+**Status:** DONE
+- [x] LiveKit URL, API key, API secret added to `.env`
+- [x] Deepgram API key added to `.env`
+- [x] ElevenLabs API key + voice ID added to `.env`
+- [x] Settings class updated with `livekit_url`, `livekit_api_key`, `livekit_api_secret`, `deepgram_api_key`, `elevenlabs_api_key`, `elevenlabs_voice_id`
+- [x] Added `livekit_configured` property to Settings
+- [x] Frontend `.env.local` created with `NEXT_PUBLIC_LIVEKIT_URL`
+
+### T27.2: Servicio de tokens LiveKit ✅
+**Status:** DONE
+- [x] `apps/api/app/services/livekit_service.py` created
+- [x] `create_token()` — generates JWT for room participants (candidate, observer, AI agent)
+- [x] `create_room()` — creates LiveKit room (async, 5min empty timeout, 3 max participants)
+- [x] Singleton pattern via `get_livekit_service()`
+- [x] Graceful warning when LiveKit not configured
+
+### T27.3: Pipecat AI Interview Agent ✅
+**Status:** DONE
+- [x] `apps/api/app/services/interview_agent.py` created
+- [x] Pipeline: LiveKit Transport → Deepgram STT → Claude LLM → ElevenLabs TTS
+- [x] Configurable system prompt with job context, CV summary, question count
+- [x] Lazy imports for pipecat (graceful degradation if not installed)
+- [x] Spanish language support (LATAM)
+- [x] Structured logging for start/complete/error events
+
+### T27.4: API endpoints para entrevistas ✅
+**Status:** DONE
+- [x] `apps/api/app/routers/interviews.py` — 5 endpoints:
+  1. `POST /interviews/` — Create interview (employer/recruiter/admin only)
+  2. `POST /interviews/{id}/join` — Get token to join room
+  3. `POST /interviews/{id}/start` — Start AI agent in background
+  4. `GET /interviews/{id}/status` — Get interview status
+  5. `GET /interviews/` — List interviews (filtered by creator for non-admins)
+- [x] Router registered in `routers/__init__.py` and `main.py`
+- [x] All endpoints require auth via `get_current_user`
+- [x] Background task runs agent and updates DB on completion/error
+
+### T27.5: Modelo VideoInterview en DB ✅
+**Status:** DONE
+- [x] `apps/api/app/models/video_interview.py` created
+  - UUID PK via BaseModel, application_id FK, room_name (unique)
+  - Status: SCHEDULED, READY, IN_PROGRESS, COMPLETED, CANCELLED, ERROR
+  - Timing: scheduled_at, started_at, ended_at
+  - Results: transcript (JSONB), recording_url, ai_summary, ai_scores, ai_recommendation
+  - Metadata: created_by FK, error_message
+- [x] Migration `017_add_video_interviews_table.py` created
+- [x] Exported in `models/__init__.py`
+
+### T27.6: Health check para servicios de video ✅
+**Status:** DONE
+- [x] `GET /health/video` endpoint added to health router
+- [x] Checks: LiveKit (token gen test), Deepgram (key configured), ElevenLabs (key configured)
+- [x] Returns: `{status: "healthy"|"degraded", services: {...}}`
+
+### Dependencies Installed
+- `livekit>=0.6.0` + `livekit-api>=0.6.0`
+- `pipecat-ai[livekit,deepgram,anthropic,elevenlabs]>=0.0.30`
+- Note: pipecat bumped `pydantic` to 2.12.5 and `openai` to 2.23.0
+
+### Verification ✅
+- [x] All new modules import correctly (livekit_service, interview_agent, video_interview model)
+- [x] Full app loads with 148 routes (5 new interview routes + 1 health/video)
+- [x] Settings read all LiveKit/Deepgram/ElevenLabs env vars correctly
+- [x] `settings.livekit_configured` returns True with credentials
+- [x] No TypeScript errors (backend-only change)
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `apps/api/app/models/video_interview.py` | VideoInterview model + VideoInterviewStatus enum |
+| `apps/api/app/services/livekit_service.py` | LiveKit token generation + room creation |
+| `apps/api/app/services/interview_agent.py` | Pipecat AI interview pipeline |
+| `apps/api/app/routers/interviews.py` | 5 API endpoints for video interviews |
+| `apps/api/alembic/versions/017_add_video_interviews_table.py` | Migration for video_interviews table |
+| `apps/web/.env.local` | Frontend env vars (LIVEKIT_URL) |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `apps/api/.env` | Added LiveKit, Deepgram, ElevenLabs credentials |
+| `apps/api/app/core/config.py` | Added livekit/deepgram/elevenlabs settings + livekit_configured property |
+| `apps/api/app/models/__init__.py` | Exported VideoInterview, VideoInterviewStatus |
+| `apps/api/app/routers/__init__.py` | Registered interviews_router |
+| `apps/api/app/main.py` | Included interviews_router |
+| `apps/api/app/routers/health.py` | Added GET /health/video endpoint |
+| `apps/api/requirements.txt` | Added livekit, livekit-api, pipecat-ai |
+
+### Ready For
+- ~~Prompt 28: UI de Video Interviews (frontend components)~~ ✅ DONE
+
+---
+
+## Prompt 28: Video Interview UI ✅
+
+**Status:** DONE — All 7 tasks completed
+**Date:** 2026-02-24
+
+### T28.1: LiveKit utility library ✅
+**Status:** DONE
+- [x] `apps/web/src/lib/livekit.ts` — API helpers with typed responses
+  - `joinInterviewRoom(id, token)` → `InterviewRoomInfo`
+  - `startInterviewer(id, token)` — triggers AI agent
+  - `getInterviewStatus(id, token)` — poll status
+  - `listVideoInterviews(token)` → `VideoInterviewItem[]`
+  - `getConnectionStateLabel(state)` — Spanish labels
+- [x] All functions use `/api` proxy prefix with Authorization header
+
+### T28.2: PreJoinCheck component ✅
+**Status:** DONE
+- [x] `apps/web/src/components/interview/PreJoinCheck.tsx`
+- [x] Camera/mic device check via `getUserMedia()`
+- [x] Video preview with toggle controls
+- [x] DeviceStatusCard sub-component (checking/ready/error/denied)
+- [x] Tips section for interview prep
+- [x] Stops media tracks before joining LiveKit room
+
+### T28.3: VideoRoom component ✅
+**Status:** DONE
+- [x] `apps/web/src/components/interview/VideoRoom.tsx`
+- [x] Uses `LiveKitRoom`, `GridLayout`, `ParticipantTile`, `ControlBar`, `RoomAudioRenderer`
+- [x] `CustomVideoGrid` — waiting states for connecting/AI interviewer
+- [x] `RoomEventHandler` — listens for DataReceived events, dispatches CustomEvents
+- [x] Collapsible TranscriptPanel sidebar with AnimatePresence
+- [x] InterviewTimer in header, dark theme (bg-gray-900)
+
+### T28.4: TranscriptPanel component ✅
+**Status:** DONE
+- [x] `apps/web/src/components/interview/TranscriptPanel.tsx`
+- [x] Listens for `interview-transcript` CustomEvents
+- [x] Speaker color coding: AI (indigo), candidate (green), system (gray)
+- [x] Auto-scroll to bottom on new entries
+- [x] Entry animation via Framer Motion
+
+### T28.5: InterviewTimer component ✅
+**Status:** DONE
+- [x] `apps/web/src/components/interview/InterviewTimer.tsx`
+- [x] Seconds counter with mm:ss format
+- [x] Red pulsing dot indicator + Clock icon
+
+### T28.6: Candidate interview page ✅
+**Status:** DONE
+- [x] `apps/web/src/app/candidate/interviews/[id]/page.tsx`
+- [x] State machine: loading → pre-join → joining → in-room → completed → error
+- [x] Auth guard with isHydrated pattern
+- [x] Calls `joinInterviewRoom()` → PreJoinCheck → VideoRoom
+- [x] Starts AI interviewer via `startInterviewer()` after entering room
+- [x] Error/retry states, completion animation with auto-redirect
+
+### T28.7: Candidate interviews list page ✅
+**Status:** DONE
+- [x] `apps/web/src/app/candidate/interviews/page.tsx`
+- [x] Lists video interviews via `listVideoInterviews()`
+- [x] Status badges with color coding per status
+- [x] Custom `formatRelativeDate()` for Spanish relative dates
+- [x] Empty state with link to /candidate/jobs
+- [x] Join/Continue buttons for active interviews
+- [x] Added "Entrevistas" nav link to AppShell candidate nav
+
+### Dependencies Installed
+- `@livekit/components-react` — LiveKit React SDK
+- `@livekit/components-styles` — Default LiveKit theme
+- `livekit-client` — LiveKit JS client
+- `date-fns` — Date utility library
+
+### Verification ✅
+- [x] `npx next build` passes with 0 errors
+- [x] Both `/candidate/interviews` and `/candidate/interviews/[id]` pages in build output
+- [x] AppShell shows "Entrevistas" nav for candidate role
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `apps/web/src/lib/livekit.ts` | LiveKit API utilities + types |
+| `apps/web/src/components/interview/PreJoinCheck.tsx` | Pre-join device check |
+| `apps/web/src/components/interview/VideoRoom.tsx` | LiveKit video room |
+| `apps/web/src/components/interview/TranscriptPanel.tsx` | Real-time transcript |
+| `apps/web/src/components/interview/InterviewTimer.tsx` | Duration timer |
+| `apps/web/src/app/candidate/interviews/page.tsx` | Interview list page |
+| `apps/web/src/app/candidate/interviews/[id]/page.tsx` | Interview room page |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `apps/web/src/components/brand/AppShell.tsx` | Added Video import + "Entrevistas" candidate nav link |
+
+### Ready For
+- ~~Prompt 29: Interview Analysis (post-interview AI analysis)~~ DONE
+
+---
+
+## Prompt 29: Video Interview Analysis ✅
+
+**Status:** DONE — All 5 tasks completed
+**Date:** 2026-02-24
+
+### T29.1: Interview analysis service ✅
+**Status:** DONE
+- [x] `apps/api/app/services/interview_analysis.py`
+- [x] Uses OpenAI-compatible client (settings.llm_api_key, llm_base_url, llm_model)
+- [x] 5 competency scoring rubric with weights (communication, technical, problem_solving, cultural_fit, experience)
+- [x] Structured JSON prompt for LLM analysis
+- [x] Weighted overall score calculation
+- [x] Parse with fallback on JSON decode error
+- [x] Singleton pattern via `get_analysis_service()`
+
+### T29.2: /analyze and /results endpoints ✅
+**Status:** DONE
+- [x] `POST /interviews/{id}/analyze` — Triggers AI analysis, stores results, returns cached if already done
+- [x] `GET /interviews/{id}/results` — Full analysis for employer, limited feedback for candidate
+- [x] Pydantic schemas: CompetencyScore, AnalysisScores, Recommendation, InterviewAnalysisResponse
+- [x] Role-based access: employers see full analysis, candidates see feedback only
+- [x] 7 total interview routes (5 existing + 2 new)
+
+### T29.3: Analysis fields in VideoInterview model ✅
+**Status:** DONE
+- [x] Added to model: overall_score (Float), strengths (JSONB), areas_for_improvement (JSONB), red_flags (JSONB), suggested_next_steps (JSONB)
+- [x] Migration `018_add_interview_analysis_fields.py` created
+
+### T29.4: Employer results page ✅
+**Status:** DONE
+- [x] `apps/web/src/app/employer/interviews/[id]/results/page.tsx`
+- [x] Tabs: Analysis + Transcript
+- [x] Overall score card with recommendation badge
+- [x] Competency score bars with Progress component
+- [x] Strengths, areas for improvement, red flags, next steps cards
+- [x] "Analizar con IA" button triggers analysis
+- [x] Uses zustand auth store, UUID IDs
+
+### T29.5: Candidate complete page ✅
+**Status:** DONE
+- [x] `apps/web/src/app/candidate/interviews/[id]/complete/page.tsx`
+- [x] Limited feedback: overall impression, highlighted strengths (max 2), one improvement tip
+- [x] Impression-based styling (positive/neutral/needs_improvement)
+- [x] "What's next" steps section
+- [x] Navigation to applications and job explorer
+
+### Verification ✅
+- [x] `npx next build` passes with 0 errors
+- [x] Both new pages in build output: `/employer/interviews/[id]/results`, `/candidate/interviews/[id]/complete`
+- [x] Backend: 7 interview routes confirmed (including /analyze and /results)
+- [x] Analysis service imports correctly
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `apps/api/app/services/interview_analysis.py` | LLM-based interview analysis service |
+| `apps/api/alembic/versions/018_add_interview_analysis_fields.py` | Migration for analysis columns |
+| `apps/web/src/app/employer/interviews/[id]/results/page.tsx` | Employer full results page |
+| `apps/web/src/app/candidate/interviews/[id]/complete/page.tsx` | Candidate feedback page |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `apps/api/app/models/video_interview.py` | Added Float import + 5 analysis columns |
+| `apps/api/app/routers/interviews.py` | Added analysis schemas + /analyze and /results endpoints |
+| `apps/web/src/lib/livekit.ts` | Added analysis types + analyzeInterview/getInterviewResults helpers |
+
+### Video Interview Module Complete
+With Prompts 27-29 done, the full video interview flow is:
+```
+Candidate → PreJoin Check → Video Room → AI Interview → Analysis → Results
+                                                          ↓
+                                                   Employer Dashboard (scoring, recommendation)
+```
