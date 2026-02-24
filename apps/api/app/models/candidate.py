@@ -2,7 +2,7 @@
 
 from sqlalchemy import Column, DateTime, String, Text, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import deferred, relationship
 from pgvector.sqlalchemy import Vector
 
 from app.models.base import BaseModel
@@ -45,8 +45,8 @@ class Candidate(BaseModel):
     ai_skills = Column(JSONB, default=list)  # Skills with confidence scores
     competency_scores = Column(JSONB, default=dict)  # Scores by competency
 
-    # Embedding for AI matching
-    profile_embedding = Column(Vector(1536), nullable=True)
+    # Embedding for AI matching (deferred to avoid loading large vectors on every query)
+    profile_embedding = deferred(Column(Vector(1536), nullable=True))
     embedding_updated_at = Column(DateTime, nullable=True)
 
     # Relationships
