@@ -1,4 +1,11 @@
-"""PostgreSQL-based cache utilities for CV analysis."""
+"""PostgreSQL-based cache utilities for CV analysis.
+
+Graceful degradation: all operations silently return defaults when the
+``cv_analysis_cache`` table does not exist in the database (e.g. production
+at an older migration).  Importantly, failures never call ``db.rollback()``
+on the caller's session — instead we use SAVEPOINTs so that only the cache
+operation is rolled back while the surrounding transaction stays intact.
+"""
 
 import hashlib
 from datetime import datetime, timedelta
@@ -6,11 +13,29 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
+from sqlalchemy import text, inspect
 import structlog
 
-from app.models.cache import CVAnalysisCache
-
 logger = structlog.get_logger()
+
+# Module-level flag: set to False after the first failure so we stop
+# hitting a table that doesn't exist for the rest of the process lifetime.
+_cache_available: Optional[bool] = None
+
+
+def _is_cache_available(db: Session) -> bool:
+    """Check once whether the cv_analysis_cache table exists."""
+    global _cache_available
+    if _cache_available is not None:
+        return _cache_available
+    try:
+        insp = inspect(db.bind)
+        _cache_available = insp.has_table("cv_analysis_cache")
+    except Exception:
+        _cache_available = False
+    if not _cache_available:
+        logger.info("cv_analysis_cache_table_missing_skipping")
+    return _cache_available
 
 
 def generate_cache_key(cv_text: str, job_id: str) -> str:
@@ -25,7 +50,10 @@ def get_cached_analysis(db: Session, cache_key: str) -> Optional[dict]:
     Returns the cached result dict if found and not expired, None otherwise.
     Graceful degradation: returns None on any DB error.
     """
+    if not _is_cache_available(db):
+        return None
     try:
+        from app.models.cache import CVAnalysisCache
         entry = (
             db.query(CVAnalysisCache)
             .filter(
@@ -53,46 +81,52 @@ def set_cached_analysis(
 ) -> None:
     """Store a CV analysis result in cache.
 
-    Graceful degradation: silently fails on any DB error.
+    Uses a SAVEPOINT so that a failure here never rolls back the caller's
+    transaction.
     """
+    if not _is_cache_available(db):
+        return
     try:
+        from app.models.cache import CVAnalysisCache
         expires_at = datetime.utcnow() + timedelta(hours=ttl_hours)
 
-        # Upsert: update if exists, insert if not
-        existing = (
-            db.query(CVAnalysisCache)
-            .filter(CVAnalysisCache.cache_key == cache_key)
-            .first()
-        )
-        if existing:
-            existing.result = result
-            existing.expires_at = expires_at
-            existing.updated_at = datetime.utcnow()
-        else:
-            entry = CVAnalysisCache(
-                id=uuid4(),
-                cache_key=cache_key,
-                result=result,
-                job_id=job_id,
-                expires_at=expires_at,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+        nested = db.begin_nested()  # SAVEPOINT
+        try:
+            existing = (
+                db.query(CVAnalysisCache)
+                .filter(CVAnalysisCache.cache_key == cache_key)
+                .first()
             )
-            db.add(entry)
-
-        db.flush()
-        logger.info("cv_analysis_cache_set", cache_key=cache_key[:12], ttl_hours=ttl_hours)
+            if existing:
+                existing.result = result
+                existing.expires_at = expires_at
+                existing.updated_at = datetime.utcnow()
+            else:
+                entry = CVAnalysisCache(
+                    id=uuid4(),
+                    cache_key=cache_key,
+                    result=result,
+                    job_id=job_id,
+                    expires_at=expires_at,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                db.add(entry)
+            nested.commit()
+            logger.info("cv_analysis_cache_set", cache_key=cache_key[:12], ttl_hours=ttl_hours)
+        except Exception:
+            nested.rollback()
+            raise
     except Exception as e:
         logger.warning("cv_analysis_cache_write_error", error=str(e), cache_key=cache_key[:12])
-        try:
-            db.rollback()
-        except Exception:
-            pass
 
 
 def cleanup_expired_cache(db: Session) -> int:
     """Delete expired cache entries. Returns number of entries deleted."""
+    if not _is_cache_available(db):
+        return 0
     try:
+        from app.models.cache import CVAnalysisCache
         count = (
             db.query(CVAnalysisCache)
             .filter(CVAnalysisCache.expires_at < datetime.utcnow())

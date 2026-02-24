@@ -292,55 +292,57 @@ async def upload_resume(
 
     file_size = cv_result.file_size
     ext = cv_result.extension
+    resolved_content_type = cv_result.content_type or ""
 
-    # Extract text from file
-    resume_text = ""
-    try:
-        if ext == "pdf" or "pdf" in content_type:
-            # Extract text from PDF
-            try:
-                import pdfplumber
-                with pdfplumber.open(io.BytesIO(content)) as pdf:
-                    text_parts = []
-                    for page in pdf.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text_parts.append(page_text)
-                    resume_text = "\n".join(text_parts)
-            except Exception as pdf_err:
-                logger.warning("pdf_extraction_failed", error=str(pdf_err))
-                # Try PyPDF2 as fallback
+    # Extract text from file — prefer already-extracted text from validator
+    resume_text = cv_result.text or ""
+    if not resume_text:
+        try:
+            if ext == "pdf" or "pdf" in resolved_content_type:
+                # Extract text from PDF
                 try:
-                    from PyPDF2 import PdfReader
-                    reader = PdfReader(io.BytesIO(content))
+                    import pdfplumber
+                    with pdfplumber.open(io.BytesIO(content)) as pdf:
+                        text_parts = []
+                        for page in pdf.pages:
+                            page_text = page.extract_text()
+                            if page_text:
+                                text_parts.append(page_text)
+                        resume_text = "\n".join(text_parts)
+                except Exception as pdf_err:
+                    logger.warning("pdf_extraction_failed", error=str(pdf_err))
+                    # Try PyPDF2 as fallback
+                    try:
+                        from PyPDF2 import PdfReader
+                        reader = PdfReader(io.BytesIO(content))
+                        text_parts = []
+                        for page in reader.pages:
+                            text = page.extract_text()
+                            if text:
+                                text_parts.append(text)
+                        resume_text = "\n".join(text_parts)
+                    except Exception as pypdf_err:
+                        logger.warning("pypdf_extraction_failed", error=str(pypdf_err))
+
+            elif ext == "docx" or "wordprocessingml" in resolved_content_type:
+                # Extract text from DOCX
+                try:
+                    from docx import Document
+                    doc = Document(io.BytesIO(content))
                     text_parts = []
-                    for page in reader.pages:
-                        text = page.extract_text()
-                        if text:
-                            text_parts.append(text)
+                    for para in doc.paragraphs:
+                        if para.text.strip():
+                            text_parts.append(para.text)
                     resume_text = "\n".join(text_parts)
-                except Exception as pypdf_err:
-                    logger.warning("pypdf_extraction_failed", error=str(pypdf_err))
+                except Exception as docx_err:
+                    logger.warning("docx_extraction_failed", error=str(docx_err))
 
-        elif ext == "docx" or "wordprocessingml" in content_type:
-            # Extract text from DOCX
-            try:
-                from docx import Document
-                doc = Document(io.BytesIO(content))
-                text_parts = []
-                for para in doc.paragraphs:
-                    if para.text.strip():
-                        text_parts.append(para.text)
-                resume_text = "\n".join(text_parts)
-            except Exception as docx_err:
-                logger.warning("docx_extraction_failed", error=str(docx_err))
-
-    except Exception as e:
-        logger.error("text_extraction_error", error=str(e))
-        # Continue even if text extraction fails
+        except Exception as e:
+            logger.error("text_extraction_error", error=str(e))
+            # Continue even if text extraction fails
 
     # Determine file type
-    file_type = "pdf" if (ext == "pdf" or "pdf" in content_type) else "docx"
+    file_type = "pdf" if ext == "pdf" else "docx"
 
     # Update application
     application.resume_filename = filename
