@@ -378,6 +378,135 @@ async def start_interview(
     return session
 
 
+@router.post("/interview/start-video")
+async def start_video_interview(
+    body: InterviewStartRequest,
+    current_user: User = Depends(require_candidate),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Start a video interview session for a job configured with video interview type."""
+    import structlog
+    from uuid import uuid4
+    from app.models.job import Job
+    from app.models.application import Application, ApplicationStatus
+    from app.models.video_interview import VideoInterview, VideoInterviewStatus
+    from app.core.config import get_settings
+
+    logger = structlog.get_logger()
+
+    if not body.job_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="job_id es requerido para video entrevistas",
+        )
+
+    # Verify job exists and is configured for video interviews
+    job = db.query(Job).filter(Job.id == body.job_id).first()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Puesto no encontrado",
+        )
+
+    if job.interview_type != "video":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este puesto no esta configurado para video entrevistas",
+        )
+
+    # Look up candidate's application
+    candidate = get_or_create_candidate(db, current_user)
+    application = (
+        db.query(Application)
+        .filter(Application.candidate_id == candidate.id)
+        .filter(Application.job_id == body.job_id)
+        .first()
+    )
+
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No se encontro tu aplicacion para este puesto",
+        )
+
+    if application.status != ApplicationStatus.MATCH_PASSED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tu aplicacion no esta en estado valido para iniciar entrevista",
+        )
+
+    # Idempotency: check for existing video interview
+    existing = (
+        db.query(VideoInterview)
+        .filter(VideoInterview.application_id == application.id)
+        .filter(
+            VideoInterview.status.in_([
+                VideoInterviewStatus.SCHEDULED,
+                VideoInterviewStatus.READY,
+                VideoInterviewStatus.IN_PROGRESS,
+            ])
+        )
+        .first()
+    )
+
+    if existing:
+        logger.info("returning_existing_video_interview", interview_id=str(existing.id))
+        return {
+            "interview_id": str(existing.id),
+            "room_name": existing.room_name,
+            "livekit_url": get_settings().livekit_url,
+            "status": existing.status.value if hasattr(existing.status, 'value') else existing.status,
+        }
+
+    # Check LiveKit is configured
+    settings = get_settings()
+    if not settings.livekit_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Video entrevistas no estan disponibles en este momento",
+        )
+
+    # Create VideoInterview record
+    room_name = f"interview-{uuid4().hex[:12]}"
+    video_interview = VideoInterview(
+        id=uuid4(),
+        application_id=application.id,
+        room_name=room_name,
+        status=VideoInterviewStatus.SCHEDULED,
+        created_by=current_user.id,
+    )
+    db.add(video_interview)
+
+    # Generate LiveKit token
+    from app.services.livekit_service import get_livekit_service
+
+    livekit_service = get_livekit_service()
+    token = livekit_service.create_token(
+        room_name=room_name,
+        participant_name=current_user.full_name or current_user.email,
+        participant_identity=str(current_user.id),
+    )
+
+    # Update application status
+    application.status = ApplicationStatus.INTERVIEW_STARTED
+    db.commit()
+
+    logger.info(
+        "video_interview_created",
+        interview_id=str(video_interview.id),
+        application_id=str(application.id),
+        room_name=room_name,
+    )
+
+    return {
+        "interview_id": str(video_interview.id),
+        "room_name": room_name,
+        "livekit_url": settings.livekit_url,
+        "token": token,
+        "status": video_interview.status.value if hasattr(video_interview.status, 'value') else video_interview.status,
+    }
+
+
 @router.post("/interview/{session_id}/message", response_model=InterviewSessionResponse)
 async def send_interview_message(
     session_id: UUID,

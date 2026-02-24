@@ -29,6 +29,13 @@ class JobModality(str, PyEnum):
     ONSITE = "ONSITE"
 
 
+class InterviewType(str, PyEnum):
+    """Interview type for job postings."""
+
+    CHAT = "chat"
+    VIDEO = "video"
+
+
 class JobCategory(str, PyEnum):
     """Job category/industry."""
 
@@ -122,6 +129,7 @@ class Job(BaseModel):
     benefits = Column(JSONB, default=list)  # List of benefits
 
     # Interview configuration
+    interview_type = Column(String(10), default="chat", nullable=False)
     custom_questions = Column(JSONB, default=list)  # Custom interview questions
 
     # Category-specific fields (for generic job form)

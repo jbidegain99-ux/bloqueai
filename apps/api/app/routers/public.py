@@ -32,7 +32,7 @@ _JOB_LIST_COLUMNS = [
     Job.salary_min, Job.salary_max, Job.salary_currency,
     Job.must_haves, Job.nice_to_haves, Job.benefits,
     Job.is_featured, Job.display_company_name, Job.created_at,
-    Job.company_id, Job.status,
+    Job.company_id, Job.status, Job.interview_type,
 ]
 
 # Columns to load for job detail (excludes embedding vectors)
@@ -302,6 +302,7 @@ async def get_job_detail(
             "website": None,  # Hide website from candidates
             "logo_url": job.company.logo_url,
         },
+        "interview_type": job.interview_type or "chat",
         "created_at": job.created_at.isoformat() if job.created_at else None,
     }
 

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from app.models.job import JobStatus, JobModality, SeniorityLevel
+from app.models.job import JobStatus, JobModality, SeniorityLevel, InterviewType
 from app.schemas.base import IDSchema, BaseSchema, PaginatedResponse
 
 
@@ -28,6 +28,7 @@ class JobCreate(BaseSchema):
     responsibilities: list[str] = []
     benefits: list[str] = []
     custom_questions: list[str] = []
+    interview_type: str = Field("chat", pattern="^(chat|video)$")
     rubric_id: Optional[UUID] = None
 
 
@@ -50,6 +51,7 @@ class JobUpdate(BaseSchema):
     responsibilities: Optional[list[str]] = None
     benefits: Optional[list[str]] = None
     custom_questions: Optional[list[str]] = None
+    interview_type: Optional[str] = Field(None, pattern="^(chat|video)$")
     status: Optional[JobStatus] = None
     rubric_id: Optional[UUID] = None
 
@@ -76,6 +78,7 @@ class JobResponse(IDSchema):
     responsibilities: list[str] = []
     benefits: list[str] = []
     custom_questions: list[str] = []
+    interview_type: str = "chat"
     status: JobStatus
     is_featured: bool
     rubric_id: Optional[UUID] = None

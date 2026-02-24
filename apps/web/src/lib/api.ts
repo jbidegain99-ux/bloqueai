@@ -145,6 +145,19 @@ export const candidateApi = {
       token,
     }),
 
+  startVideoInterview: (token: string, jobId: string) =>
+    fetchApi<{
+      interview_id: string
+      room_name: string
+      livekit_url: string
+      token?: string
+      status: string
+    }>('/candidate/interview/start-video', {
+      method: 'POST',
+      body: { job_id: jobId },
+      token,
+    }),
+
   sendMessage: (token: string, sessionId: string, content: string) =>
     fetchApi<{
       id: string
