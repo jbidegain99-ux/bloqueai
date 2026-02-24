@@ -60,10 +60,10 @@ export default function CandidateVideoInterviewPage() {
 
     try {
       setState('joining')
-      // First go to in-room state so LiveKit connects
-      setState('in-room')
-      // Then start the AI interviewer in background
+      // Start the AI interviewer first, then show the room
       await startInterviewer(interviewId, accessToken)
+      // Only go to in-room after agent started successfully
+      setState('in-room')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error al iniciar'
       setError(message)

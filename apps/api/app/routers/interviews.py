@@ -286,6 +286,25 @@ async def start_interview(
             detail=f"La entrevista no puede iniciarse (estado: {interview.status})",
         )
 
+    if not settings.livekit_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="Video interviews not configured. LiveKit credentials missing.",
+        )
+
+    # Verify pipecat is available before starting
+    try:
+        import pipecat  # noqa: F401
+    except ImportError:
+        interview.status = VideoInterviewStatus.ERROR.value
+        interview.error_message = "Servicio de entrevista por video no disponible"
+        db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail="El servicio de entrevista por video no esta disponible en este momento. "
+            "Intente de nuevo mas tarde.",
+        )
+
     application = interview.application
     job = application.job
     candidate = application.candidate
@@ -304,6 +323,7 @@ async def start_interview(
     cv_summary = None
     if application.candidate_profile:
         cv_summary = str(application.candidate_profile.get("summary", ""))
+
 
     # Start AI agent in background
     agent = InterviewAgent(
@@ -336,15 +356,26 @@ async def _run_interview_agent(agent: InterviewAgent, interview_id: UUID) -> Non
 
         interview = db.query(VideoInterview).filter(VideoInterview.id == interview_id).first()
         if interview:
-            interview.status = VideoInterviewStatus.COMPLETED.value
+            # Check if the agent actually completed successfully
+            agent_status = result.get("status", "completed")
+            if agent_status == "error":
+                interview.status = VideoInterviewStatus.ERROR.value
+                interview.error_message = str(result.get("error", "Agent failed"))[:500]
+                logger.error(
+                    "video_interview_agent_failed",
+                    interview_id=str(interview_id),
+                    error=result.get("error"),
+                )
+            else:
+                interview.status = VideoInterviewStatus.COMPLETED.value
+                interview.transcript = result.get("transcript", [])
             interview.ended_at = datetime.utcnow()
-            interview.transcript = result.get("transcript", [])
             db.commit()
 
         logger.info(
             "video_interview_agent_finished",
             interview_id=str(interview_id),
-            status="completed",
+            status=agent_status,
         )
     except Exception as e:
         logger.error(

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -40,18 +40,28 @@ export function VideoRoom({
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [isStarted, setIsStarted] = useState(false)
   const [showTranscript, setShowTranscript] = useState(true)
+  const hasConnectedRef = useRef(false)
 
   const handleConnected = useCallback(() => {
     setConnectionError(null)
     setIsStarted(true)
+    hasConnectedRef.current = true
   }, [])
 
   const handleError = useCallback((error: Error) => {
+    console.error('[VideoRoom] LiveKit error:', error.message)
     setConnectionError(error.message)
   }, [])
 
   const handleDisconnected = useCallback(() => {
-    onLeave()
+    console.log('[VideoRoom] Disconnected. hasConnectedOnce:', hasConnectedRef.current)
+    if (hasConnectedRef.current) {
+      // Normal disconnect after interview — go back to list
+      onLeave()
+    } else {
+      // Never connected successfully — show error instead of redirecting
+      setConnectionError('No se pudo conectar a la sala de entrevista. Verifica tu conexion e intenta de nuevo.')
+    }
   }, [onLeave])
 
   return (

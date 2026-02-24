@@ -116,12 +116,7 @@ When you've asked all questions, thank the candidate and end the interview natur
                 message="Pipecat packages not installed. Install with: "
                 "pip install pipecat-ai[livekit,deepgram,anthropic,elevenlabs]",
             )
-            return {
-                "transcript": [],
-                "questions_asked": 0,
-                "status": "error",
-                "error": f"Pipecat not installed: {e}",
-            }
+            raise RuntimeError(f"Pipecat not installed: {e}") from e
 
         # Initialize transport
         transport = LiveKitTransport(
