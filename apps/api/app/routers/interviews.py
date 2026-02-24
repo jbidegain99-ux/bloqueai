@@ -5,26 +5,27 @@ Provides endpoints to create, join, start, and monitor
 AI-powered video interviews for candidates.
 """
 
+import hmac
 import json
 import uuid
 from datetime import datetime
 from typing import List, Optional
 
+import httpx
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from uuid import UUID
 
 from app.core.config import settings
-from app.core.database import get_db, SessionLocal
+from app.core.database import get_db
 from app.models.application import Application
 from app.models.job import Job
 from app.models.candidate import Candidate
 from app.models.user import User, UserRole
 from app.models.video_interview import VideoInterview, VideoInterviewStatus
 from app.services.livekit_service import get_livekit_service
-from app.services.interview_agent import InterviewAgent
 from app.services.interview_analysis import get_analysis_service
 from app.utils.deps import get_current_user
 
@@ -118,7 +119,6 @@ class InterviewAnalysisResponse(BaseModel):
 @router.post("", response_model=InterviewCreateResponse)
 async def create_interview(
     request: InterviewCreateRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> InterviewCreateResponse:
@@ -256,7 +256,6 @@ async def join_interview(
 @router.post("/{interview_id}/start")
 async def start_interview(
     interview_id: UUID,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -292,12 +291,9 @@ async def start_interview(
             detail="Video interviews not configured. LiveKit credentials missing.",
         )
 
-    # Verify pipecat is available before starting
-    try:
-        import pipecat  # noqa: F401
-    except ImportError:
+    if not settings.agent_service_url:
         interview.status = VideoInterviewStatus.ERROR.value
-        interview.error_message = "Servicio de entrevista por video no disponible"
+        interview.error_message = "Servicio de entrevista por video no configurado"
         db.commit()
         raise HTTPException(
             status_code=503,
@@ -324,20 +320,55 @@ async def start_interview(
     if application.candidate_profile:
         cv_summary = str(application.candidate_profile.get("summary", ""))
 
+    # Dispatch to external agent service
+    agent_url = f"{settings.agent_service_url}/start"
+    agent_payload = {
+        "interview_id": str(interview.id),
+        "room_name": interview.room_name,
+        "job_title": job.title if job else "Puesto",
+        "job_description": job.description if job else "",
+        "candidate_name": candidate_name,
+        "cv_summary": cv_summary,
+        "num_questions": 5,
+    }
 
-    # Start AI agent in background
-    agent = InterviewAgent(
+    logger.info(
+        "agent_service_dispatching",
+        interview_id=str(interview.id),
+        agent_url=agent_url,
         room_name=interview.room_name,
-        job_title=job.title if job else "Puesto",
-        job_description=job.description if job else "",
-        candidate_name=candidate_name,
-        candidate_cv_summary=cv_summary,
-        num_questions=5,
     )
 
-    background_tasks.add_task(
-        _run_interview_agent, agent, interview.id
-    )
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                agent_url,
+                json=agent_payload,
+                headers={"X-Agent-Secret": settings.agent_webhook_secret},
+            )
+            resp.raise_for_status()
+
+        logger.info(
+            "agent_service_dispatched",
+            interview_id=str(interview.id),
+            status_code=resp.status_code,
+            response=resp.text[:200],
+        )
+    except Exception as exc:
+        logger.error(
+            "agent_service_call_failed",
+            interview_id=str(interview.id),
+            agent_url=agent_url,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        interview.status = VideoInterviewStatus.ERROR.value
+        interview.error_message = f"No se pudo iniciar el agente: {str(exc)[:200]}"
+        db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo conectar con el servicio de entrevista. Intente de nuevo.",
+        )
 
     logger.info(
         "video_interview_started",
@@ -348,48 +379,54 @@ async def start_interview(
     return {"status": "started", "message": "El entrevistador IA se esta uniendo a la sala"}
 
 
-async def _run_interview_agent(agent: InterviewAgent, interview_id: UUID) -> None:
-    """Background task to run the interview agent."""
-    db = SessionLocal()
-    try:
-        result = await agent.run()
+class AgentWebhookPayload(BaseModel):
+    """Payload received from the agent service after interview completes."""
 
-        interview = db.query(VideoInterview).filter(VideoInterview.id == interview_id).first()
-        if interview:
-            # Check if the agent actually completed successfully
-            agent_status = result.get("status", "completed")
-            if agent_status == "error":
-                interview.status = VideoInterviewStatus.ERROR.value
-                interview.error_message = str(result.get("error", "Agent failed"))[:500]
-                logger.error(
-                    "video_interview_agent_failed",
-                    interview_id=str(interview_id),
-                    error=result.get("error"),
-                )
-            else:
-                interview.status = VideoInterviewStatus.COMPLETED.value
-                interview.transcript = result.get("transcript", [])
-            interview.ended_at = datetime.utcnow()
-            db.commit()
+    status: str = "completed"
+    transcript: Optional[List[dict]] = None
+    error: Optional[str] = None
+    questions_asked: Optional[int] = None
 
+
+@router.post("/{interview_id}/webhook")
+async def agent_webhook(
+    interview_id: UUID,
+    payload: AgentWebhookPayload,
+    db: Session = Depends(get_db),
+    x_agent_secret: str = Header(...),
+) -> dict:
+    """
+    Webhook called by the agent service when an interview finishes.
+    Validates shared secret and updates interview status.
+    """
+    if not hmac.compare_digest(x_agent_secret, settings.agent_webhook_secret):
+        raise HTTPException(status_code=403, detail="Invalid agent secret")
+
+    interview = db.query(VideoInterview).filter(VideoInterview.id == interview_id).first()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Entrevista no encontrada")
+
+    if payload.status == "error":
+        interview.status = VideoInterviewStatus.ERROR.value
+        interview.error_message = (payload.error or "Agent failed")[:500]
+        logger.error(
+            "video_interview_agent_failed",
+            interview_id=str(interview_id),
+            error=payload.error,
+        )
+    else:
+        interview.status = VideoInterviewStatus.COMPLETED.value
+        interview.transcript = payload.transcript or []
         logger.info(
             "video_interview_agent_finished",
             interview_id=str(interview_id),
-            status=agent_status,
+            questions_asked=payload.questions_asked,
         )
-    except Exception as e:
-        logger.error(
-            "video_interview_agent_error",
-            interview_id=str(interview_id),
-            error=str(e),
-        )
-        interview = db.query(VideoInterview).filter(VideoInterview.id == interview_id).first()
-        if interview:
-            interview.status = VideoInterviewStatus.ERROR.value
-            interview.error_message = str(e)[:500]
-            db.commit()
-    finally:
-        db.close()
+
+    interview.ended_at = datetime.utcnow()
+    db.commit()
+
+    return {"status": "ok"}
 
 
 @router.get("/{interview_id}/status", response_model=InterviewStatusResponse)

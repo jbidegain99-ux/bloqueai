@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     elevenlabs_api_key: Optional[str] = None
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
 
+    # Agent Service (Cloud Run)
+    agent_service_url: Optional[str] = None
+    agent_webhook_secret: str = "change-me-in-production"
+
     # API Settings
     api_host: str = "0.0.0.0"
     api_port: int = 8000
