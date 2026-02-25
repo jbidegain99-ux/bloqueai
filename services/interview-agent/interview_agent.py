@@ -184,7 +184,7 @@ When you've asked all questions, thank the candidate and end the interview natur
                     audio_in_enabled=True,
                     audio_in_sample_rate=16000,
                     audio_out_enabled=True,
-                    audio_out_sample_rate=22050,
+                    audio_out_sample_rate=16000,
                 ),
             )
             logger.info("agent_livekit_transport_created")
@@ -217,7 +217,6 @@ When you've asked all questions, thank the candidate and end the interview natur
             tts = ElevenLabsTTSService(
                 api_key=settings.elevenlabs_api_key,
                 voice_id=settings.elevenlabs_voice_id,
-                sample_rate=22050,
             )
             logger.info("agent_elevenlabs_ok", has_key=bool(settings.elevenlabs_api_key))
         except Exception as e:
