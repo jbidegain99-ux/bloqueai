@@ -49,7 +49,7 @@ interface Filters {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null)
   const [filters, setFilters] = useState<Filters>({})
@@ -59,6 +59,7 @@ export default function DashboardPage() {
   const [exportMessage, setExportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -70,7 +71,7 @@ export default function DashboardPage() {
     }
 
     loadMetrics()
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadMetrics = async (currentFilters?: Filters) => {
     if (!accessToken) return
@@ -122,7 +123,7 @@ export default function DashboardPage() {
     return `${((current / total) * 100).toFixed(1)}%`
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading && !metrics) {
     return (

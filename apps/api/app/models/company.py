@@ -34,6 +34,7 @@ class Company(BaseModel):
     # Relationships
     users = relationship("User", back_populates="company")
     jobs = relationship("Job", back_populates="company")
+    subscription = relationship("Subscription", back_populates="company", uselist=False)
 
     def __repr__(self) -> str:
         return f"<Company {self.name}>"

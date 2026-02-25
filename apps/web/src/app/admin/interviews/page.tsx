@@ -55,7 +55,7 @@ type TabValue = 'completed' | 'flagged' | 'in_progress' | 'all'
 
 export default function InterviewsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [interviews, setInterviews] = useState<Interview[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -70,6 +70,7 @@ export default function InterviewsPage() {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -81,7 +82,7 @@ export default function InterviewsPage() {
     }
 
     loadInterviews(activeTab)
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadInterviews = async (tab: TabValue) => {
     if (!accessToken) return
@@ -177,7 +178,7 @@ export default function InterviewsPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading && interviews.length === 0) {
     return (

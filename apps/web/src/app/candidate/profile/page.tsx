@@ -26,13 +26,14 @@ interface ApplicationForGating {
 
 export default function CandidateProfilePage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated, user } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated, user } = useAuthStore()
   const [profile, setProfile] = useState<any>(null)
   const [report, setReport] = useState<any>(null)
   const [applications, setApplications] = useState<ApplicationForGating[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -58,9 +59,9 @@ export default function CandidateProfilePage() {
     }
 
     loadData()
-  }, [accessToken, isAuthenticated, router])
+  }, [accessToken, isAuthenticated, isHydrated, router])
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (

@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuthStore } from '@/lib/auth'
 import { employerApi } from '@/lib/api'
-import { ArrowLeft, Users, Download, RefreshCw, MapPin, Star, AlertTriangle, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Users, Download, RefreshCw, MapPin, Star, AlertTriangle, CheckCircle, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import {
   Select,
@@ -33,7 +33,7 @@ export default function JobDetailPage() {
   const router = useRouter()
   const params = useParams()
   const jobId = params.id as string
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [job, setJob] = useState<any>(null)
   const [shortlist, setShortlist] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -43,13 +43,14 @@ export default function JobDetailPage() {
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
     }
 
     loadData()
-  }, [isAuthenticated, accessToken, jobId, router])
+  }, [isHydrated, isAuthenticated, accessToken, jobId, router])
 
   const loadData = async () => {
     if (!accessToken || !jobId) return
@@ -126,7 +127,7 @@ export default function JobDetailPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (
@@ -222,6 +223,12 @@ export default function JobDetailPage() {
           {job.status === 'DRAFT' && (
             <Button onClick={publishJob}>Publicar</Button>
           )}
+          <Link href={`/employer/jobs/${jobId}/matches`}>
+            <Button variant="outline">
+              <Sparkles className="h-4 w-4 mr-2" />
+              Candidatos IA
+            </Button>
+          </Link>
           <Button variant="outline" onClick={generateShortlist} disabled={generating}>
             <RefreshCw className={`h-4 w-4 mr-2 ${generating ? 'animate-spin' : ''}`} />
             {generating ? 'Generando...' : 'Generar Shortlist'}

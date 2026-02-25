@@ -16,11 +16,36 @@ from app.models.invitation import InterviewInvitation
 from app.models.application import Application, ApplicationStatus
 from app.models.settings import SystemSettings
 from app.models.placement import Placement, Assignment, PlacementStatus, AssignmentStatus, PlacementType
+from app.models.cache import CVAnalysisCache
 from app.models.payroll import (
     Employee, Contract, Attendance, PayrollRun, PayrollLine,
     Payslip, DeductionType, TaxConfig,
     PayFrequency, ContractType, AttendanceType, PayrollRunStatus, DeductionCalcType,
 )
+from app.models.eor import (
+    EOREmployee,
+    EORPayrollRun,
+    EORPayrollItem,
+    EORVacationRequest,
+    EOREmployeeStatus,
+    EORContractType,
+    EORPaymentFrequency,
+    EORPayrollRunStatus,
+    VacationRequestStatus,
+    AFPProvider,
+    BankAccountType,
+)
+from app.models.billing import (
+    Plan,
+    Subscription,
+    Invoice,
+    UsageRecord,
+    PlanTier,
+    SubscriptionStatus,
+    InvoiceStatus,
+)
+from app.models.match import CandidateJobMatch, MatchStatus
+from app.models.video_interview import VideoInterview, VideoInterviewStatus
 
 __all__ = [
     "User",
@@ -61,4 +86,27 @@ __all__ = [
     "AttendanceType",
     "PayrollRunStatus",
     "DeductionCalcType",
+    "CVAnalysisCache",
+    "EOREmployee",
+    "EORPayrollRun",
+    "EORPayrollItem",
+    "EORVacationRequest",
+    "EOREmployeeStatus",
+    "EORContractType",
+    "EORPaymentFrequency",
+    "EORPayrollRunStatus",
+    "VacationRequestStatus",
+    "AFPProvider",
+    "BankAccountType",
+    "Plan",
+    "Subscription",
+    "Invoice",
+    "UsageRecord",
+    "PlanTier",
+    "SubscriptionStatus",
+    "InvoiceStatus",
+    "CandidateJobMatch",
+    "MatchStatus",
+    "VideoInterview",
+    "VideoInterviewStatus",
 ]

@@ -2,9 +2,10 @@
 
 from enum import Enum as PyEnum
 
-from sqlalchemy import Column, String, Text, Enum, Integer, ForeignKey, Boolean
+from sqlalchemy import Column, DateTime, String, Text, Enum, Integer, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import deferred, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.models.base import BaseModel
 
@@ -26,6 +27,13 @@ class JobModality(str, PyEnum):
     REMOTE = "REMOTE"
     HYBRID = "HYBRID"
     ONSITE = "ONSITE"
+
+
+class InterviewType(str, PyEnum):
+    """Interview type for job postings."""
+
+    CHAT = "chat"
+    VIDEO = "video"
 
 
 class JobCategory(str, PyEnum):
@@ -121,6 +129,7 @@ class Job(BaseModel):
     benefits = Column(JSONB, default=list)  # List of benefits
 
     # Interview configuration
+    interview_type = Column(String(10), default="chat", nullable=False)
     custom_questions = Column(JSONB, default=list)  # Custom interview questions
 
     # Category-specific fields (for generic job form)
@@ -141,6 +150,10 @@ class Job(BaseModel):
 
     # Display name for candidates (always shows this instead of real company name)
     display_company_name = Column(String(255), default="Bloque Internacional", nullable=True)
+
+    # Embedding for AI matching (deferred to avoid loading large vectors on every query)
+    job_embedding = deferred(Column(Vector(1536), nullable=True))
+    embedding_updated_at = Column(DateTime, nullable=True)
 
     # Rubric association
     rubric_id = Column(UUID(as_uuid=True), ForeignKey("rubrics.id"), nullable=True)

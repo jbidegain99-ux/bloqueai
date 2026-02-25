@@ -6,7 +6,7 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_
 import structlog
@@ -25,8 +25,14 @@ from app.schemas.application import (
     CVAnalysisResponse,
 )
 from app.utils.deps import get_current_user
+from app.utils.cache import generate_cache_key, get_cached_analysis, set_cached_analysis
+from app.middleware.rate_limit import get_user_id_or_ip, RATE_LIMIT_CV_ANALYSIS
+
+from slowapi import Limiter
 
 logger = structlog.get_logger()
+
+limiter = Limiter(key_func=get_user_id_or_ip)
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
 
@@ -262,83 +268,81 @@ async def upload_resume(
             detail="Aplicacion no encontrada"
         )
 
-    # Validate file type
-    allowed_types = [
-        "application/pdf",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ]
-    content_type = file.content_type or ""
-
-    # Also check extension
-    filename = file.filename or "file"
-    ext = filename.lower().split(".")[-1] if "." in filename else ""
-
-    if content_type not in allowed_types and ext not in ["pdf", "docx"]:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Formato no soportado. Solo se aceptan archivos PDF o DOCX."
-        )
-
-    # Read file content
+    # Read file content and validate
     content = await file.read()
-    file_size = len(content)
+    filename = file.filename or "file"
 
-    # Validate file size (max 10MB)
-    max_size = 10 * 1024 * 1024  # 10MB
-    if file_size > max_size:
+    from app.utils.cv_validator import validate_cv, CVValidationError
+
+    _ERROR_CODE_TO_STATUS = {
+        "invalid_extension": status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        "file_too_large": status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        "invalid_mime": status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        "corrupt_pdf": status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "empty_pdf": status.HTTP_422_UNPROCESSABLE_ENTITY,
+    }
+
+    try:
+        cv_result = validate_cv(content, filename, file.content_type)
+    except CVValidationError as e:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Archivo muy grande. El tamano maximo es 10MB."
+            status_code=_ERROR_CODE_TO_STATUS.get(e.code, status.HTTP_400_BAD_REQUEST),
+            detail=e.message,
         )
 
-    # Extract text from file
-    resume_text = ""
-    try:
-        if ext == "pdf" or "pdf" in content_type:
-            # Extract text from PDF
-            try:
-                import pdfplumber
-                with pdfplumber.open(io.BytesIO(content)) as pdf:
-                    text_parts = []
-                    for page in pdf.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text_parts.append(page_text)
-                    resume_text = "\n".join(text_parts)
-            except Exception as pdf_err:
-                logger.warning("pdf_extraction_failed", error=str(pdf_err))
-                # Try PyPDF2 as fallback
+    file_size = cv_result.file_size
+    ext = cv_result.extension
+    resolved_content_type = cv_result.content_type or ""
+
+    # Extract text from file — prefer already-extracted text from validator
+    resume_text = cv_result.text or ""
+    if not resume_text:
+        try:
+            if ext == "pdf" or "pdf" in resolved_content_type:
+                # Extract text from PDF
                 try:
-                    from PyPDF2 import PdfReader
-                    reader = PdfReader(io.BytesIO(content))
+                    import pdfplumber
+                    with pdfplumber.open(io.BytesIO(content)) as pdf:
+                        text_parts = []
+                        for page in pdf.pages:
+                            page_text = page.extract_text()
+                            if page_text:
+                                text_parts.append(page_text)
+                        resume_text = "\n".join(text_parts)
+                except Exception as pdf_err:
+                    logger.warning("pdf_extraction_failed", error=str(pdf_err))
+                    # Try PyPDF2 as fallback
+                    try:
+                        from PyPDF2 import PdfReader
+                        reader = PdfReader(io.BytesIO(content))
+                        text_parts = []
+                        for page in reader.pages:
+                            text = page.extract_text()
+                            if text:
+                                text_parts.append(text)
+                        resume_text = "\n".join(text_parts)
+                    except Exception as pypdf_err:
+                        logger.warning("pypdf_extraction_failed", error=str(pypdf_err))
+
+            elif ext == "docx" or "wordprocessingml" in resolved_content_type:
+                # Extract text from DOCX
+                try:
+                    from docx import Document
+                    doc = Document(io.BytesIO(content))
                     text_parts = []
-                    for page in reader.pages:
-                        text = page.extract_text()
-                        if text:
-                            text_parts.append(text)
+                    for para in doc.paragraphs:
+                        if para.text.strip():
+                            text_parts.append(para.text)
                     resume_text = "\n".join(text_parts)
-                except Exception as pypdf_err:
-                    logger.warning("pypdf_extraction_failed", error=str(pypdf_err))
+                except Exception as docx_err:
+                    logger.warning("docx_extraction_failed", error=str(docx_err))
 
-        elif ext == "docx" or "wordprocessingml" in content_type:
-            # Extract text from DOCX
-            try:
-                from docx import Document
-                doc = Document(io.BytesIO(content))
-                text_parts = []
-                for para in doc.paragraphs:
-                    if para.text.strip():
-                        text_parts.append(para.text)
-                resume_text = "\n".join(text_parts)
-            except Exception as docx_err:
-                logger.warning("docx_extraction_failed", error=str(docx_err))
-
-    except Exception as e:
-        logger.error("text_extraction_error", error=str(e))
-        # Continue even if text extraction fails
+        except Exception as e:
+            logger.error("text_extraction_error", error=str(e))
+            # Continue even if text extraction fails
 
     # Determine file type
-    file_type = "pdf" if (ext == "pdf" or "pdf" in content_type) else "docx"
+    file_type = "pdf" if ext == "pdf" else "docx"
 
     # Update application
     application.resume_filename = filename
@@ -370,7 +374,9 @@ async def upload_resume(
 
 
 @router.post("/{application_id}/analyze", response_model=CVAnalysisResponse)
+@limiter.limit(RATE_LIMIT_CV_ANALYSIS)
 async def analyze_cv(
+    request: Request,
     application_id: UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -435,8 +441,22 @@ async def analyze_cv(
         )
 
     try:
-        # Build job context - inside try block to catch any attribute errors
-        job_context = f"""
+        cv_text = application.resume_text or "CV sin texto extraido"
+
+        # ── Cache lookup ──────────────────────────────────────────
+        cache_key = generate_cache_key(cv_text, str(job.id))
+        cached_result = get_cached_analysis(db, cache_key)
+        cache_hit = cached_result is not None
+
+        if cached_result:
+            # Use cached analysis — skip OpenAI call entirely
+            analysis = cached_result
+            latency_ms = 0.0
+        else:
+            # ── Call OpenAI ───────────────────────────────────────
+
+            # Build job context - inside try block to catch any attribute errors
+            job_context = f"""
 Puesto: {job.title or 'Sin titulo'}
 Descripcion: {job.description or 'Sin descripcion'}
 
@@ -451,13 +471,11 @@ Ubicacion: {job.location or 'No especificado'}
 Modalidad: {job.modality.value if job.modality else 'No especificado'}
 """
 
-        cv_text = application.resume_text or "CV sin texto extraido"
+            # OpenAI SDK v1.x requires client instantiation
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
 
-        # OpenAI SDK v1.x requires client instantiation
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
-
-        system_prompt = """Eres un experto en reclutamiento y analisis de CVs. Tu tarea es analizar
+            system_prompt = """Eres un experto en reclutamiento y analisis de CVs. Tu tarea es analizar
 un CV contra los requisitos de un puesto de trabajo y proporcionar:
 1. Un score de match del 0 al 100
 2. Un perfil del candidato extraido del CV
@@ -478,7 +496,7 @@ Responde SIEMPRE en JSON valido con esta estructura exacta:
   "gaps": ["gap1", "gap2"]
 }"""
 
-        user_prompt = f"""Analiza este CV contra el puesto de trabajo:
+            user_prompt = f"""Analiza este CV contra el puesto de trabajo:
 
 === PUESTO ===
 {job_context}
@@ -487,44 +505,56 @@ Responde SIEMPRE en JSON valido con esta estructura exacta:
 {cv_text}
 
 Proporciona tu analisis en formato JSON."""
-        start_time = datetime.utcnow()
+            start_time = datetime.utcnow()
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.3,
-            max_tokens=2000,
-            response_format={"type": "json_object"}
-        )
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,
+                max_tokens=2000,
+                response_format={"type": "json_object"}
+            )
 
-        end_time = datetime.utcnow()
-        latency_ms = (end_time - start_time).total_seconds() * 1000
+            end_time = datetime.utcnow()
+            latency_ms = (end_time - start_time).total_seconds() * 1000
 
-        # Parse response
-        import json
-        result_text = response.choices[0].message.content
-        analysis = json.loads(result_text)
+            # Parse response
+            import json
+            result_text = response.choices[0].message.content
+            try:
+                analysis = json.loads(result_text)
+            except (json.JSONDecodeError, TypeError) as json_err:
+                logger.error(
+                    "cv_analysis_json_parse_error",
+                    application_id=str(application_id),
+                    raw_response=result_text[:500] if result_text else None,
+                    error=str(json_err),
+                )
+                raise ValueError(f"OpenAI returned invalid JSON: {json_err}")
 
-        # Log the API call
-        llm_log = LLMLog(
-            id=uuid4(),
-            user_id=current_user.id,
-            model="gpt-4o-mini",
-            tokens_in=response.usage.prompt_tokens if response.usage else 0,
-            tokens_out=response.usage.completion_tokens if response.usage else 0,
-            total_tokens=response.usage.total_tokens if response.usage else 0,
-            latency_ms=int(latency_ms),
-            status="success",
-            endpoint="cv_analysis",
-            operation="cv_analysis",
-            created_at=datetime.utcnow(),
-        )
-        db.add(llm_log)
+            # Log the API call
+            llm_log = LLMLog(
+                id=uuid4(),
+                user_id=current_user.id,
+                model="gpt-4o-mini",
+                tokens_in=response.usage.prompt_tokens if response.usage else 0,
+                tokens_out=response.usage.completion_tokens if response.usage else 0,
+                total_tokens=response.usage.total_tokens if response.usage else 0,
+                latency_ms=int(latency_ms),
+                status="success",
+                endpoint="cv_analysis",
+                operation="cv_analysis",
+                created_at=datetime.utcnow(),
+            )
+            db.add(llm_log)
 
-        # Extract results
+            # Store in cache for future requests
+            set_cached_analysis(db, cache_key, analysis, job_id=job.id)
+
+        # Extract results (from cache or fresh analysis)
         match_score = float(analysis.get("match_score", 50))
         candidate_profile = analysis.get("candidate_profile", {})
         match_reasons = analysis.get("match_reasons", [])
@@ -570,7 +600,9 @@ Proporciona tu analisis en formato JSON."""
         recommended_jobs = None
         if match_score < match_threshold:
             # Find similar jobs with potentially better match
-            similar_jobs = db.query(Job).filter(
+            similar_jobs = db.query(Job).options(
+                joinedload(Job.company)
+            ).filter(
                 Job.status == JobStatus.ACTIVE,
                 Job.id != job.id
             ).limit(5).all()
@@ -614,7 +646,8 @@ Proporciona tu analisis en formato JSON."""
             "cv_analysis_completed",
             application_id=str(application_id),
             match_score=match_score,
-            status=new_status.value
+            status=new_status.value,
+            cache_hit=cache_hit,
         )
 
         return CVAnalysisResponse(

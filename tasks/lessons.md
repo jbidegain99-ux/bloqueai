@@ -303,3 +303,468 @@
 - 3 deduction types: IMSS 2.5%, ISR 10%, Seguro Vida $150
 - ~60 attendance records over 15 business days
 - 1 payroll run (MONTHLY, Feb 2026) with 2 lines processed
+
+---
+
+## Session: 2026-02-20 - Bug Fixes (CV Upload + Interview Button)
+
+### Patterns Discovered
+
+1. **Duplicate Schemas with Conflicting Types**
+   - `ResumeUploadResponse` exists in BOTH `schemas/application.py` AND `schemas/resume.py`
+   - `application.py` version uses `ApplicationStatus` (correct for application flow)
+   - `resume.py` version uses `ResumeStatus` (correct for profile resume flow)
+   - Lesson: Name schemas uniquely when they represent different domain concepts
+
+2. **Invisible Error Display**
+   - `setError()` was called but the error element only rendered inside `step === 'upload'`
+   - When user was on `step === 'results'`, errors from interview start were invisible
+   - Lesson: Always verify error display exists in EVERY step/view where errors can occur
+
+3. **Missing Loading State = "Button Doesn't Work"**
+   - Backend calls LLM to generate first interview question (5-10s)
+   - Without spinner/disabled state, users think button is broken
+   - Lesson: Any async button action needs loading state, especially with LLM calls
+
+4. **joinedload for Related Queries**
+   - `db.query(Job).filter(...)` without `joinedload(Job.company)` risks lazy-load failures
+   - Especially in list queries where multiple related objects are accessed
+   - Lesson: Always joinedload relationships you plan to access in the same request
+
+5. **Use `err: unknown` not `err: any`**
+   - TypeScript best practice: catch blocks should use `unknown` type
+   - Check with `err instanceof Error` before accessing `.message`
+   - Follows CLAUDE.md "never use any" rule
+
+---
+
+## Session: 2026-02-20 - Login 500 Fix + Vercel Project Migration
+
+### Patterns Discovered
+
+1. **Verify Env Vars Are Correct Values**
+   - `NEXT_PUBLIC_API_URL` was set to `"N\n"` (garbage) on the `web` Vercel project
+   - This caused ALL API proxy calls to fail with 500
+   - Lesson: When debugging 500s on API proxy, first check `NEXT_PUBLIC_API_URL` value
+
+2. **Use `printf` Not `echo` for Vercel Env Vars**
+   - `echo "value" | vercel env add` adds trailing newline to the value
+   - Use `printf "value" | vercel env add` instead
+   - This caused Sentry source map upload to fail with "Invalid value for project"
+
+3. **Vercel Project Linking from Monorepo Root**
+   - If Vercel project has `rootDirectory: apps/web` in settings, link from repo root NOT from apps/web
+   - Linking from apps/web causes double-nesting: Vercel tries to build `apps/web/apps/web`
+   - `.vercel` directory should be at repo root
+
+4. **Multiple Vercel Projects = Confusion**
+   - Having both `web` and `bloqueai-ia` projects pointing to similar code caused environment variable confusion
+   - Always verify which project you're deploying to with `vercel whoami` + `vercel project ls`
+   - Clean up unused projects promptly
+
+5. **Dict vs ORM Object in FastAPI response_model**
+   - When `response_model` inherits from a schema with required fields (like `TimestampSchema` with `created_at`/`updated_at`), returning a dict must include ALL required fields
+   - Returning an ORM object works via `from_attributes=True` which auto-extracts all matching attributes
+   - Lesson: If GET returns dict but PATCH returns ORM, they may behave differently with the same `response_model`
+   - Tip: When writing dict responses, check the FULL inheritance chain of the response_model for required fields
+
+6. **Vercel Monorepo Deploy: rootDirectory + CWD**
+   - If a Vercel project has `rootDirectory: apps/api` in settings, always deploy from REPO ROOT, not from `apps/api/`
+   - Deploying from `apps/api/` causes double-nesting: `apps/api/apps/api`
+   - For deploying different projects from same monorepo, swap `.vercel/project.json` at repo root
+   - Keep a backup: `cp .vercel/project.json .vercel/project.json.frontend` before swapping
+
+---
+
+## Session: 2026-02-20 - Infrastructure (Cache + Rate Limiting + Health)
+
+### Patterns Used
+
+1. **PostgreSQL as Cache (No Redis Required)**
+   - Simple table with `cache_key` (SHA-256), `result` (JSONB), `expires_at`
+   - Graceful degradation: all cache operations wrapped in try/except
+   - Upsert pattern: check existing before insert to handle concurrent writes
+   - TTL-based expiry with `expires_at > NOW()` filter
+
+2. **slowapi Reuse Instead of Custom Rate Limiter**
+   - slowapi was already installed but only used on 1 endpoint
+   - Each router creates its own `Limiter(key_func=...)` — not shared from main
+   - Custom `key_func` extracts `user_id` from `request.state` (set by middleware)
+   - Decorator order matters: `@router` first, then `@limiter.limit`
+
+3. **JWT Extraction in Middleware for Rate Limiting**
+   - Can't use `Depends()` in middleware, so decode JWT manually
+   - Best-effort: wrapped in try/except, falls back to IP if no valid token
+   - Stored in `request.state.rate_limit_user_id` for key_func to read
+
+4. **Body Parameter Rename for slowapi Compatibility**
+   - slowapi needs a parameter named `request` with type `Request`
+   - When endpoint already has `request: SomeBodySchema`, rename body to `body`
+   - Update ALL references to `request.field` → `body.field` in the function
+
+5. **Health Check Service-Level Granularity**
+   - Each service (DB, OpenAI, Storage) gets its own `ServiceStatus` with status + latency
+   - Overall status derived from individual: all healthy → healthy, DB only → degraded, DB down → unhealthy
+   - `time.monotonic()` for accurate latency measurement (not affected by wall clock changes)
+
+---
+
+## Session: 2026-02-21 - Semana 3 UI/Dashboard Premium (T041-T049)
+
+### Patterns Discovered
+
+1. **Generic Constraint `extends object` vs `extends Record<string, unknown>`**
+   - `Record<string, unknown>` requires an index signature — TypeScript interfaces DON'T satisfy it
+   - `extends object` works with any interface (e.g., `DataTable<UpcomingInterview>`)
+   - Lesson: Use `extends object` for generic component constraints, not `Record<string, unknown>`
+
+2. **pnpm in Monorepo — Use `pnpm add -F <workspace>`**
+   - This project uses pnpm with `pnpm-workspace.yaml`, not npm
+   - Running `npm install` fails with postinstall script errors (`run-s`, `husky` not found)
+   - Correct command: `pnpm add -F web @dnd-kit/core` (installs in the `web` workspace)
+   - Always check for `pnpm-lock.yaml` before using npm
+
+3. **PageTransition in Next.js App Router**
+   - `exit` variants in Framer Motion ONLY work with `AnimatePresence`
+   - In App Router, wrap children with `AnimatePresence mode="wait"` + key by `usePathname()`
+   - Best place: inside the shared layout shell (AppShell), not in each page
+   - `will-change: opacity, transform` for GPU acceleration
+
+4. **SVG Sparkline with Framer Motion**
+   - Use `motion.path` with `pathLength` animation (0 → 1) for draw effect
+   - Area fill: close the path to bottom corners, use semi-transparent fill
+   - Color based on trend: compare `data[last]` vs `data[first]`
+   - End dot with `motion.circle` + delayed `scale` animation
+
+5. **DnD Kit Column Detection**
+   - Prefix column droppable IDs with `column-` to distinguish from card IDs
+   - In `onDragOver`, check if `over.id` starts with `column-` vs finding card's column
+   - `PointerSensor` with `activationConstraint: { distance: 5 }` prevents accidental drags
+   - Optimistic update: modify local state immediately, then call API via callback
+
+6. **Integrate Transitions at Shell Level, Not Page Level**
+   - Adding `<PageTransition>` inside `AppShell` means ALL pages get transitions automatically
+   - No need to import in every `page.tsx` — reduces boilerplate and forgotten imports
+   - If a page needs to opt out, it can wrap its content in a `motion.div` with `initial={false}`
+
+### Architecture Decisions
+
+1. **DataTable Generic API**
+   - Single generic component `DataTable<T>` handles all table needs
+   - `columns` array with `render` function for custom cell content
+   - `actions` array with `onClick(row)` for row-level actions
+   - Internal state for sort/filter/pagination — no external state management needed
+   - `emptyState` slot for custom empty illustrations (composable with EmptyState component)
+
+2. **EmptyState Variant Pattern**
+   - Config object maps variant keys to defaults (icon, title, description, colors)
+   - All props are overridable — variant provides sensible defaults
+   - One component, 7 variants — avoids 7 separate empty state components
+
+3. **MetricCard Format Prop**
+   - Default: `value.toLocaleString('es-ES')` for numbers
+   - `format` prop for custom display: `format={(v) => \`${v.toFixed(1)}%\`}`
+   - Keeps component generic — works for counts, percentages, currency
+
+4. **KanbanBoard Data Shape**
+   - Input: `Record<string, KanbanCandidate[]>` — column key → candidates
+   - Output: `onStatusChange(candidateId, fromColumn, toColumn)` callback
+   - Consumer decides how to handle the API call — Kanban is pure view layer
+   - Optimistic update built-in, rollback can be done by passing new `candidates` prop
+
+### Component Inventory (Semana 3)
+
+| Component | Location | Depends On |
+|-----------|----------|------------|
+| DataTable | `components/ui/data-table.tsx` | DropdownMenu, Skeleton, Framer Motion |
+| MetricCard | `components/ui/metric-card.tsx` | Skeleton, Framer Motion |
+| EmptyState | `components/ui/empty-state.tsx` | Button, Framer Motion |
+| PageTransition | `components/layout/page-transition.tsx` | Framer Motion, animations.ts |
+| PipelineFunnel | `components/dashboard/pipeline-funnel.tsx` | Skeleton, Framer Motion |
+| KanbanBoard | `components/candidates/kanban-board.tsx` | @dnd-kit, Avatar, Badge, Skeleton, Framer Motion |
+| CommandPalette | `components/ui/command-palette.tsx` | cmdk, Framer Motion, auth store |
+
+---
+
+## Session Fixes 2026-02-21
+
+### Patterns Discovered
+
+1. **cmdk Keyboard Shortcut — Capture Phase Required**
+   - `document.addEventListener('keydown', handler, true)` — the `true` (capture) is essential
+   - Without capture phase, Next.js or other listeners may swallow the event
+   - Must call both `e.preventDefault()` and `e.stopPropagation()` for Ctrl+K
+
+2. **Array.from(new Set()) vs Spread**
+   - `[...new Set(array)]` fails with TS2802 when `downlevelIteration` is not enabled
+   - Always use `Array.from(new Set(array))` for safer TypeScript compatibility
+
+3. **Generic Constraint: `extends object` not `Record<string, unknown>`**
+   - `Record<string, unknown>` rejects interfaces with defined properties
+   - `extends object` accepts any non-primitive — works with all interface types
+   - Applied to DataTable<T>, affects any generic component accepting user-defined types
+
+4. **Employer Dashboard Type Casting**
+   - API responses typed as `{ items?: Record<string, unknown>[] }` for safety
+   - Map over items with `String(j.field ?? '')` / `Number(j.field ?? 0)` coercion
+   - Never cast API response directly to domain interface — always map explicitly
+
+5. **Dashboard Role Routing**
+   - Employers at `/dashboard` get `router.replace('/employer/dashboard')` redirect
+   - Avoids maintaining duplicate employer dashboard code in two locations
+   - `replace` not `push` to keep clean browser history
+
+### Architecture Decisions (Fixes)
+
+1. **Command Palette in AppShell**
+   - Mounted once at AppShell level → available on all authenticated pages
+   - Role-based items computed via `useMemo` with auth store helpers
+   - Logout action uses `router.push('/login')` after `logout()` from store
+
+2. **Premium Component Adoption Pattern**
+   - MetricCard, DataTable, EmptyState used consistently across all dashboards
+   - QuickAction extracted as local component (not shared — too page-specific)
+   - Status badge maps (label + variant) defined as page-level constants
+
+---
+
+## Session: 2026-02-21 - EOR Production Bug Fixes
+
+### Patterns Discovered
+
+1. **SQLAlchemy Enum Columns Require Python Enum Instances**
+   - Passing `"CRECER"` (string) to a column typed `Enum(AFPProvider)` raises `LookupError`
+   - Must convert: `AFPProvider(data.afp_provider)` before constructing the model
+   - Same applies to all enum columns: `BankAccountType`, `EORPaymentFrequency`, `EORContractType`
+   - Pydantic schemas use `str` fields with `@validator` normalization — the router must bridge the gap
+
+2. **Pydantic Decimal Serializes as String in JSON**
+   - `Decimal("1500.00")` becomes `"1500.00"` (string) in JSON response
+   - Frontend calling `.toFixed(2)` on a string silently returns wrong result or crashes
+   - Fix: Always wrap with `Number()` in TypeScript: `Number(employee.base_salary).toFixed(2)`
+   - Applies to any `Decimal`, `Numeric`, or `numeric` DB column
+
+3. **Authenticated File Downloads: fetch + Blob, Not window.open**
+   - `window.open(url?token=...)` does NOT send Authorization header
+   - Backend endpoints expecting `Authorization: Bearer` header reject query param tokens
+   - Correct pattern: `fetch()` with header → `res.blob()` → `URL.createObjectURL()` → `a.click()`
+   - Always clean up: `URL.revokeObjectURL()` + `a.remove()`
+
+4. **Raw PDF Generation with Hardcoded Offsets = Corrupt Files**
+   - Hand-rolling PDF with `%PDF-1.4` header and hardcoded xref byte offsets breaks when content varies
+   - Content stream length changes with different contract data → offsets become wrong
+   - Always use a proper PDF library (reportlab, FPDF, WeasyPrint)
+   - reportlab `SimpleDocTemplate` + `Paragraph` + `Spacer` handles pagination automatically
+
+5. **Alembic Version Can Get Out of Sync with DB State**
+   - Tables from migrations 007-010 existed but `alembic current` showed version 006
+   - This happens when tables are created outside alembic (manual SQL, other tools)
+   - Fix: `alembic stamp <version>` to align the version tracker
+   - Always verify with `alembic current` before running `upgrade head`
+
+6. **SQLAlchemy Enum create_type=False May Be Ignored**
+   - In migration 011, `sa.Enum(..., create_type=False)` was specified but `CREATE TYPE` still ran
+   - When the type already exists → `DuplicateObject: type "afp_provider" already exists`
+   - Workaround: Create tables via direct SQL with `DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$`
+
+7. **Enum Comparison Values Must Match Backend Normalization**
+   - Frontend compared `afp_provider === 'AFP_CRECER'` but backend stores/returns `'CRECER'`
+   - Always check actual API response values, not what you assume the enum name is
+   - SQLAlchemy `Enum.value` may differ from the Python enum member name
+
+8. **try/except + db.rollback() Around db.commit()**
+   - Without rollback on exception, the SQLAlchemy session enters a broken state
+   - Subsequent queries on the same session fail with `InvalidRequestError`
+   - Pattern: `try: db.commit() except Exception: db.rollback(); raise`
+
+9. **Production DB Migrations Need Verification First**
+   - Always run `alembic current` to check version before `upgrade`
+   - Check if tables/types already exist before creating them
+   - Use `DO/EXCEPTION` blocks for idempotent DDL in PostgreSQL
+   - Keep a mental model of what each migration creates
+
+10. **Vercel Auto-Deploys from Git Push**
+    - Connected Vercel projects auto-deploy on `git push`
+    - No manual `vercel deploy --prod` needed for code changes
+    - But DB migrations must be run separately (they don't auto-run)
+    - API: `bloqueai-api.vercel.app`, Frontend: `bloqueai-ia.vercel.app`
+
+### Key Fixes Summary
+
+| Bug | Root Cause | Fix | Commit |
+|-----|-----------|-----|--------|
+| 500 on employee create | String→Enum mismatch in SQLAlchemy | Explicit enum conversion in router | `3414fba` |
+| Detail page crash | Decimal→String + AFP enum names | `Number()` wrap + comparison fix | `a71f6d5` |
+| Contract download 401 | `window.open` doesn't send headers | `fetch` + blob download | `14f7f88` |
+| Corrupt PDF | Hardcoded xref offsets in raw PDF | reportlab SimpleDocTemplate | `21e5095` |
+
+---
+
+## Session: 2026-02-23 - QA Bug Fixes (Prompt 23)
+
+### Patterns Discovered
+
+1. **Zustand Persist Hydration Race Condition**
+   - `zustand/middleware/persist` hydrates async from localStorage
+   - Store starts with default values (isAuthenticated: false) on SSR/page load
+   - useEffect auth guards fire BEFORE hydration, causing false redirects to /login
+   - Fix: Add `isHydrated` flag with `onRehydrateStorage` callback, check before redirecting
+   - Pattern: `if (!isHydrated) return` as FIRST line in auth guard useEffect
+
+2. **Role Check Order Matters**
+   - `isEmployer()` included ADMIN and RECRUITER roles for convenience
+   - This meant `isEmployer()` returned true for admins, checked BEFORE `isAdmin()`
+   - Fix: Make role checks exclusive (isEmployer = EMPLOYER only) and check most specific first
+   - Order: isAdmin → isRecruiter → isEmployer → isCandidate
+
+3. **tsconfig.json Must Exclude E2E Test Directories**
+   - Playwright test files (e2e/) use types not available in Next.js build context
+   - Including them in tsconfig causes build failures (e.g., `Window` type extensions)
+   - Fix: Add `"e2e"` to `exclude` array in tsconfig.json
+
+4. **aria-label on Icon-Only Buttons**
+   - Buttons with only an icon (no text) need `aria-label` for screen readers
+   - Easy to miss in initial development, caught by accessibility tests
+   - Always add `aria-label` when button content is purely visual
+
+5. **role="alert" for Error Messages**
+   - Screen readers need `role="alert"` to announce error messages dynamically
+   - Apply to both field-level errors and form-level error banners
+
+---
+
+## Session: 2026-02-23 - pgvector + Embeddings (Prompt 24)
+
+### Key Patterns
+
+1. **pgvector Installation in Docker**
+   - `postgres:16-alpine` does NOT include pgvector — must compile from source or use `pgvector/pgvector:pg16`
+   - When compiling inside container: `make install` may fail on LLVM bitcode step — use `with_llvm=no`
+   - For docker-compose, prefer the official pgvector Docker image: `pgvector/pgvector:pg16`
+
+2. **Alembic Migrations with pgvector Vector Type**
+   - Alembic's `sa.Column()` doesn't natively support pgvector `Vector` type
+   - Use raw SQL: `op.execute("ALTER TABLE ... ADD COLUMN ... vector(1536)")`
+   - For `embedding_updated_at` use standard `sa.Column(sa.DateTime())`
+   - HNSW index creation also requires raw SQL with `op.execute()`
+
+3. **Adapting Prompt Templates to Actual Codebase**
+   - Prompts assume generic names (e.g., `OPENAI_API_KEY`, `CandidateProfile`)
+   - Always check actual: config key names, model names, table names, import paths
+   - This project uses `llm_api_key` + `llm_base_url` (not separate `OPENAI_API_KEY`)
+   - Table is `candidates` (not `candidate_profiles`), jobs use `must_haves` JSONB (not `requirements` Text)
+
+4. **EmbeddingService Design**
+   - Singleton pattern for embedding service (module-level instance)
+   - In-memory cache with MD5 hash keys to avoid duplicate API calls
+   - `use_cache=False` option for force regeneration
+   - Batch API: send multiple texts in one `embeddings.create()` call
+   - Always handle enum `.value` when building text from JSONB fields that may contain enum instances
+
+---
+
+## Session: 2026-02-24 - Video Interview Infrastructure (Prompt 27)
+
+### Patterns Used
+
+1. **Lazy Imports for Optional Heavy Dependencies**
+   - Pipecat and its sub-packages (deepgram, elevenlabs, anthropic) are heavy
+   - Import them lazily inside `async def run()` with try/except ImportError
+   - This allows the app to start even if pipecat isn't installed (graceful degradation)
+   - Pattern: services that depend on optional packages should lazy-import at usage time
+
+2. **Singleton Service Pattern for External APIs**
+   - `get_livekit_service()` returns a module-level singleton
+   - Service checks configuration in `__init__` and logs warning if not configured
+   - No crash on startup — allows other features to work without LiveKit
+   - Same pattern used by `get_embedding_service()` in embeddings module
+
+3. **Background Tasks for Long-Running AI Processes**
+   - `BackgroundTasks.add_task()` for the interview agent pipeline
+   - Agent runs in background while HTTP response returns immediately
+   - Background task creates its own DB session (SessionLocal) to avoid session scope issues
+   - Always wrap in try/except with status update on error
+
+4. **Pipecat Dependency Chain Impact**
+   - Installing `pipecat-ai[livekit,deepgram,anthropic,elevenlabs]` bumps:
+     - `pydantic` from 2.5.3 → 2.12.5
+     - `openai` from 1.12.0 → 2.23.0
+     - `numpy` from 1.26.4 → 2.2.6
+   - Existing code still works with newer versions (backward compatible)
+   - Always verify full app loads after heavy dependency installs
+
+5. **VideoInterview vs InterviewSession**
+   - Existing `InterviewSession` model handles text-based AI interviews
+   - New `VideoInterview` model handles LiveKit-based video interviews
+   - Both link to `Application` — different modalities for the same flow
+   - Named `VideoInterview` (not `Interview`) to avoid confusion with existing model
+
+---
+
+## Session: 2026-02-24 - Video Interview UI (Prompt 28)
+
+### Patterns Discovered
+
+1. **CustomEvent Bridge for Cross-Component Communication**
+   - `RoomEventHandler` (inside LiveKitRoom context) receives `DataReceived` events
+   - Cannot pass data directly to `TranscriptPanel` (different component tree positions)
+   - Solution: dispatch `window.CustomEvent('interview-transcript', { detail })` from handler
+   - TranscriptPanel listens via `window.addEventListener('interview-transcript', ...)`
+   - Simpler than lifting state up through multiple layers or adding a global store
+
+2. **LiveKit React SDK Component Hierarchy**
+   - `LiveKitRoom` must be the outermost wrapper — all hooks require its context
+   - `useTracks()`, `useParticipants()`, `useRoomContext()` only work inside `LiveKitRoom`
+   - `RoomAudioRenderer` must be inside `LiveKitRoom` for audio playback
+   - `ControlBar` provides built-in mic/camera/leave controls with `variation="verbose"`
+
+3. **Media Stream Cleanup Before LiveKit Connection**
+   - PreJoinCheck acquires `getUserMedia()` for camera/mic preview
+   - MUST call `stream.getTracks().forEach(t => t.stop())` before LiveKit connects
+   - If preview tracks aren't stopped, LiveKit can't acquire the same devices
+   - Pattern: stop tracks in `handleJoin()`, then call `onReady()` callback
+
+4. **Adapting Prompt Code to Existing Patterns**
+   - Prompt code used `localStorage.getItem('token')` → adapted to zustand `useAuthStore()`
+   - Prompt code used Integer IDs → adapted to UUID strings
+   - Prompt code imported `alert.tsx`/`scroll-area.tsx` → used plain divs (components don't exist)
+   - Prompt code used `any` types → used `unknown` with `instanceof` checks per CLAUDE.md
+   - Always scan prompt code for patterns that don't match the actual codebase
+
+5. **State Machine Pattern for Multi-Step UIs**
+   - Interview page uses explicit `InterviewState` type: loading | pre-join | joining | in-room | completed | error
+   - Each state renders a completely different UI (not conditional visibility)
+   - State transitions are explicit via `setState('next-state')`
+   - Error state always provides both "back" and "retry" actions
+
+---
+
+## Session: 2026-02-24 - Interview Analysis (Prompt 29)
+
+### Patterns Discovered
+
+1. **Codebase Uses OpenAI-Compatible API, Not Anthropic Directly**
+   - Prompt assumed `Anthropic(api_key=...)` but codebase uses `llm_api_key` + `llm_base_url`
+   - Settings: `llm_base_url`, `llm_api_key`, `llm_model` (defaults to gpt-4o-mini)
+   - Solution: Use `OpenAI(api_key=..., base_url=...)` client for analysis service
+   - Any OpenAI-compatible provider works (OpenAI, Azure, local, etc.)
+
+2. **Job Model Uses `must_haves` Not `requirements`**
+   - Prompt assumed `job.requirements` (List[str]) but actual field is `job.must_haves` (JSONB)
+   - Always verify actual model fields before implementing — prompts describe ideal, not actual
+
+3. **Candidate Name Through User Relationship**
+   - Candidate model has NO `full_name` — it lives on `candidate.user.full_name`
+   - Must eager-load with `joinedload(Candidate.user)` to avoid N+1
+   - Same applies to `candidate.user_id` for auth checks
+
+4. **Role-Based Response Differentiation**
+   - Single endpoint `/results` returns different data based on user role
+   - Employers: full analysis (scores, recommendation, red flags, all details)
+   - Candidates: limited feedback (impression, 2 strengths, 1 tip)
+   - Avoids needing separate endpoints while protecting sensitive scoring data
+
+5. **Analysis Caching on First Request**
+   - `/analyze` endpoint checks if `ai_scores` and `ai_summary` already exist
+   - If so, returns cached result immediately (no re-analysis, no extra LLM cost)
+   - Pattern: idempotent analysis — calling twice is safe and cheap

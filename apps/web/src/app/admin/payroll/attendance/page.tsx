@@ -50,7 +50,7 @@ interface ClientOption {
 
 export default function PayrollAttendancePage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [records, setRecords] = useState<AttendanceRecord[]>([])
   const [clients, setClients] = useState<ClientOption[]>([])
@@ -62,10 +62,11 @@ export default function PayrollAttendancePage() {
   const [importing, setImporting] = useState(false)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) { router.push('/login'); return }
     if (!isRecruiter()) { router.push('/dashboard'); return }
     loadClients()
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadClients = async () => {
     if (!accessToken) return

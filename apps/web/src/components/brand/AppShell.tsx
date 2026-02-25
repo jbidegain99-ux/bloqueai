@@ -17,8 +17,14 @@ import {
   Search,
   ClipboardList,
   Building2,
+  Globe,
+  CreditCard,
+  Sparkles,
+  Video,
 } from 'lucide-react'
 import { Logo } from './Logo'
+import { PageTransition } from '@/components/layout/page-transition'
+import { CommandPalette } from '@/components/ui/command-palette'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -74,25 +80,9 @@ export function AppShell({ children }: AppShellProps) {
     { label: 'Clientes', href: '/admin/clients', icon: Building2 },
   ]
 
-  // Role-specific navigation
+  // Role-specific navigation (order matters: most specific role first)
   const getRoleNav = () => {
-    if (isCandidate()) {
-      return [
-        { label: 'Explorar Puestos', href: '/candidate/jobs', icon: Search },
-        { label: 'Mis Aplicaciones', href: '/candidate/applications', icon: ClipboardList },
-        { label: 'Mi Perfil', href: '/candidate/profile', icon: User },
-      ]
-    }
-
-    if (isEmployer()) {
-      return [
-        { label: 'Dashboard', href: '/employer/dashboard', icon: LayoutDashboard },
-        { label: 'Trabajos', href: '/employer/jobs', icon: Briefcase },
-        { label: 'Shortlists', href: '/employer/shortlists', icon: Users },
-      ]
-    }
-
-    if (isRecruiter() || isAdmin()) {
+    if (isAdmin()) {
       return [
         { label: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
         { label: 'Trabajos', href: '/employer/jobs', icon: Briefcase },
@@ -104,11 +94,44 @@ export function AppShell({ children }: AppShellProps) {
       ]
     }
 
+    if (isRecruiter()) {
+      return [
+        { label: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
+        { label: 'Trabajos', href: '/employer/jobs', icon: Briefcase },
+        { label: 'Clientes', href: '/admin/clients', icon: Building2 },
+        { label: 'Rúbricas', href: '/admin/rubrics', icon: Settings },
+        { label: 'Entrevistas', href: '/admin/interviews', icon: MessageSquare },
+        { label: 'KPIs', href: '/admin/kpis', icon: BarChart3 },
+        { label: 'Placements', href: '/admin/placements', icon: FileText },
+      ]
+    }
+
+    if (isEmployer()) {
+      return [
+        { label: 'Dashboard', href: '/employer/dashboard', icon: LayoutDashboard },
+        { label: 'Trabajos', href: '/employer/jobs', icon: Briefcase },
+        { label: 'Shortlists', href: '/employer/shortlists', icon: Users },
+        { label: 'EOR', href: '/employer/eor', icon: Globe },
+        { label: 'Facturación', href: '/employer/settings/billing', icon: CreditCard },
+      ]
+    }
+
+    if (isCandidate()) {
+      return [
+        { label: 'Explorar Puestos', href: '/candidate/jobs', icon: Search },
+        { label: 'Mis Aplicaciones', href: '/candidate/applications', icon: ClipboardList },
+        { label: 'Recomendados', href: '/candidate/recommended', icon: Sparkles },
+        { label: 'Entrevistas', href: '/candidate/interviews', icon: Video },
+        { label: 'Mi Perfil', href: '/candidate/profile', icon: User },
+      ]
+    }
+
     return []
   }
 
   return (
     <div className="min-h-screen bg-bloque-gray50">
+      <CommandPalette />
       {/* Top Navigation */}
       <header className="bg-bloque-navy900 text-white">
         {/* Main Header */}
@@ -215,7 +238,9 @@ export function AppShell({ children }: AppShellProps) {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
-        {children}
+        <PageTransition>
+          {children}
+        </PageTransition>
       </main>
 
       {/* Footer */}

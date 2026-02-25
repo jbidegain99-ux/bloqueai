@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logger } from '@/lib/logger'
 
 // Vercel Serverless Function configuration
 // Increase max duration for file uploads and AI analysis
@@ -9,6 +10,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 // Timeout for API requests (90 seconds for file uploads and analysis)
 const API_TIMEOUT_MS = 90000
+
+const log = logger.child({ module: 'api-proxy' })
 
 async function proxyRequest(request: NextRequest, path: string[]) {
   const url = new URL(`${API_URL}/${path.join('/')}`)
@@ -52,6 +55,9 @@ async function proxyRequest(request: NextRequest, path: string[]) {
     }
   }
 
+  const start = Date.now()
+  const targetPath = path.join('/')
+
   try {
     // Create AbortController for timeout
     const controller = new AbortController()
@@ -78,24 +84,35 @@ async function proxyRequest(request: NextRequest, path: string[]) {
       }
     })
 
+    const duration_ms = Date.now() - start
+    log.info(
+      { method: request.method, path: targetPath, status: response.status, duration_ms },
+      'Proxy request completed'
+    )
+
     return new NextResponse(responseBody, {
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,
     })
   } catch (error) {
-    console.error('Proxy error:', error)
+    const duration_ms = Date.now() - start
 
-    // Provide more specific error messages
-    if (error instanceof Error) {
-      if (error.name === 'AbortError') {
-        return NextResponse.json(
-          { detail: 'La solicitud tardó demasiado. Intenta de nuevo.' },
-          { status: 504 }
-        )
-      }
-      console.error('Proxy error details:', error.message, error.stack)
+    if (error instanceof Error && error.name === 'AbortError') {
+      log.warn(
+        { method: request.method, path: targetPath, duration_ms },
+        'Proxy request timed out'
+      )
+      return NextResponse.json(
+        { detail: 'La solicitud tardó demasiado. Intenta de nuevo.' },
+        { status: 504 }
+      )
     }
+
+    log.error(
+      { err: error, method: request.method, path: targetPath, duration_ms },
+      'Proxy request failed'
+    )
 
     return NextResponse.json(
       { detail: 'Error connecting to API server' },

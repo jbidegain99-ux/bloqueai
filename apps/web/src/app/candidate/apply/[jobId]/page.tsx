@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { publicApi, applicationsApi, candidateApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/auth'
+import { logger } from '@/lib/logger'
 import {
   ArrowLeft,
   Upload,
@@ -24,6 +25,7 @@ import {
   XCircle,
   MapPin,
   Briefcase,
+  Video,
 } from 'lucide-react'
 
 interface Job {
@@ -38,6 +40,7 @@ interface Job {
   location?: string
   modality?: string
   match_threshold?: number
+  interview_type?: 'chat' | 'video'
 }
 
 interface Application {
@@ -68,7 +71,7 @@ export default function ApplyPage() {
   const params = useParams()
   const jobId = params.jobId as string
 
-  const { isAuthenticated, accessToken } = useAuthStore()
+  const { isAuthenticated, isHydrated, accessToken } = useAuthStore()
   const [job, setJob] = useState<Job | null>(null)
   const [application, setApplication] = useState<Application | null>(null)
   const [step, setStep] = useState<ApplyStep>('pre-upload')
@@ -78,14 +81,17 @@ export default function ApplyPage() {
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [startingInterview, setStartingInterview] = useState(false)
   const [showExampleCV, setShowExampleCV] = useState(false)
+  const [videoFallback, setVideoFallback] = useState(false)
 
   // Redirect if not authenticated
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push(`/login?redirect=/candidate/apply/${jobId}`)
     }
-  }, [isAuthenticated, router, jobId])
+  }, [isAuthenticated, isHydrated, router, jobId])
 
   // Load job info and create/get application
   useEffect(() => {
@@ -114,9 +120,10 @@ export default function ApplyPage() {
           setApplication(fullApp as any)
           setStep('results')
         }
-      } catch (err: any) {
-        console.error('Error initializing:', err)
-        setError(err?.message || 'Error al cargar la aplicacion')
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Error al cargar la aplicacion'
+        logger.error({ err, jobId }, 'Apply page initialization failed')
+        setError(message)
       } finally {
         setLoading(false)
       }
@@ -194,9 +201,10 @@ export default function ApplyPage() {
       })
 
       setStep('results')
-    } catch (err: any) {
-      console.error('Error uploading/analyzing CV:', err)
-      setError(err?.message || 'Error al procesar el CV. Intenta de nuevo.')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al procesar el CV. Intenta de nuevo.'
+      logger.error({ err, jobId }, 'CV upload/analysis failed')
+      setError(message)
       setStep('upload')
     } finally {
       setUploading(false)
@@ -208,20 +216,65 @@ export default function ApplyPage() {
     if (!accessToken || !application) return
 
     setError(null)
+    setVideoFallback(false)
+    setStartingInterview(true)
 
     try {
-      // Start interview with job context and get session ID
+      if (job?.interview_type === 'video') {
+        // Video interview flow
+        try {
+          const result = await candidateApi.startVideoInterview(accessToken, jobId)
+
+          if (!result?.interview_id) {
+            throw new Error('No se pudo crear la video entrevista')
+          }
+
+          router.push(`/candidate/interviews/${result.interview_id}`)
+          return
+        } catch (videoErr: unknown) {
+          logger.error({ err: videoErr, jobId }, 'Video interview failed, showing fallback')
+          setVideoFallback(true)
+          setStartingInterview(false)
+          return
+        }
+      }
+
+      // Chat interview flow (default)
       const session = await candidateApi.startInterview(accessToken, jobId)
 
       if (!session?.id) {
         throw new Error('No se pudo crear la sesion de entrevista')
       }
 
-      // Redirect to the real interview UI with session ID
       router.push(`/candidate/interview/${session.id}`)
-    } catch (err: any) {
-      console.error('Error starting interview:', err)
-      setError(err?.message || 'Error al iniciar la entrevista')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al iniciar la entrevista'
+      logger.error({ err, jobId }, 'Failed to start interview')
+      setError(message)
+      setStartingInterview(false)
+    }
+  }
+
+  const handleFallbackToChat = async () => {
+    if (!accessToken || !application) return
+
+    setError(null)
+    setVideoFallback(false)
+    setStartingInterview(true)
+
+    try {
+      const session = await candidateApi.startInterview(accessToken, jobId)
+
+      if (!session?.id) {
+        throw new Error('No se pudo crear la sesion de entrevista')
+      }
+
+      router.push(`/candidate/interview/${session.id}`)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al iniciar la entrevista'
+      logger.error({ err, jobId }, 'Fallback chat interview failed')
+      setError(message)
+      setStartingInterview(false)
     }
   }
 
@@ -247,7 +300,7 @@ export default function ApplyPage() {
   const canProceedToInterview = application?.status === 'MATCH_PASSED' ||
     (application?.match_score !== null && application?.match_score !== undefined && application.match_score >= matchThreshold)
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (
@@ -709,6 +762,53 @@ export default function ApplyPage() {
               </BrandCard>
             )}
 
+            {/* Video interview info banner */}
+            {canProceedToInterview && job?.interview_type === 'video' && !videoFallback && (
+              <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg">
+                <Video className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-blue-900">Esta entrevista sera por video con un agente de IA</p>
+                  <p className="text-sm text-blue-700 mt-1">
+                    Asegurate de tener camara y microfono habilitados antes de iniciar.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Video fallback card */}
+            {videoFallback && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-900">Video entrevista no disponible</p>
+                    <p className="text-sm text-amber-700 mt-1">
+                      No pudimos iniciar la video entrevista en este momento. Puedes reintentar o continuar con una entrevista por chat.
+                    </p>
+                    <div className="flex gap-3 mt-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleStartInterview}
+                        disabled={startingInterview}
+                      >
+                        <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                        Reintentar video
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleFallbackToChat}
+                        disabled={startingInterview}
+                      >
+                        Continuar con chat
+                        <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Actions */}
             <div className="flex gap-4">
               <Button
@@ -723,11 +823,30 @@ export default function ApplyPage() {
               {canProceedToInterview ? (
                 <Button
                   onClick={handleStartInterview}
+                  disabled={startingInterview || videoFallback}
                   className="flex-1 bg-green-600 hover:bg-green-700"
                   size="lg"
                 >
-                  Iniciar entrevista
-                  <ArrowRight className="h-4 w-4 ml-2" />
+                  {startingInterview ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Iniciando entrevista...
+                    </>
+                  ) : (
+                    <>
+                      {job?.interview_type === 'video' ? (
+                        <>
+                          <Video className="h-4 w-4 mr-2" />
+                          Iniciar video entrevista
+                        </>
+                      ) : (
+                        <>
+                          Iniciar entrevista
+                          <ArrowRight className="h-4 w-4 ml-2" />
+                        </>
+                      )}
+                    </>
+                  )}
                 </Button>
               ) : (
                 <Button
@@ -751,7 +870,14 @@ export default function ApplyPage() {
               </div>
             )}
 
-            {canProceedToInterview && (
+            {error && (
+              <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                {error}
+              </div>
+            )}
+
+            {canProceedToInterview && !error && (
               <p className="text-sm text-muted-foreground text-center">
                 La entrevista con IA tomara aproximadamente 15-20 minutos
               </p>

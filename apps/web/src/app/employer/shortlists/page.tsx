@@ -58,7 +58,7 @@ interface JobWithShortlist {
 
 export default function ShortlistsPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [jobs, setJobs] = useState<JobWithShortlist[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -66,6 +66,7 @@ export default function ShortlistsPage() {
   const [loadingShortlist, setLoadingShortlist] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -77,7 +78,7 @@ export default function ShortlistsPage() {
     }
 
     loadJobs()
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadJobs = async () => {
     if (!accessToken) return
@@ -165,7 +166,7 @@ export default function ShortlistsPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (

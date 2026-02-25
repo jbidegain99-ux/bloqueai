@@ -11,11 +11,12 @@ import { Users, Briefcase, MessageSquare, CheckCircle, TrendingUp, Clock, Star, 
 
 export default function KpisPage() {
   const router = useRouter()
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [kpis, setKpis] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -27,7 +28,7 @@ export default function KpisPage() {
     }
 
     loadKpis()
-  }, [isAuthenticated, accessToken, router])
+  }, [isHydrated, isAuthenticated, accessToken, router])
 
   const loadKpis = async () => {
     if (!accessToken) return
@@ -41,7 +42,7 @@ export default function KpisPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (

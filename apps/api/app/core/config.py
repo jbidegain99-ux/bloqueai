@@ -40,11 +40,31 @@ class Settings(BaseSettings):
     llm_api_key: Optional[str] = None
     llm_model: str = "gpt-4o-mini"
 
+    # Embeddings
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+
     # Avatar Integration (video AI avatar for interviews)
     avatar_enabled: bool = False
     avatar_provider: str = "mock"  # mock, heygen, or did
     heygen_api_key: Optional[str] = None
     did_api_key: Optional[str] = None
+
+    # LiveKit (Video Interviews - WebRTC)
+    livekit_url: Optional[str] = None
+    livekit_api_key: Optional[str] = None
+    livekit_api_secret: Optional[str] = None
+
+    # Deepgram (Speech-to-Text)
+    deepgram_api_key: Optional[str] = None
+
+    # ElevenLabs (Text-to-Speech)
+    elevenlabs_api_key: Optional[str] = None
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+
+    # Agent Service (Cloud Run)
+    agent_service_url: Optional[str] = None
+    agent_webhook_secret: str = "change-me-in-production"
 
     # API Settings
     api_host: str = "0.0.0.0"
@@ -82,6 +102,11 @@ class Settings(BaseSettings):
     def storage_enabled(self) -> bool:
         """Check if storage is configured."""
         return bool(self.minio_endpoint and self.minio_access_key and self.minio_secret_key)
+
+    @property
+    def livekit_configured(self) -> bool:
+        """Check if LiveKit is configured for video interviews."""
+        return bool(self.livekit_url and self.livekit_api_key and self.livekit_api_secret)
 
 
 @lru_cache()

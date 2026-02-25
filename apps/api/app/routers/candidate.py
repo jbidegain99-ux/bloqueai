@@ -4,8 +4,9 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 from sqlalchemy.orm import Session
+from slowapi import Limiter
 
 from app.core.database import get_db
 from app.models.user import User, UserRole
@@ -33,6 +34,9 @@ from app.services.interview import get_interview_questions, DEFAULT_QUESTIONS
 from app.services.llm import llm_provider
 from app.services.cv_parser import mask_phone
 from app.utils.deps import get_current_user, require_candidate
+from app.middleware.rate_limit import get_user_id_or_ip, RATE_LIMIT_INTERVIEW
+
+limiter = Limiter(key_func=get_user_id_or_ip)
 
 router = APIRouter(prefix="/candidate", tags=["Candidate"])
 
@@ -94,8 +98,12 @@ async def get_profile(
     )
 
     # Build response with additional fields
+    # Note: CandidateProfileResponse inherits IDSchema -> TimestampSchema,
+    # so created_at and updated_at are required by the response_model.
     profile_data = {
         "id": candidate.id,
+        "created_at": candidate.created_at,
+        "updated_at": candidate.updated_at,
         "user_id": candidate.user_id,
         "phone_masked": candidate.phone_masked,
         "location": candidate.location,
@@ -113,7 +121,7 @@ async def get_profile(
         "competency_scores": candidate.competency_scores or {},
         # Resume info
         "resume_updated_at": latest_resume.updated_at if latest_resume else None,
-        "resume_source": latest_resume.source.value if latest_resume else None,
+        "resume_source": latest_resume.source.value if latest_resume and latest_resume.source else None,
         # Interview status - based on actual completed interview session
         "has_completed_interview": completed_interview is not None,
     }
@@ -150,26 +158,24 @@ async def upload_resume(
     db: Session = Depends(get_db),
 ) -> Resume:
     """Upload a resume/CV file."""
-    # Validate file type
+    # Read file content and validate
+    content = await file.read()
+
+    from app.utils.cv_validator import validate_cv, CVValidationError
+
+    try:
+        cv_result = validate_cv(content, file.filename or "file", file.content_type)
+    except CVValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    content_type = file.content_type
     allowed_types = {
         "application/pdf": "pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
     }
-
-    content_type = file.content_type
-    if content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tipo de archivo no soportado. Use PDF o DOCX.",
-        )
-
-    # Validate file size (max 10MB)
-    content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El archivo excede el tamaño máximo de 10MB",
-        )
 
     candidate = get_or_create_candidate(db, current_user)
 
@@ -284,8 +290,10 @@ async def get_resumes(
 
 
 @router.post("/interview/start", response_model=InterviewSessionResponse)
+@limiter.limit(RATE_LIMIT_INTERVIEW)
 async def start_interview(
-    request: InterviewStartRequest,
+    request: Request,
+    body: InterviewStartRequest,
     current_user: User = Depends(require_candidate),
     db: Session = Depends(get_db),
 ) -> InterviewSession:
@@ -301,8 +309,8 @@ async def start_interview(
         .filter(InterviewSession.candidate_id == candidate.id)
         .filter(InterviewSession.status == InterviewStatus.IN_PROGRESS)
     )
-    if request.job_id:
-        existing_query = existing_query.filter(InterviewSession.job_id == request.job_id)
+    if body.job_id:
+        existing_query = existing_query.filter(InterviewSession.job_id == body.job_id)
 
     existing = existing_query.first()
     if existing:
@@ -315,17 +323,17 @@ async def start_interview(
     # Create session
     session = InterviewSession(
         candidate_id=candidate.id,
-        job_id=request.job_id,
+        job_id=body.job_id,
         status=InterviewStatus.IN_PROGRESS,
         total_questions=total_questions,
-        language=request.language or "es",
-        interview_type="dynamic" if request.job_id else "general",
+        language=body.language or "es",
+        interview_type="dynamic" if body.job_id else "general",
         started_at=datetime.utcnow().isoformat(),
     )
     db.add(session)
     db.flush()
 
-    logger.info("interview_session_created", session_id=str(session.id), job_id=str(request.job_id) if request.job_id else None)
+    logger.info("interview_session_created", session_id=str(session.id), job_id=str(body.job_id) if body.job_id else None)
 
     # Use Interview Orchestrator for dynamic first question
     try:
@@ -333,7 +341,7 @@ async def start_interview(
 
         orchestrator = await create_orchestrator_for_session(
             session_id=session.id,
-            job_id=request.job_id,
+            job_id=body.job_id,
             candidate_id=candidate.id,
             db=db,
         )
@@ -351,7 +359,7 @@ async def start_interview(
     except Exception as e:
         logger.error("dynamic_question_failed_using_fallback", error=str(e))
         # Fallback to static questions
-        questions = get_interview_questions(request.job_id)
+        questions = get_interview_questions(body.job_id)
         first_message_content = questions[0]["question"]
         session.ai_analysis = {"dynamic_mode": False, "fallback_reason": str(e)}
 
@@ -368,6 +376,143 @@ async def start_interview(
     db.commit()
     db.refresh(session)
     return session
+
+
+@router.post("/interview/start-video")
+async def start_video_interview(
+    body: InterviewStartRequest,
+    current_user: User = Depends(require_candidate),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Start a video interview session for a job configured with video interview type."""
+    import structlog
+    from uuid import uuid4
+    from app.models.job import Job
+    from app.models.application import Application, ApplicationStatus
+    from app.models.video_interview import VideoInterview, VideoInterviewStatus
+    from app.core.config import get_settings
+
+    logger = structlog.get_logger()
+
+    if not body.job_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="job_id es requerido para video entrevistas",
+        )
+
+    # Verify job exists and is configured for video interviews
+    job = db.query(Job).filter(Job.id == body.job_id).first()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Puesto no encontrado",
+        )
+
+    if job.interview_type != "video":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este puesto no esta configurado para video entrevistas",
+        )
+
+    # Look up candidate's active application (exclude withdrawn/rejected, newest first)
+    candidate = get_or_create_candidate(db, current_user)
+    application = (
+        db.query(Application)
+        .filter(Application.candidate_id == candidate.id)
+        .filter(Application.job_id == body.job_id)
+        .filter(Application.status.notin_([
+            ApplicationStatus.WITHDRAWN,
+            ApplicationStatus.REJECTED,
+        ]))
+        .order_by(Application.created_at.desc())
+        .first()
+    )
+
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No se encontro tu aplicacion para este puesto",
+        )
+
+    if application.status not in [
+        ApplicationStatus.MATCH_PASSED,
+        ApplicationStatus.INTERVIEW_STARTED,
+    ]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tu aplicacion no esta en estado valido para iniciar entrevista",
+        )
+
+    # Idempotency: check for existing video interview
+    existing = (
+        db.query(VideoInterview)
+        .filter(VideoInterview.application_id == application.id)
+        .filter(
+            VideoInterview.status.in_([
+                VideoInterviewStatus.SCHEDULED,
+                VideoInterviewStatus.READY,
+                VideoInterviewStatus.IN_PROGRESS,
+            ])
+        )
+        .first()
+    )
+
+    if existing:
+        logger.info("returning_existing_video_interview", interview_id=str(existing.id))
+        return {
+            "interview_id": str(existing.id),
+            "room_name": existing.room_name,
+            "livekit_url": get_settings().livekit_url,
+            "status": existing.status.value if hasattr(existing.status, 'value') else existing.status,
+        }
+
+    # Check LiveKit is configured
+    settings = get_settings()
+    if not settings.livekit_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Video entrevistas no estan disponibles en este momento",
+        )
+
+    # Create VideoInterview record
+    room_name = f"interview-{uuid4().hex[:12]}"
+    video_interview = VideoInterview(
+        id=uuid4(),
+        application_id=application.id,
+        room_name=room_name,
+        status=VideoInterviewStatus.SCHEDULED,
+        created_by=current_user.id,
+    )
+    db.add(video_interview)
+
+    # Generate LiveKit token
+    from app.services.livekit_service import get_livekit_service
+
+    livekit_service = get_livekit_service()
+    token = livekit_service.create_token(
+        room_name=room_name,
+        participant_name=current_user.full_name or current_user.email,
+        participant_identity=str(current_user.id),
+    )
+
+    # Update application status
+    application.status = ApplicationStatus.INTERVIEW_STARTED
+    db.commit()
+
+    logger.info(
+        "video_interview_created",
+        interview_id=str(video_interview.id),
+        application_id=str(application.id),
+        room_name=room_name,
+    )
+
+    return {
+        "interview_id": str(video_interview.id),
+        "room_name": room_name,
+        "livekit_url": settings.livekit_url,
+        "token": token,
+        "status": video_interview.status.value if hasattr(video_interview.status, 'value') else video_interview.status,
+    }
 
 
 @router.post("/interview/{session_id}/message", response_model=InterviewSessionResponse)

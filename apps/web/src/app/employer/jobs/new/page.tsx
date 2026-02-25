@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/select'
 import { useAuthStore } from '@/lib/auth'
 import { employerApi } from '@/lib/api'
-import { Sparkles, Wand2, MessageSquare, Loader2, CheckCircle2 } from 'lucide-react'
+import { Sparkles, Wand2, MessageSquare, Loader2, CheckCircle2, Video, MessageCircle } from 'lucide-react'
 
 // Category-aware placeholder templates for requirements
 const MUST_HAVES_PLACEHOLDERS: Record<string, string> = {
@@ -68,6 +68,7 @@ export default function NewJobPage() {
     responsibilities: '',
     benefits: '',
     custom_questions: '',
+    interview_type: 'chat',
   })
 
   // Dynamic placeholders based on selected category
@@ -199,6 +200,7 @@ export default function NewJobPage() {
         responsibilities: formData.responsibilities.split('\n').filter(Boolean),
         benefits: formData.benefits.split('\n').filter(Boolean),
         custom_questions: formData.custom_questions.split('\n').filter(Boolean),
+        interview_type: formData.interview_type,
       }
 
       const job = await employerApi.createJob(accessToken, jobData)
@@ -496,6 +498,50 @@ export default function NewJobPage() {
               placeholder="Por que te interesa esta posicion?&#10;Describe un proyecto desafiante que hayas liderado"
               rows={3}
             />
+          </BrandCard>
+
+          <BrandCard>
+            <BrandCardHeader
+              title="Tipo de entrevista"
+              description="Selecciona como sera la entrevista con el candidato"
+            />
+
+            <div className="space-y-4">
+              <Select
+                value={formData.interview_type}
+                onValueChange={(value) => setFormData({ ...formData, interview_type: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="chat">Chat con IA (texto)</SelectItem>
+                  <SelectItem value="video">Video entrevista con IA (beta)</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {formData.interview_type === 'chat' ? (
+                <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
+                  <MessageCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Entrevista por chat</p>
+                    <p className="text-blue-700 mt-1">
+                      El candidato respondera preguntas de un agente de IA por texto. Ideal para evaluaciones tecnicas y filtros iniciales.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 p-3 bg-purple-50 rounded-lg text-sm text-purple-800">
+                  <Video className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Video entrevista (beta)</p>
+                    <p className="text-purple-700 mt-1">
+                      El candidato tendra una entrevista por video con un agente de IA. Permite evaluar comunicacion verbal y presencia.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </BrandCard>
 
           <div className="flex justify-end gap-4">

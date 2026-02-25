@@ -111,7 +111,7 @@ export default function CandidateDetailPage() {
   const jobId = params.id as string
   const candidateId = params.candidateId as string
 
-  const { accessToken, isAuthenticated } = useAuthStore()
+  const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
   const [data, setData] = useState<CandidateDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -121,6 +121,7 @@ export default function CandidateDetailPage() {
   const [savingNotes, setSavingNotes] = useState(false)
 
   useEffect(() => {
+    if (!isHydrated) return
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -132,7 +133,7 @@ export default function CandidateDetailPage() {
     }
 
     loadCandidateDetail()
-  }, [isAuthenticated, accessToken, router, jobId, candidateId])
+  }, [isHydrated, isAuthenticated, accessToken, router, jobId, candidateId])
 
   const loadCandidateDetail = async () => {
     if (!accessToken) return
@@ -202,7 +203,7 @@ export default function CandidateDetailPage() {
     return `${mins} min`
   }
 
-  if (!isAuthenticated) return null
+  if (!isHydrated || !isAuthenticated) return null
 
   if (loading) {
     return (
