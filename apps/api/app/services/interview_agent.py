@@ -9,12 +9,140 @@ Conducts live video interviews with candidates using voice:
 """
 
 import asyncio
+import time
 import structlog
 from typing import Optional, List, Dict
 
 from app.core.config import settings
 
 logger = structlog.get_logger()
+
+# --- Fix: Increase BOT_VAD_STOP_SECS from 0.35s to 2.0s ---
+# Pipecat's default (0.35s) is too aggressive for streaming TTS.
+# If the TTS WebSocket takes >350ms between audio chunks (common with
+# ElevenLabs, especially on Free tier), the transport declares the bot
+# "stopped speaking" and discards the remaining audio buffer.
+# 2.0s gives the TTS enough headroom for network jitter and TTFB latency.
+try:
+    from pipecat.transports import base_output as _pipecat_base_output
+    _ORIGINAL_VAD_STOP = _pipecat_base_output.BOT_VAD_STOP_SECS
+    _pipecat_base_output.BOT_VAD_STOP_SECS = 2.0
+    logger.info(
+        "pipecat_vad_patched",
+        original=_ORIGINAL_VAD_STOP,
+        new=_pipecat_base_output.BOT_VAD_STOP_SECS,
+    )
+except (ImportError, AttributeError):
+    pass
+
+
+class AudioDiagnosticProcessor:
+    """
+    Diagnostic frame processor inserted between TTS and Transport output.
+    Logs every audio frame to help debug audio cutoff issues.
+
+    Enable with AUDIO_DIAG=1 environment variable.
+    """
+
+    _enabled: bool = False
+    _frame_count: int = 0
+    _total_audio_bytes: int = 0
+    _first_frame_time: float = 0.0
+    _last_frame_time: float = 0.0
+    _gap_warnings: int = 0
+
+    @classmethod
+    def create(cls) -> Optional["_AudioDiagFrameProcessor"]:
+        """Create the processor if diagnostics are enabled."""
+        import os
+        if not os.environ.get("AUDIO_DIAG"):
+            return None
+        try:
+            from pipecat.processors.frame_processor import FrameProcessor
+            from pipecat.frames.frames import (
+                Frame,
+                TTSAudioRawFrame,
+                TTSStartedFrame,
+                TTSStoppedFrame,
+                BotStartedSpeakingFrame,
+                BotStoppedSpeakingFrame,
+            )
+            from pipecat.processors.frame_processor import FrameDirection
+        except ImportError:
+            return None
+
+        diag = cls
+
+        class _AudioDiagFrameProcessor(FrameProcessor):
+            def __init__(self) -> None:
+                super().__init__(name="AudioDiagnostic")
+
+            async def process_frame(
+                self, frame: Frame, direction: FrameDirection
+            ) -> None:
+                await super().process_frame(frame, direction)
+                now = time.time()
+
+                if isinstance(frame, TTSStartedFrame):
+                    diag._frame_count = 0
+                    diag._total_audio_bytes = 0
+                    diag._first_frame_time = now
+                    diag._last_frame_time = now
+                    diag._gap_warnings = 0
+                    logger.info("diag_tts_started")
+
+                elif isinstance(frame, TTSAudioRawFrame):
+                    gap = now - diag._last_frame_time
+                    diag._frame_count += 1
+                    diag._total_audio_bytes += len(frame.audio)
+                    duration_ms = (
+                        len(frame.audio)
+                        / (frame.sample_rate * 2)  # 16-bit = 2 bytes/sample
+                        * 1000
+                    )
+
+                    if gap > 0.3:
+                        diag._gap_warnings += 1
+                        logger.warning(
+                            "diag_audio_gap",
+                            gap_ms=round(gap * 1000, 1),
+                            frame_num=diag._frame_count,
+                        )
+
+                    if diag._frame_count <= 5 or diag._frame_count % 50 == 0:
+                        logger.info(
+                            "diag_tts_audio_frame",
+                            frame_num=diag._frame_count,
+                            audio_bytes=len(frame.audio),
+                            duration_ms=round(duration_ms, 1),
+                            sample_rate=frame.sample_rate,
+                            gap_ms=round(gap * 1000, 1),
+                        )
+                    diag._last_frame_time = now
+
+                elif isinstance(frame, TTSStoppedFrame):
+                    elapsed = now - diag._first_frame_time
+                    total_audio_secs = (
+                        diag._total_audio_bytes / 48000  # 24kHz * 2 bytes
+                    )
+                    logger.info(
+                        "diag_tts_stopped",
+                        total_frames=diag._frame_count,
+                        total_audio_bytes=diag._total_audio_bytes,
+                        total_audio_secs=round(total_audio_secs, 2),
+                        elapsed_secs=round(elapsed, 2),
+                        gap_warnings=diag._gap_warnings,
+                    )
+
+                elif isinstance(frame, BotStartedSpeakingFrame):
+                    logger.info("diag_bot_started_speaking", time=now)
+
+                elif isinstance(frame, BotStoppedSpeakingFrame):
+                    logger.info("diag_bot_stopped_speaking", time=now)
+
+                await self.push_frame(frame, direction)
+
+        return _AudioDiagFrameProcessor()
 
 
 class InterviewAgent:
@@ -146,16 +274,22 @@ When you've asked all questions, thank the candidate and end the interview natur
             voice_id=settings.elevenlabs_voice_id,
         )
 
-        # Build pipeline: Audio In -> STT -> LLM -> TTS -> Audio Out
-        pipeline = Pipeline(
-            [
-                transport.input(),  # Receive audio from candidate
-                stt,  # Speech to text
-                llm,  # Claude processes and responds
-                tts,  # Text to speech
-                transport.output(),  # Send audio back to candidate
-            ]
-        )
+        # Build pipeline: Audio In -> STT -> LLM -> TTS -> [Diagnostic] -> Audio Out
+        pipeline_processors = [
+            transport.input(),  # Receive audio from candidate
+            stt,  # Speech to text
+            llm,  # Claude processes and responds
+            tts,  # Text to speech
+        ]
+
+        diag_processor = AudioDiagnosticProcessor.create()
+        if diag_processor:
+            pipeline_processors.append(diag_processor)
+            logger.info("audio_diagnostic_enabled")
+
+        pipeline_processors.append(transport.output())  # Send audio back
+
+        pipeline = Pipeline(pipeline_processors)
 
         # Set initial context with greeting
         messages = [

@@ -12,7 +12,7 @@ import {
   ParticipantTile,
 } from '@livekit/components-react'
 import '@livekit/components-styles'
-import { Track, RoomEvent } from 'livekit-client'
+import { Track, RoomEvent, RemoteTrack, RemoteTrackPublication, RemoteParticipant } from 'livekit-client'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Loader2, AlertCircle, MessageSquare, MessageSquareOff } from 'lucide-react'
 import { InterviewTimer } from './InterviewTimer'
@@ -168,6 +168,7 @@ export function VideoRoom({
         </div>
 
         <RoomAudioRenderer />
+        <AIAudioHandler />
         <RoomEventHandler
           interviewId={interviewId}
           onInterviewComplete={onInterviewComplete}
@@ -223,6 +224,81 @@ function CustomVideoGrid({ isCandidate }: { isCandidate: boolean }) {
       </GridLayout>
     </div>
   )
+}
+
+/**
+ * Manual audio handler for the AI Interviewer.
+ * Bypasses RoomAudioRenderer's useTracks hook (which can miss tracks due
+ * to updateOnlyOn: []) and directly listens to LiveKit room events to
+ * guarantee the remote audio track gets attached to an <audio> element.
+ */
+function AIAudioHandler() {
+  const room = useRoomContext()
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  useEffect(() => {
+    const attachTrack = (
+      track: RemoteTrack,
+      publication: RemoteTrackPublication,
+      participant: RemoteParticipant,
+    ) => {
+      if (track.kind !== Track.Kind.Audio) return
+
+      console.log('[AIAudioHandler] TrackSubscribed', {
+        participant: participant.identity,
+        trackSid: track.sid,
+        source: publication.source,
+      })
+
+      if (audioRef.current) {
+        track.attach(audioRef.current)
+        audioRef.current.autoplay = true
+        audioRef.current.muted = false
+        console.log(
+          '[AIAudioHandler] Audio attached, srcObject:',
+          !!audioRef.current.srcObject,
+        )
+      }
+    }
+
+    const detachTrack = (
+      track: RemoteTrack,
+      _publication: RemoteTrackPublication,
+      participant: RemoteParticipant,
+    ) => {
+      if (track.kind !== Track.Kind.Audio) return
+      console.log('[AIAudioHandler] TrackUnsubscribed', {
+        participant: participant.identity,
+      })
+      if (audioRef.current) {
+        track.detach(audioRef.current)
+      }
+    }
+
+    // Attach any audio tracks that are already subscribed
+    for (const participant of Array.from(room.remoteParticipants.values())) {
+      for (const publication of Array.from(participant.audioTrackPublications.values())) {
+        if (publication.track && publication.isSubscribed) {
+          console.log('[AIAudioHandler] Attaching existing track from', participant.identity)
+          attachTrack(
+            publication.track as RemoteTrack,
+            publication as RemoteTrackPublication,
+            participant,
+          )
+        }
+      }
+    }
+
+    room.on(RoomEvent.TrackSubscribed, attachTrack)
+    room.on(RoomEvent.TrackUnsubscribed, detachTrack)
+
+    return () => {
+      room.off(RoomEvent.TrackSubscribed, attachTrack)
+      room.off(RoomEvent.TrackUnsubscribed, detachTrack)
+    }
+  }, [room])
+
+  return <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />
 }
 
 function RoomEventHandler({

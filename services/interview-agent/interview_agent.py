@@ -24,6 +24,17 @@ try:
 except ImportError as e:
     logger.error("pipecat_not_installed", error=str(e))
 
+# --- Monkey-patch BOT_VAD_STOP_SECS para dar más tiempo al TTS ---
+# Pipecat's default (0.35s) kills audio if ElevenLabs takes >350ms between chunks.
+# This is the root cause of "bot stopped speaking" after only 0.36s.
+try:
+    import pipecat.transports.base_output as _base_output
+    _original_vad_stop = getattr(_base_output, "BOT_VAD_STOP_SECS", 0.35)
+    _base_output.BOT_VAD_STOP_SECS = 2.0
+    logger.info("pipecat_vad_patched", original=_original_vad_stop, new=2.0)
+except (ImportError, AttributeError):
+    pass
+
 
 class InterviewAgent:
     """
@@ -281,10 +292,42 @@ When you've asked all questions, thank the candidate and end the interview natur
             f"Estas listo para comenzar?"
         )
 
+        @transport.event_handler("on_connected")
+        async def on_connected(transport_obj):
+            logger.info(
+                "agent_transport_connected",
+                room=self.room_name,
+                message="Audio track published to LiveKit",
+            )
+
+        @transport.event_handler("on_disconnected")
+        async def on_disconnected(transport_obj):
+            logger.info(
+                "agent_transport_disconnected",
+                room=self.room_name,
+            )
+
+        @transport.event_handler("on_participant_connected")
+        async def on_participant_connected(transport_obj, participant_id):
+            logger.info(
+                "agent_participant_connected",
+                participant_id=participant_id,
+                room=self.room_name,
+            )
+
+        @transport.event_handler("on_audio_track_subscribed")
+        async def on_audio_track_subscribed(transport_obj, participant_id):
+            logger.info(
+                "agent_audio_track_subscribed",
+                participant_id=participant_id,
+                room=self.room_name,
+                message="Now receiving audio from participant",
+            )
+
         @transport.event_handler("on_first_participant_joined")
         async def on_first_participant_joined(transport_obj, participant_id):
             logger.info(
-                "agent_participant_joined",
+                "agent_first_participant_joined",
                 participant_id=participant_id,
                 room=self.room_name,
             )
@@ -299,6 +342,7 @@ When you've asked all questions, thank the candidate and end the interview natur
 
         # --- Run via PipelineRunner (handles event loop params) ---
         runner = PipelineRunner()
+        logger.info("agent_runner_starting", room=self.room_name)
         try:
             await runner.run(task)
         except Exception as e:
