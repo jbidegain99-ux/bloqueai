@@ -13,6 +13,7 @@ Architecture note:
 """
 
 import asyncio
+import hmac
 import traceback
 from typing import Optional
 
@@ -59,7 +60,7 @@ async def start_agent(
     The calling API should use a short read-timeout (2-5s) and treat
     a ReadTimeout as success (agent is running).
     """
-    if x_agent_secret != settings.agent_webhook_secret:
+    if not hmac.compare_digest(x_agent_secret, settings.agent_webhook_secret):
         raise HTTPException(status_code=403, detail="Invalid agent secret")
 
     logger.info(
