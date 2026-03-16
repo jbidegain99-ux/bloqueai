@@ -225,6 +225,8 @@ def run_seed_on_startup():
 
 def seed_plans(db):
     """Seed default billing plans if they don't exist."""
+    from uuid import uuid4
+    from datetime import datetime
     from app.models.billing import Plan, PlanTier
 
     existing = db.query(Plan).first()
