@@ -45,7 +45,7 @@ class TestAuthEndpoints:
         response = client.post(
             "/auth/register",
             json={
-                "email": "admin@test.com",
+                "email": "admin@acme.com",
                 "password": "Admin123!",
                 "full_name": "Another Admin",
                 "role": "CANDIDATE",
@@ -71,7 +71,7 @@ class TestAuthEndpoints:
         """Test successful login."""
         response = client.post(
             "/auth/login",
-            json={"email": "admin@test.com", "password": "Admin123!"},
+            json={"email": "admin@acme.com", "password": "Admin123!"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -83,7 +83,7 @@ class TestAuthEndpoints:
         """Test login with wrong password fails."""
         response = client.post(
             "/auth/login",
-            json={"email": "admin@test.com", "password": "wrong"},
+            json={"email": "admin@acme.com", "password": "wrong"},
         )
         assert response.status_code == 401
 
@@ -103,7 +103,7 @@ class TestAuthEndpoints:
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["email"] == "admin@test.com"
+        assert data["email"] == "admin@acme.com"
         assert data["role"] == "ADMIN"
 
     def test_get_current_user_no_token(self, client):
@@ -124,7 +124,7 @@ class TestAuthEndpoints:
         # First login
         login_response = client.post(
             "/auth/login",
-            json={"email": "admin@test.com", "password": "Admin123!"},
+            json={"email": "admin@acme.com", "password": "Admin123!"},
         )
         refresh_token = login_response.json()["refresh_token"]
 
