@@ -81,7 +81,7 @@ class Settings(BaseSettings):
 
     # Feature Flags
     enable_dev_overrides: bool = False
-    enable_payroll: bool = False
+    enable_payroll: bool = True
 
     @property
     def cors_origins_list(self) -> List[str]:

@@ -1,9 +1,22 @@
-"""Seed script to populate database with initial data - IDEMPOTENT VERSION."""
+"""Seed script to populate database with initial data - IDEMPOTENT VERSION.
+
+Creates:
+  - Default rubric
+  - Company (Bloque Internacional) — used as client for payroll
+  - Users: admin, recruiter, employer, 2 employees, 3 candidates
+  - 5 Payroll employees with contracts
+  - 2 Payroll runs (Jan PAID, Feb DRAFT) with calculated lines
+  - 3 Candidates with interview sessions and reports
+  - 2 Jobs
+
+Run: python scripts/seed.py
+"""
 
 import sys
 from pathlib import Path
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, date
+from decimal import Decimal
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -21,6 +34,13 @@ from app.models.job import Job, JobStatus, JobModality, SeniorityLevel
 from app.models.interview import InterviewSession, InterviewMessage, InterviewStatus, MessageRole
 from app.models.report import CandidateReport, ReportStatus
 from app.models.rubric import Rubric, RubricCriteria
+from app.models.payroll import (
+    Employee, Contract, PayrollRun, PayrollLine, Payslip,
+    PayrollDeductionBreakdown, PayrollProvision,
+    PayFrequency, ContractType, PayrollRunStatus,
+    EmployeeStatus, DocumentType, EmploymentType,
+    DeductionCategory, ProvisionType,
+)
 
 
 def get_or_create_company(db: Session, name: str, slug: str, **kwargs) -> Company:
@@ -164,6 +184,34 @@ def ensure_rubric(db: Session) -> Rubric:
     return rubric
 
 
+# ── El Salvador deduction calculators ────────────────────────
+
+def calc_isss_employee(salary: float) -> float:
+    applicable = min(salary, 1000.0)
+    return min(round(applicable * 0.03, 2), 30.0)
+
+def calc_afp_employee(salary: float) -> float:
+    return round(salary * 0.0725, 2)
+
+def calc_isr_monthly(salary: float, isss: float, afp: float) -> float:
+    taxable = salary - isss - afp
+    if taxable <= 472.00:
+        return 0.0
+    elif taxable <= 895.24:
+        return round((taxable - 472.00) * 0.10, 2)
+    elif taxable <= 2038.10:
+        return round(42.32 + (taxable - 895.24) * 0.20, 2)
+    else:
+        return round(271.89 + (taxable - 2038.10) * 0.30, 2)
+
+def calc_isss_employer(salary: float) -> float:
+    applicable = min(salary, 1000.0)
+    return min(round(applicable * 0.075, 2), 75.0)
+
+def calc_afp_employer(salary: float) -> float:
+    return round(salary * 0.0875, 2)
+
+
 def seed_database():
     """Seed the database with initial data - IDEMPOTENT."""
     db = SessionLocal()
@@ -174,12 +222,12 @@ def seed_database():
         print("=" * 60)
 
         # Create default rubric
-        print("\n[1/5] RUBRIC")
+        print("\n[1/7] RUBRIC")
         rubric = ensure_rubric(db)
         db.commit()
 
         # Create company
-        print("\n[2/5] COMPANY")
+        print("\n[2/7] COMPANY")
         company = get_or_create_company(
             db,
             name="Bloque Internacional",
@@ -193,7 +241,7 @@ def seed_database():
         db.commit()
 
         # Create users
-        print("\n[3/5] USERS")
+        print("\n[3/7] USERS")
 
         # Admin
         admin = upsert_user(
@@ -225,14 +273,33 @@ def seed_database():
             company_id=company.id,
         )
 
+        # Employee users (linked to Employee records below)
+        employee_user_1 = upsert_user(
+            db,
+            email="employee1@example.com",
+            password="Employee123!",
+            full_name="Jose Bidegain",
+            role=UserRole.EMPLOYER,  # EMPLOYER role lets them access the system
+            company_id=company.id,
+        )
+
+        employee_user_2 = upsert_user(
+            db,
+            email="employee2@example.com",
+            password="Employee123!",
+            full_name="Ana Martinez",
+            role=UserRole.EMPLOYER,
+            company_id=company.id,
+        )
+
         db.commit()
 
         # Create candidate users with profiles
-        print("\n[4/5] CANDIDATES")
+        print("\n[4/7] CANDIDATES")
         candidates_data = [
             {
                 "email": "candidate1@example.com",
-                "name": "Ana Martinez",
+                "name": "Ana Martinez (Candidata)",
                 "headline": "Senior Software Engineer | Python | React",
                 "location": "Ciudad de Mexico, Mexico",
                 "skills": ["Python", "React", "Node.js", "PostgreSQL", "AWS", "Docker", "Kubernetes"],
@@ -269,7 +336,6 @@ def seed_database():
         ]
 
         for cdata in candidates_data:
-            # Create/update user
             user = upsert_user(
                 db,
                 email=cdata["email"],
@@ -278,7 +344,6 @@ def seed_database():
                 role=UserRole.CANDIDATE,
             )
 
-            # Create/update candidate profile
             candidate = ensure_candidate_profile(
                 db,
                 user,
@@ -298,7 +363,6 @@ def seed_database():
                 },
             )
 
-            # Check if interview session exists
             existing_session = (
                 db.query(InterviewSession)
                 .filter(InterviewSession.candidate_id == candidate.id)
@@ -327,14 +391,12 @@ def seed_database():
                 db.add(session)
                 db.flush()
 
-                # Create report
-                print(f"    Creating report for '{user.email}'...")
                 report = CandidateReport(
                     id=uuid4(),
                     candidate_id=candidate.id,
                     session_id=session.id,
                     status=ReportStatus.COMPLETED,
-                    summary=f"Candidato con perfil solido. {cdata['headline']}. Demuestra experiencia relevante y buenas habilidades.",
+                    summary=f"Candidato con perfil solido. {cdata['headline']}. Demuestra experiencia relevante.",
                     overall_score=cdata["score"],
                     confidence_score=85,
                     competency_scores=candidate.competency_scores,
@@ -351,24 +413,12 @@ def seed_database():
         db.commit()
 
         # Create sample jobs
-        print("\n[5/5] JOBS")
+        print("\n[5/7] JOBS")
         jobs_data = [
             {
                 "title": "Senior Full Stack Developer",
                 "slug_base": "senior-full-stack-developer",
-                "description": """Buscamos un Senior Full Stack Developer para unirse a nuestro equipo de producto.
-
-Responsabilidades:
-- Desarrollar y mantener aplicaciones web escalables
-- Colaborar con el equipo de producto y diseno
-- Implementar buenas practicas de desarrollo
-- Mentorear a desarrolladores junior
-
-Requisitos:
-- 5+ anos de experiencia en desarrollo web
-- Dominio de React, Node.js y bases de datos
-- Experiencia con cloud (AWS/GCP)
-- Ingles avanzado""",
+                "description": "Buscamos Senior Full Stack Developer para nuestro equipo de producto.",
                 "seniority": SeniorityLevel.SENIOR,
                 "salary_min": 80000,
                 "salary_max": 120000,
@@ -378,19 +428,7 @@ Requisitos:
             {
                 "title": "Data Scientist",
                 "slug_base": "data-scientist",
-                "description": """Buscamos un Data Scientist para nuestro equipo de analytics.
-
-Responsabilidades:
-- Desarrollar modelos de machine learning
-- Analizar grandes volumenes de datos
-- Colaborar con equipos de producto
-- Presentar insights a stakeholders
-
-Requisitos:
-- 3+ anos de experiencia en data science
-- Python, SQL, herramientas de ML
-- Experiencia con visualizacion de datos
-- Habilidades de comunicacion""",
+                "description": "Buscamos Data Scientist para nuestro equipo de analytics.",
                 "seniority": SeniorityLevel.MID,
                 "salary_min": 60000,
                 "salary_max": 90000,
@@ -400,7 +438,6 @@ Requisitos:
         ]
 
         for jdata in jobs_data:
-            # Check if job exists
             existing_job = (
                 db.query(Job)
                 .filter(Job.title == jdata["title"])
@@ -440,18 +477,290 @@ Requisitos:
 
         db.commit()
 
+        # ── PAYROLL DATA ──────────────────────────────────────────
+        print("\n[6/7] PAYROLL EMPLOYEES + CONTRACTS")
+
+        employees_data = [
+            {"full_name": "Jose Bidegain", "email": "jose.b@bloque.com", "dui": "12345678-9",
+             "department": "Informatica", "position": "Senior Developer", "salary": 1500.00,
+             "user": employee_user_1},
+            {"full_name": "Ana Martinez", "email": "ana.m@bloque.com", "dui": "98765432-1",
+             "department": "Recursos Humanos", "position": "HR Manager", "salary": 2000.00,
+             "user": employee_user_2},
+            {"full_name": "Carlos Hernandez", "email": "carlos.h@bloque.com", "dui": "11111111-1",
+             "department": "Finanzas", "position": "Financial Analyst", "salary": 1200.00,
+             "user": None},
+            {"full_name": "Maria Lopez", "email": "maria.l@bloque.com", "dui": "22222222-2",
+             "department": "Marketing", "position": "Marketing Manager", "salary": 1800.00,
+             "user": None},
+            {"full_name": "Juan Rodriguez", "email": "juan.r@bloque.com", "dui": "33333333-3",
+             "department": "Operaciones", "position": "Operations Assistant", "salary": 950.00,
+             "user": None},
+        ]
+
+        payroll_employees: list[Employee] = []
+        for edata in employees_data:
+            existing = db.query(Employee).filter(
+                Employee.client_id == company.id,
+                Employee.document_id == edata["dui"],
+            ).first()
+
+            if existing:
+                print(f"  Employee '{edata['full_name']}' exists, updating...")
+                existing.full_name = edata["full_name"]
+                existing.salary = edata["salary"]
+                existing.department = edata["department"]
+                existing.position = edata["position"]
+                if edata["user"]:
+                    existing.user_id = edata["user"].id
+                payroll_employees.append(existing)
+            else:
+                print(f"  Creating employee '{edata['full_name']}'...")
+                emp = Employee(
+                    id=uuid4(),
+                    client_id=company.id,
+                    user_id=edata["user"].id if edata["user"] else None,
+                    full_name=edata["full_name"],
+                    email=edata["email"],
+                    employee_code=f"EMP-{len(payroll_employees) + 1:03d}",
+                    department=edata["department"],
+                    position=edata["position"],
+                    hire_date=date(2025, 1, 15),
+                    document_type=DocumentType.DUI,
+                    document_id=edata["dui"],
+                    salary=Decimal(str(edata["salary"])),
+                    salary_currency="USD",
+                    employment_type=EmploymentType.FULL_TIME,
+                    status=EmployeeStatus.ACTIVE,
+                    is_active=True,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                db.add(emp)
+                db.flush()
+                payroll_employees.append(emp)
+
+                # Create active contract
+                contract = Contract(
+                    id=uuid4(),
+                    employee_id=emp.id,
+                    client_id=company.id,
+                    contract_type=ContractType.FULL_TIME,
+                    position_title=edata["position"],
+                    start_date=date(2025, 1, 15),
+                    base_salary=edata["salary"],
+                    currency="USD",
+                    pay_frequency=PayFrequency.MONTHLY,
+                    is_active=True,
+                    benefits={"health_insurance": True, "meal_allowance": 100},
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                db.add(contract)
+
+        db.commit()
+
+        # ── PAYROLL RUNS ──────────────────────────────────────────
+        print("\n[7/7] PAYROLL RUNS + PAYSLIPS")
+
+        # Check if runs already exist
+        existing_run = db.query(PayrollRun).filter(
+            PayrollRun.client_id == company.id,
+        ).first()
+
+        if existing_run:
+            print("  Payroll runs already exist, skipping...")
+        else:
+            salaries = [e["salary"] for e in employees_data]
+
+            # ── Run 1: January 2026 (PAID) ──
+            print("  Creating January 2026 payroll run (PAID)...")
+            total_gross_1 = sum(salaries)
+            total_ded_1 = 0.0
+            total_net_1 = 0.0
+
+            run1 = PayrollRun(
+                id=uuid4(),
+                client_id=company.id,
+                period_start=date(2026, 1, 1),
+                period_end=date(2026, 1, 31),
+                pay_frequency=PayFrequency.MONTHLY,
+                status=PayrollRunStatus.PAID,
+                total_gross=0,  # updated below
+                total_deductions=0,
+                total_net=0,
+                employee_count=len(payroll_employees),
+                currency="USD",
+                approved_by_id=admin.id,
+                approved_at=datetime(2026, 2, 1),
+                notes="Nomina de enero 2026 - pagada",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            db.add(run1)
+            db.flush()
+
+            for i, emp in enumerate(payroll_employees):
+                sal = salaries[i]
+                isss = calc_isss_employee(sal)
+                afp = calc_afp_employee(sal)
+                isr = calc_isr_monthly(sal, isss, afp)
+                total_ded = round(isss + afp + isr, 2)
+                net = round(sal - total_ded, 2)
+                total_ded_1 += total_ded
+                total_net_1 += net
+
+                line = PayrollLine(
+                    id=uuid4(),
+                    payroll_run_id=run1.id,
+                    employee_id=emp.id,
+                    base_salary=sal,
+                    days_worked=22,
+                    hours_regular=176,
+                    hours_overtime=0,
+                    gross_pay=sal,
+                    total_deductions=total_ded,
+                    net_pay=net,
+                    deductions_detail=[
+                        {"type": "ISSS", "amount": isss, "description": "ISSS Empleado 3%"},
+                        {"type": "AFP", "amount": afp, "description": "AFP Empleado 7.25%"},
+                        {"type": "INCOME_TAX", "amount": isr, "description": "ISR Tabla Progresiva"},
+                    ],
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                db.add(line)
+                db.flush()
+
+                # Add deduction breakdowns
+                if isss > 0:
+                    db.add(PayrollDeductionBreakdown(
+                        id=uuid4(), payroll_line_id=line.id,
+                        deduction_type=DeductionCategory.ISSS, amount=Decimal(str(isss)),
+                        description="ISSS Empleado 3%",
+                        created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+                    ))
+                if afp > 0:
+                    db.add(PayrollDeductionBreakdown(
+                        id=uuid4(), payroll_line_id=line.id,
+                        deduction_type=DeductionCategory.AFP, amount=Decimal(str(afp)),
+                        description="AFP Empleado 7.25%",
+                        created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+                    ))
+                if isr > 0:
+                    db.add(PayrollDeductionBreakdown(
+                        id=uuid4(), payroll_line_id=line.id,
+                        deduction_type=DeductionCategory.INCOME_TAX, amount=Decimal(str(isr)),
+                        description="ISR Tabla Progresiva",
+                        created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+                    ))
+
+                # Payslip
+                db.add(Payslip(
+                    id=uuid4(),
+                    payroll_line_id=line.id,
+                    html_content=f"<h1>Colilla de Pago - Enero 2026</h1><p>{emp.full_name}: Neto ${net:,.2f}</p>",
+                    generated_at=datetime(2026, 2, 1),
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                ))
+
+            # Update run totals
+            run1.total_gross = total_gross_1
+            run1.total_deductions = round(total_ded_1, 2)
+            run1.total_net = round(total_net_1, 2)
+
+            # ── Run 2: February 2026 (DRAFT) ──
+            print("  Creating February 2026 payroll run (DRAFT)...")
+            total_gross_2 = sum(salaries)
+            total_ded_2 = 0.0
+            total_net_2 = 0.0
+
+            run2 = PayrollRun(
+                id=uuid4(),
+                client_id=company.id,
+                period_start=date(2026, 2, 1),
+                period_end=date(2026, 2, 28),
+                pay_frequency=PayFrequency.MONTHLY,
+                status=PayrollRunStatus.DRAFT,
+                total_gross=0,
+                total_deductions=0,
+                total_net=0,
+                employee_count=len(payroll_employees),
+                currency="USD",
+                notes="Nomina de febrero 2026 - borrador",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            db.add(run2)
+            db.flush()
+
+            for i, emp in enumerate(payroll_employees):
+                sal = salaries[i]
+                isss = calc_isss_employee(sal)
+                afp = calc_afp_employee(sal)
+                isr = calc_isr_monthly(sal, isss, afp)
+                total_ded = round(isss + afp + isr, 2)
+                net = round(sal - total_ded, 2)
+                total_ded_2 += total_ded
+                total_net_2 += net
+
+                line = PayrollLine(
+                    id=uuid4(),
+                    payroll_run_id=run2.id,
+                    employee_id=emp.id,
+                    base_salary=sal,
+                    days_worked=20,
+                    hours_regular=160,
+                    hours_overtime=0,
+                    gross_pay=sal,
+                    total_deductions=total_ded,
+                    net_pay=net,
+                    deductions_detail=[
+                        {"type": "ISSS", "amount": isss, "description": "ISSS Empleado 3%"},
+                        {"type": "AFP", "amount": afp, "description": "AFP Empleado 7.25%"},
+                        {"type": "INCOME_TAX", "amount": isr, "description": "ISR Tabla Progresiva"},
+                    ],
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                db.add(line)
+
+            run2.total_gross = total_gross_2
+            run2.total_deductions = round(total_ded_2, 2)
+            run2.total_net = round(total_net_2, 2)
+
+            db.commit()
+
         print("\n" + "=" * 60)
         print("DATABASE SEED COMPLETED SUCCESSFULLY!")
         print("=" * 60)
-        print("\nTest accounts (all passwords updated):")
-        print("-" * 40)
-        print("  ADMIN:     admin@example.com / Admin123!")
-        print("  RECRUITER: recruiter@example.com / Recruiter123!")
-        print("  EMPLOYER:  employer@example.com / Employer123!")
-        print("  CANDIDATE: candidate1@example.com / Candidate123!")
-        print("  CANDIDATE: candidate2@example.com / Candidate123!")
-        print("  CANDIDATE: candidate3@example.com / Candidate123!")
-        print("-" * 40)
+
+        # Print summary
+        print("\nPayroll Summary (Jan 2026):")
+        print("-" * 50)
+        for i, edata in enumerate(employees_data):
+            sal = edata["salary"]
+            isss = calc_isss_employee(sal)
+            afp = calc_afp_employee(sal)
+            isr = calc_isr_monthly(sal, isss, afp)
+            total_ded = round(isss + afp + isr, 2)
+            net = round(sal - total_ded, 2)
+            print(f"  {edata['full_name']:20s}  Bruto: ${sal:>8,.2f}  ISSS: ${isss:>5.2f}  "
+                  f"AFP: ${afp:>6.2f}  ISR: ${isr:>6.2f}  Neto: ${net:>8,.2f}")
+
+        print("\nTest Accounts:")
+        print("-" * 50)
+        print("  ADMIN:      admin@example.com / Admin123!")
+        print("  RECRUITER:  recruiter@example.com / Recruiter123!")
+        print("  EMPLOYER:   employer@example.com / Employer123!")
+        print("  EMPLOYEE 1: employee1@example.com / Employee123!")
+        print("  EMPLOYEE 2: employee2@example.com / Employee123!")
+        print("  CANDIDATE:  candidate1@example.com / Candidate123!")
+        print("-" * 50)
+        print("  Company: Bloque Internacional (used as client_id for payroll)")
+        print("  Payroll: enable_payroll=True (default)")
+        print("-" * 50)
 
     except Exception as e:
         db.rollback()
