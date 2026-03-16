@@ -13,6 +13,7 @@ from app.routers.billing import router as billing_router
 from app.routers.embeddings import router as embeddings_router
 from app.routers.matching import router as matching_router
 from app.routers.interviews import router as interviews_router
+from app.routers.employee_portal import router as employee_portal_router
 
 __all__ = [
     "auth_router",
@@ -28,4 +29,5 @@ __all__ = [
     "embeddings_router",
     "matching_router",
     "interviews_router",
+    "employee_portal_router",
 ]

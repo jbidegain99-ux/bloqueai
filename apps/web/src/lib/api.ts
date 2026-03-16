@@ -1,3 +1,5 @@
+import type { Job, PaginatedResponse, ShortlistResponse, CandidateProfile, CandidateReport, DashboardKpis } from '@/types'
+
 // Use relative path for browser requests (goes through Next.js API proxy)
 // This avoids CORS issues by having Next.js server make the request
 const getApiUrl = () => {
@@ -60,7 +62,7 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
         errorMessage = data.detail
       } else if (Array.isArray(data.detail) && data.detail.length > 0) {
         // Extract message from validation error
-        errorMessage = data.detail.map((e: any) => e.msg || e.message || JSON.stringify(e)).join(', ')
+        errorMessage = data.detail.map((e: { msg?: string; message?: string }) => e.msg || e.message || JSON.stringify(e)).join(', ')
       } else if (typeof data.detail === 'object') {
         errorMessage = JSON.stringify(data.detail)
       }
@@ -98,7 +100,7 @@ export const authApi = {
 // Candidate API
 export const candidateApi = {
   getProfile: (token: string) =>
-    fetchApi('/candidate/profile', { token }),
+    fetchApi<CandidateProfile>('/candidate/profile', { token }),
 
   updateProfile: (token: string, data: Record<string, unknown>) =>
     fetchApi('/candidate/profile', {
@@ -197,7 +199,7 @@ export const candidateApi = {
     fetchApi('/candidate/interviews', { token }),
 
   getReport: (token: string) =>
-    fetchApi('/candidate/report', { token }),
+    fetchApi<CandidateReport>('/candidate/report', { token }),
 
   generateCV: (token: string, data: {
     personal_info: {
@@ -247,40 +249,40 @@ export const candidateApi = {
 // Employer API
 export const employerApi = {
   getJobs: (token: string, page = 1) =>
-    fetchApi(`/employer/jobs?page=${page}`, { token }),
+    fetchApi<PaginatedResponse<Job>>(`/employer/jobs?page=${page}`, { token }),
 
   getJob: (token: string, jobId: string) =>
-    fetchApi(`/employer/jobs/${jobId}`, { token }),
+    fetchApi<Job>(`/employer/jobs/${jobId}`, { token }),
 
   createJob: (token: string, data: Record<string, unknown>) =>
-    fetchApi('/employer/jobs', {
+    fetchApi<Job>('/employer/jobs', {
       method: 'POST',
       body: data,
       token,
     }),
 
   updateJob: (token: string, jobId: string, data: Record<string, unknown>) =>
-    fetchApi(`/employer/jobs/${jobId}`, {
+    fetchApi<Job>(`/employer/jobs/${jobId}`, {
       method: 'PATCH',
       body: data,
       token,
     }),
 
   publishJob: (token: string, jobId: string) =>
-    fetchApi(`/employer/jobs/${jobId}/publish`, {
+    fetchApi<Job>(`/employer/jobs/${jobId}/publish`, {
       method: 'POST',
       token,
     }),
 
   generateShortlist: (token: string, jobId: string, maxCandidates = 10) =>
-    fetchApi(`/employer/jobs/${jobId}/shortlist/generate`, {
+    fetchApi<ShortlistResponse>(`/employer/jobs/${jobId}/shortlist/generate`, {
       method: 'POST',
       body: { max_candidates: maxCandidates },
       token,
     }),
 
   getShortlist: (token: string, jobId: string) =>
-    fetchApi(`/employer/jobs/${jobId}/shortlist`, { token }),
+    fetchApi<ShortlistResponse>(`/employer/jobs/${jobId}/shortlist`, { token }),
 
   compareCandidates: (token: string, jobId: string, candidateIds: string[]) =>
     fetchApi(`/employer/jobs/${jobId}/shortlist/compare`, {
@@ -432,7 +434,7 @@ export const adminApi = {
     }),
 
   getDashboardKpis: (token: string) =>
-    fetchApi('/admin/dashboard/kpis', { token }),
+    fetchApi<DashboardKpis>('/admin/dashboard/kpis', { token }),
 
   getFlaggedInterviews: (token: string) =>
     fetchApi('/admin/interviews/flagged', { token }),
@@ -935,6 +937,40 @@ export const adminApi = {
       }
     }>(`/admin/placements/report${queryString ? `?${queryString}` : ''}`, { token })
   },
+
+  // Platform management (super admin)
+  getPlatformStats: (token: string) =>
+    fetchApi<{
+      total_companies: number
+      active_companies: number
+      total_employees: number
+      total_payroll_runs: number
+      total_users: number
+    }>('/admin/platform/stats', { token }),
+
+  getCompanyDetail: (token: string, companyId: string) =>
+    fetchApi<{
+      id: string
+      name: string
+      slug: string
+      is_active: boolean
+      is_client: boolean
+      industry: string | null
+      size: string | null
+      website: string | null
+      description: string | null
+      created_at: string | null
+      user_count: number
+      employee_count: number
+      payroll_run_count: number
+    }>(`/admin/platform/companies/${companyId}`, { token }),
+
+  toggleCompanyStatus: (token: string, companyId: string, isActive: boolean) =>
+    fetchApi(`/admin/platform/companies/${companyId}/status`, {
+      method: 'PATCH',
+      body: { is_active: isActive },
+      token,
+    }),
 }
 
 // Public API (no auth required)
@@ -978,7 +1014,7 @@ export const publicApi = {
 
     const queryString = queryParams.toString()
     return fetchApi<{
-      items: any[]
+      items: Record<string, unknown>[]
       total: number
       page: number
       page_size: number
@@ -987,7 +1023,7 @@ export const publicApi = {
   },
 
   getJob: (jobId: string) =>
-    fetchApi<any>(`/public/jobs/${jobId}`),
+    fetchApi<Record<string, unknown>>(`/public/jobs/${jobId}`),
 
   getJobCategories: () =>
     fetchApi<{ categories: { value: string; label: string }[] }>('/public/jobs/categories/list'),
@@ -1534,6 +1570,149 @@ export const payrollApi = {
 
   getDetailReport: (token: string, runId: string) =>
     fetchApi<PayrollDetailItem[]>(`/payroll/reports/detail?run_id=${runId}`, { token }),
+
+  // Employee detail + terminate
+  getEmployee: (token: string, employeeId: string) =>
+    fetchApi<PayrollEmployeeDetail>(`/payroll/employees/${employeeId}`, { token }),
+
+  terminateEmployee: (token: string, employeeId: string) =>
+    fetchApi<PayrollEmployeeDetail>(`/payroll/employees/${employeeId}/terminate`, { method: 'POST', token }),
+
+  // Contracts
+  getEmployeeContracts: (token: string, employeeId: string) =>
+    fetchApi<PayrollContractDetail[]>(`/payroll/contracts?employee_id=${employeeId}`, { token }),
+
+  signContract: (token: string, contractId: string) =>
+    fetchApi<PayrollContractDetail>(`/payroll/contracts/${contractId}/sign`, { method: 'POST', token }),
+
+  // SPU + Compliance + Reports
+  generateSPU: async (token: string, runId: string) => {
+    const response = await fetch(`${API_URL}/payroll/runs/${runId}/spu`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => null)
+      throw new ApiError(err?.detail || 'Error generando SPU', response.status, err)
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `SPU-${runId}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  },
+
+  getCompliance: (token: string, runId: string) =>
+    fetchApi<{
+      payroll_run_id: string
+      compliant: boolean
+      checks: Array<{ name: string; passed: boolean; detail: string }>
+      errors: string[]
+      warnings: string[]
+    }>(`/payroll/runs/${runId}/compliance`, { token }),
+
+  getISSReport: (token: string, runId: string) =>
+    fetchApi<{
+      company_name: string | null
+      period: string
+      employee_count: number
+      rows: Array<{
+        employee_name: string
+        dui: string | null
+        gross_salary: number
+        isss_employee: number
+        isss_employer: number
+      }>
+      total_isss_employee: number
+      total_isss_employer: number
+      total_isss: number
+    }>(`/payroll/runs/${runId}/report/isss`, { token }),
+
+  getAFPReport: (token: string, runId: string) =>
+    fetchApi<{
+      company_name: string | null
+      period: string
+      employee_count: number
+      rows: Array<{
+        employee_name: string
+        dui: string | null
+        gross_salary: number
+        afp_employee: number
+        afp_employer: number
+        afp_provider: string
+      }>
+      total_afp_employee: number
+      total_afp_employer: number
+      total_afp: number
+    }>(`/payroll/runs/${runId}/report/afp`, { token }),
+
+  getISRReport: (token: string, runId: string) =>
+    fetchApi<{
+      company_name: string | null
+      period: string
+      employee_count: number
+      rows: Array<{
+        employee_name: string
+        dui: string | null
+        gross_salary: number
+        taxable_base: number
+        isr: number
+      }>
+      total_isr: number
+    }>(`/payroll/runs/${runId}/report/isr`, { token }),
+}
+
+interface PayrollEmployeeDetail {
+  id: string
+  client_id: string
+  client_name: string | null
+  full_name: string
+  email: string | null
+  phone: string | null
+  employee_code: string | null
+  department: string | null
+  position: string | null
+  is_active: boolean
+  hire_date: string | null
+  termination_date: string | null
+  document_type: string | null
+  document_id: string | null
+  salary: number | null
+  salary_currency: string | null
+  employment_type: string | null
+  status: string | null
+  bank_account_number: string | null
+  active_contract: {
+    contract_type: string | null
+    base_salary: number | null
+    currency: string | null
+    pay_frequency: string | null
+  } | null
+  created_at: string | null
+}
+
+interface PayrollContractDetail {
+  id: string
+  employee_id: string
+  employee_name: string | null
+  client_id: string
+  contract_type: string
+  position_title: string | null
+  start_date: string
+  end_date: string | null
+  base_salary: number
+  currency: string
+  pay_frequency: string
+  is_active: boolean
+  notes: string | null
+  benefits: Record<string, unknown> | null
+  document_url: string | null
+  signed_by_employee_at: string | null
+  created_at: string | null
 }
 
 // ── EOR Types ─────────────────────────────────────────────────
@@ -1942,6 +2121,211 @@ export const matchingApi = {
     const qs = status ? `?status=${status}` : ''
     return fetchApi<SavedMatch[]>(`/matching/candidate/${candidateId}/matches${qs}`, { token })
   },
+}
+
+// ── Employee Portal API ─────────────────────────────────────────
+
+export interface EmployeePayslipSummary {
+  id: string
+  month: number
+  year: number
+  gross_salary: number
+  total_deductions: number
+  net_salary: number
+  payment_date: string
+}
+
+export interface EmployeeYtdSummary {
+  total_gross: number
+  total_deductions: number
+  total_net: number
+  total_isss: number
+  total_afp: number
+  total_isr: number
+}
+
+export interface EmployeeDashboardData {
+  employee_name: string
+  position: string
+  department: string
+  last_payslip: EmployeePayslipSummary | null
+  ytd_summary: EmployeeYtdSummary
+  pending_documents: number
+}
+
+export interface EmployeePayslipListItem {
+  id: string
+  month: number
+  year: number
+  gross_salary: number
+  total_deductions: number
+  net_salary: number
+  payment_date: string
+  status: string
+}
+
+export interface EmployeeDeductionLine {
+  concept: string
+  employee_amount: number
+  employer_amount: number
+}
+
+export interface EmployeeEarningLine {
+  concept: string
+  amount: number
+}
+
+export interface EmployeePayslipDetail {
+  id: string
+  month: number
+  year: number
+  employee_name: string
+  employee_id_number: string
+  position: string
+  department: string
+  payment_date: string
+  base_salary: number
+  earnings: EmployeeEarningLine[]
+  gross_salary: number
+  deductions: EmployeeDeductionLine[]
+  total_deductions: number
+  net_salary: number
+  employer_contributions: EmployeeDeductionLine[]
+  total_employer_contributions: number
+  company_name: string
+  company_nit: string
+}
+
+export interface EmployeeDeductionBreakdown {
+  concept: string
+  rate: number
+  employee_amount: number
+  employer_amount: number
+  cap: number | null
+}
+
+export interface EmployeeBenefitItem {
+  name: string
+  description: string
+  value: string | null
+}
+
+export interface EmployeeYtdAccumulated {
+  total_gross: number
+  total_deductions: number
+  total_net: number
+  months_paid: number
+}
+
+export interface EmployeeSalaryBreakdown {
+  base_salary: number
+  currency: string
+  payment_frequency: string
+  deductions: EmployeeDeductionBreakdown[]
+  total_employee_deductions: number
+  total_employer_contributions: number
+  net_salary: number
+  benefits: EmployeeBenefitItem[]
+  ytd: EmployeeYtdAccumulated
+}
+
+export interface EmployeeEmergencyContact {
+  name: string
+  relationship: string
+  phone: string
+}
+
+export interface EmployeeProfile {
+  id: string
+  full_name: string
+  email: string
+  phone: string | null
+  address: string | null
+  city: string | null
+  country: string | null
+  date_of_birth: string | null
+  national_id: string | null
+  national_id_type: string | null
+  gender: string | null
+  marital_status: string | null
+  position: string
+  department: string
+  hire_date: string
+  contract_type: string
+  work_schedule: string | null
+  manager_name: string | null
+  employee_code: string | null
+  bank_name: string | null
+  bank_account_masked: string | null
+  bank_account_type: string | null
+  emergency_contact: EmployeeEmergencyContact | null
+  status: string
+}
+
+export interface EmployeeDocumentItem {
+  id: string
+  name: string
+  description: string
+  type: string
+  available: boolean
+  generated_at: string | null
+}
+
+export interface EmployeeGeneratedDocument {
+  html: string
+}
+
+export interface EmployeeChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: string
+}
+
+export interface EmployeeChatResponse {
+  reply: string
+  suggested_questions: string[]
+}
+
+export const employeeApi = {
+  getDashboard: (token: string) =>
+    fetchApi<EmployeeDashboardData>('/employee/dashboard', { token }),
+
+  getProfile: (token: string) =>
+    fetchApi<EmployeeProfile>('/employee/profile', { token }),
+
+  getPayslips: (token: string, year?: number) =>
+    fetchApi<EmployeePayslipListItem[]>(
+      `/employee/payslips${year ? `?year=${year}` : ''}`,
+      { token }
+    ),
+
+  getPayslip: (token: string, id: string) =>
+    fetchApi<EmployeePayslipDetail>(`/employee/payslips/${id}`, { token }),
+
+  getSalaryBreakdown: (token: string) =>
+    fetchApi<EmployeeSalaryBreakdown>('/employee/salary/breakdown', { token }),
+
+  getDocuments: (token: string) =>
+    fetchApi<EmployeeDocumentItem[]>('/employee/documents', { token }),
+
+  generateProofOfIncome: (token: string) =>
+    fetchApi<EmployeeGeneratedDocument>('/employee/documents/proof-of-income', {
+      method: 'POST',
+      token,
+    }),
+
+  generateDocument: (token: string, type: string) =>
+    fetchApi<EmployeeGeneratedDocument>(`/employee/documents/generate/${type}`, {
+      method: 'POST',
+      token,
+    }),
+
+  chat: (token: string, message: string, history: EmployeeChatMessage[]) =>
+    fetchApi<EmployeeChatResponse>('/employee/assistant/chat', {
+      method: 'POST',
+      body: { message, history },
+      token,
+    }),
 }
 
 export type {

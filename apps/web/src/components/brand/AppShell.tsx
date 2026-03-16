@@ -21,6 +21,10 @@ import {
   CreditCard,
   Sparkles,
   Video,
+  DollarSign,
+  Bot,
+  Download,
+  UserCircle,
 } from 'lucide-react'
 import { Logo } from './Logo'
 import { PageTransition } from '@/components/layout/page-transition'
@@ -61,12 +65,25 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   const isPayrollSection = pathname.startsWith('/admin/payroll')
+  const isPlatformSection = pathname.startsWith('/admin/platform')
+  const isEmployeePortal = pathname.startsWith('/portal')
 
   // Main navigation tabs
   const mainTabs = [
     { id: 'talento', label: 'Talento', href: '/dashboard', icon: Users },
     { id: 'nomina', label: 'Personal y Nómina', href: '/admin/payroll/dashboard', icon: Briefcase },
+    ...(isAdmin() ? [{ id: 'plataforma', label: 'Plataforma', href: '/admin/platform', icon: Settings }] : []),
     { id: 'proyectos', label: 'Proyectos', href: '#', icon: FolderKanban, disabled: true },
+  ]
+
+  // Employee portal subnav
+  const employeeNav = [
+    { label: 'Inicio', href: '/portal', icon: LayoutDashboard },
+    { label: 'Mis Colillas', href: '/portal/payslips', icon: FileText },
+    { label: 'Salario', href: '/portal/salary', icon: DollarSign },
+    { label: 'Perfil', href: '/portal/profile', icon: UserCircle },
+    { label: 'Documentos', href: '/portal/documents', icon: Download },
+    { label: 'Asistente', href: '/portal/assistant', icon: Bot },
   ]
 
   // Payroll subnav
@@ -78,6 +95,14 @@ export function AppShell({ children }: AppShellProps) {
     { label: 'Deducciones', href: '/admin/payroll/deductions', icon: Settings },
     { label: 'Reportes', href: '/admin/payroll/reports', icon: BarChart3 },
     { label: 'Clientes', href: '/admin/clients', icon: Building2 },
+  ]
+
+  // Platform subnav (admin only)
+  const platformNav = [
+    { label: 'Resumen', href: '/admin/platform', icon: LayoutDashboard },
+    { label: 'Empresas', href: '/admin/platform/tenants', icon: Building2 },
+    { label: 'Auditoría', href: '/admin/platform/audit-logs', icon: FileText },
+    { label: 'Configuración', href: '/admin/settings', icon: Settings },
   ]
 
   // Role-specific navigation (order matters: most specific role first)
@@ -215,7 +240,7 @@ export function AppShell({ children }: AppShellProps) {
         <div className="bg-bloque-navy700">
           <div className="container mx-auto px-4">
             <nav className="flex items-center space-x-1 h-12 overflow-x-auto">
-              {(isPayrollSection ? payrollNav : getRoleNav()).map((item) => (
+              {(isEmployeePortal ? employeeNav : isPlatformSection ? platformNav : isPayrollSection ? payrollNav : getRoleNav()).map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
