@@ -137,18 +137,58 @@ def ensure_embedding_columns():
         logger.warning("ensure_embedding_columns_failed", error=str(e))
 
 
+def _upsert_user(db, email: str, password: str, full_name: str, role, company_id=None):
+    """Insert or update a user by email during startup seed."""
+    from app.models.user import User
+    from app.core.security import get_password_hash
+    from uuid import uuid4
+    from datetime import datetime
+
+    user = db.query(User).filter(User.email == email).first()
+    hashed = get_password_hash(password)
+    if user:
+        user.hashed_password = hashed
+        user.full_name = full_name
+        user.role = role
+        if company_id:
+            user.company_id = company_id
+        user.is_active = True
+        user.is_verified = True
+        user.updated_at = datetime.utcnow()
+    else:
+        user = User(
+            id=uuid4(),
+            email=email,
+            hashed_password=hashed,
+            full_name=full_name,
+            role=role,
+            company_id=company_id,
+            is_active=True,
+            is_verified=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.add(user)
+    db.flush()
+    return user
+
+
 def run_seed_on_startup():
-    """Run seed script on startup to ensure base data exists."""
+    """Run seed script on startup to ensure base data exists.
+
+    Creates: default rubric, company, all test users, billing plans.
+    Idempotent — safe to run on every startup.
+    """
     from app.core.database import SessionLocal
     from app.models.user import User, UserRole
+    from app.models.company import Company
     from app.models.rubric import Rubric, RubricCriteria
-    from app.core.security import get_password_hash
     from uuid import uuid4
     from datetime import datetime
 
     db = SessionLocal()
     try:
-        # Check if default rubric exists
+        # ── 1. Default rubric ──
         rubric = db.query(Rubric).filter(Rubric.is_default == True).first()
         if not rubric:
             logger.info("Creating default rubric...")
@@ -166,7 +206,6 @@ def run_seed_on_startup():
             db.add(rubric)
             db.flush()
 
-            # Add criteria
             criteria_data = [
                 ("Habilidades Tecnicas", "technical_skills", 1.5, "Dominio de tecnologias y herramientas requeridas"),
                 ("Comunicacion", "communication", 1.0, "Claridad y efectividad en la comunicacion"),
@@ -194,26 +233,47 @@ def run_seed_on_startup():
             db.commit()
             logger.info("Default rubric created successfully")
 
-        # Check if admin user exists
-        admin = db.query(User).filter(User.role == UserRole.ADMIN).first()
-        if not admin:
-            logger.info("Creating admin user...")
-            admin = User(
+        # ── 2. Company ──
+        company = db.query(Company).filter(Company.slug == "bloque-internacional").first()
+        if not company:
+            logger.info("Creating default company...")
+            company = Company(
                 id=uuid4(),
-                email="admin@bloqueai.com",
-                hashed_password=get_password_hash("Admin123!"),
-                full_name="Administrador TalentOS",
-                role=UserRole.ADMIN,
+                name="Bloque Internacional",
+                slug="bloque-internacional",
+                description="Empresa lider en soluciones de capital humano y tecnologia",
+                website="https://bloque.com",
+                industry="Tecnologia / Recursos Humanos",
+                size="51-200",
                 is_active=True,
-                is_verified=True,
+                is_client=True,
+                client_code="BLOQUE-001",
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
             )
-            db.add(admin)
+            db.add(company)
             db.commit()
-            logger.info("Admin user created: admin@bloqueai.com / Admin123!")
+            logger.info("Default company created")
 
-        # Seed billing plans
+        # ── 3. All test users (idempotent upsert) ──
+        logger.info("Seeding test users...")
+        test_users = [
+            ("admin@bloqueai.com", "Admin123!", "Administrador TalentOS", UserRole.ADMIN),
+            ("admin@example.com", "Admin123!", "Administrador TalentOS", UserRole.ADMIN),
+            ("recruiter@example.com", "Recruiter123!", "Maria Garcia - Reclutadora", UserRole.RECRUITER),
+            ("employer@example.com", "Employer123!", "Carlos Lopez - Hiring Manager", UserRole.EMPLOYER),
+            ("employee1@example.com", "Employee123!", "Jose Bidegain", UserRole.EMPLOYER),
+            ("employee2@example.com", "Employee123!", "Ana Martinez", UserRole.EMPLOYER),
+            ("candidate1@example.com", "Candidate123!", "Ana Martinez (Candidata)", UserRole.CANDIDATE),
+            ("candidate2@example.com", "Candidate123!", "Roberto Sanchez", UserRole.CANDIDATE),
+            ("candidate3@example.com", "Candidate123!", "Laura Fernandez", UserRole.CANDIDATE),
+        ]
+        for email, password, name, role in test_users:
+            _upsert_user(db, email, password, name, role, company_id=company.id)
+        db.commit()
+        logger.info("All test users seeded successfully")
+
+        # ── 4. Billing plans ──
         seed_plans(db)
 
     except Exception as e:
