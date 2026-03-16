@@ -25,6 +25,7 @@ import {
   Target,
   Trash2,
 } from 'lucide-react'
+import { getErrorMessage } from '@/types'
 
 interface Application {
   id: string
@@ -150,9 +151,9 @@ export default function ApplicationsPage() {
       try {
         const apps = await applicationsApi.list(accessToken)
         setApplications(apps)
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Error loading applications:', err)
-        setError(err?.message || 'Error al cargar las aplicaciones')
+        setError(getErrorMessage(err) || 'Error al cargar las aplicaciones')
       } finally {
         setLoading(false)
       }
@@ -186,9 +187,9 @@ export default function ApplicationsPage() {
             : app
         )
       )
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error withdrawing application:', err)
-      setError(err?.message || 'Error al retirar la aplicacion')
+      setError(getErrorMessage(err) || 'Error al retirar la aplicacion')
     } finally {
       setWithdrawing(null)
     }

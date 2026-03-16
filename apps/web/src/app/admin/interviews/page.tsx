@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScoreDisplay } from '@/components/brand/ScoreDisplay'
 import { useAuthStore, isRecruiter } from '@/lib/auth'
 import { adminApi } from '@/lib/api'
+import { getErrorMessage } from '@/types'
 import { AlertTriangle, MessageSquare, User, Clock, CheckCircle, ChevronDown, ChevronUp, Play, FileText, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 
@@ -98,9 +99,9 @@ export default function InterviewsPage() {
       }
       // Ensure data is an array
       setInterviews(Array.isArray(data) ? data : [])
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading interviews:', err)
-      setError(err?.message || 'Error al cargar entrevistas')
+      setError(getErrorMessage(err) || 'Error al cargar entrevistas')
       setInterviews([])
     } finally {
       setLoading(false)

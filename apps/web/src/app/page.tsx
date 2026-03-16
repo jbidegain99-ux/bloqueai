@@ -22,6 +22,7 @@ import {
   Menu,
   X,
 } from 'lucide-react'
+import { getErrorMessage } from '@/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -58,8 +59,8 @@ export default function LandingPage() {
 
       setSubmitted(true)
       setFormData({ name: '', email: '', company: '', country: '', roles_needed: '', message: '' })
-    } catch (err: any) {
-      setError(err.message || 'Error al enviar. Intenta nuevamente.')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Error al enviar. Intenta nuevamente.')
     } finally {
       setSubmitting(false)
     }

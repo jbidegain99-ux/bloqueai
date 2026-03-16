@@ -2,6 +2,146 @@
 
 ---
 
+## [2026-03-16] Employee Portal + AI Chatbot Assistant (Prompt 45)
+
+### Added
+- **Employee Portal** — Full self-service portal at `/portal` with 6 sub-pages:
+  - Dashboard: Welcome card, last payslip summary, YTD summary, quick actions
+  - Payslips: List with year filter, mobile card view, detail page with print/PDF
+  - Salary Breakdown: Monthly deduction calculator (ISSS/AFP/ISR), visual bars, YTD, benefits
+  - Profile: Personal info, employment info, masked bank details, emergency contact
+  - Documents: Generate proof of income and employment letters (HTML → print)
+  - AI Assistant "Valentina": WhatsApp-style chat with Claude API integration
+
+- **AI Chatbot "Valentina"** — Spanish-speaking payroll assistant:
+  - Expert in El Salvador labor law (ISSS, AFP, ISR, aguinaldo, vacaciones)
+  - Contextual: uses employee's real salary data in responses
+  - Safety guardrails: refuses salary promises, financial advice, other employees' data
+  - Warm, natural salvadoreño Spanish (not translation)
+  - Fallback mock response when API unavailable
+  - Suggestion chips for quick questions
+
+- **Backend API** — 9 new endpoints under `/employee/`:
+  - `GET /employee/profile` — Employee's own profile
+  - `GET /employee/dashboard` — Dashboard with YTD summary
+  - `GET /employee/payslips` — Payslip list (filterable by year)
+  - `GET /employee/payslips/{id}` — Payslip detail with deduction breakdown
+  - `GET /employee/salary/breakdown` — Monthly deduction calculator
+  - `GET /employee/documents` — Available documents list
+  - `POST /employee/documents/proof-of-income` — Generate proof of income HTML
+  - `POST /employee/documents/generate/{type}` — Generate employment letter
+  - `POST /employee/assistant/chat` — Claude-powered chatbot
+
+- **Frontend API Client** — `employeeApi` with 15+ TypeScript interfaces (zero `any` types)
+- **AppShell Navigation** — Employee portal section with 6 nav items
+- **E2E Tests** — Playwright tests for all portal pages and chatbot interaction
+- **Mobile-First Design** — Responsive layouts, card views on mobile, touch-friendly targets
+
+### Architecture
+- Route group: `(employee)/portal/` with shared layout
+- Backend: FastAPI router with `get_current_user` auth (employee can only see own data)
+- Chatbot: Anthropic SDK → Claude claude-sonnet-4-20250514 with system prompt + employee salary context
+- El Salvador tax calculations: ISSS 3% (cap $30), AFP 7.25%, ISR progressive table
+
+---
+
+## [2026-03-15] Extend Payroll Schema v1.0 — LATAM Payroll Models
+
+### Added
+- **6 new enum types**: `DocumentType` (DUI/NIT/PASSPORT/CURP/CEDULA), `EmployeeStatus`, `EmploymentType`, `PaymentMethod`, `DeductionCategory` (ISSS/AFP/ISR/LOAN), `ProvisionType` (AGUINALDO/VACACIONES/BONUS/INDEMNIZACION)
+- **PayrollDeductionBreakdown** table — relational deduction line items per payroll line (replaces JSONB-only approach)
+- **PayrollProvision** table — provision accruals (aguinaldo, vacaciones, bonus, indemnización) per payroll line
+- **Employee fields**: `document_type`, `document_id`, `salary`, `salary_currency`, `employment_type`, `status`, `bank_account_number`
+- **Contract fields**: `position_title`, `benefits` (JSONB), `document_url`, `signed_by_employee_at`
+- **PayrollRun fields**: `payment_method`
+- **PayrollLine fields**: `contract_id` (FK to payroll_contracts)
+- **Payslip fields**: `document_url`
+- **docs/SETUP.md** — Local development setup, architecture overview, database schema guide
+
+### Migration
+- `021_extend_payroll_models.py` — Non-destructive ALTER TABLE + CREATE TABLE (zero breaking changes to existing data)
+
+### Design Decisions
+- Multi-currency at 3 levels: employee (display), contract (legal), payroll run (settlement)
+- Benefits stored as extensible JSONB with structured schema (health, life, meal, transport, custom array)
+- Salary history tracked implicitly via Contract records (each contract = a salary snapshot)
+- Deduction breakdowns as both relational table (for queries/reports) and legacy JSONB (backward compat)
+
+---
+
+## [2026-03-15] Fix Silent Exceptions in Python Routers (DEBT-02)
+
+### Changed
+- **0 silent `except: pass` patterns remain** across all routers (was 26)
+- Added structured logging to all 26 silent exception handlers across 5 files
+- Added module-level `structlog` logger to `admin.py` (was missing)
+
+### Files Modified
+- `apps/api/app/routers/admin.py` — 16 `except ValueError: pass` → `logger.debug("invalid_date_param"|"invalid_filter_param", ...)` + added module-level logger
+- `apps/api/app/routers/public.py` — 3 enum validation → `logger.debug("invalid_filter_param", ...)`
+- `apps/api/app/routers/eor.py` — 3 enum validation → `logger.debug("invalid_filter_param", ...)`
+- `apps/api/app/routers/applications.py` — 2 critical: `logger.error("status_revert_failed")` + `logger.warning("llm_log_creation_failed")`
+- `apps/api/app/routers/interviews.py` — 2 JSON parse → `logger.warning("recommendation_json_parse_failed")`
+
+### Logging Strategy Applied
+| Category | Count | Log Level | Rationale |
+|----------|-------|-----------|-----------|
+| Date/enum filter validation | 22 | `debug` | Optional params, not errors |
+| DB rollback failure | 1 | `error` | Error during error handling |
+| Audit log creation failure | 1 | `warning` | Audit trail loss |
+| JSON parse failure | 2 | `warning` | Data integrity issue |
+
+---
+
+## [2026-03-15] Refactor: Eliminar 55 any Types (DEBT-01)
+
+### Changed
+- **0 `any` types remain** across entire `apps/web/src/` codebase (was 55)
+- Created `src/types/index.ts` with 15+ shared interfaces (Job, CandidateProfile, ShortlistItem, DashboardKpis, etc.)
+- Added `getErrorMessage(err: unknown)` utility — replaces 22 `catch (err: any)` patterns
+- Added generic type params to `employerApi`, `candidateApi`, `adminApi` methods in `api.ts`
+- Exported `User` interface from `lib/auth.ts`
+- Fixed 30+ hidden null-safety issues exposed after removing `any` (optional chaining gaps)
+
+### Files Modified (20+)
+- `src/types/index.ts` (new)
+- `src/lib/api.ts` — typed API methods, fixed validation error handler
+- `src/lib/auth.ts` — exported User interface
+- `src/app/employer/jobs/page.tsx`, `[id]/page.tsx`, `new/page.tsx`
+- `src/app/employer/shortlists/page.tsx`, `dashboard/page.tsx`
+- `src/app/candidate/profile/page.tsx`, `interview/[sessionId]/page.tsx`
+- `src/app/candidate/apply/[jobId]/page.tsx`, `applications/page.tsx`
+- `src/app/candidate/cv-builder/page.tsx`, `jobs/page.tsx`, `jobs/[jobId]/page.tsx`
+- `src/app/admin/kpis/page.tsx`, `clients/page.tsx`, `placements/page.tsx`
+- `src/app/admin/interviews/page.tsx`, `settings/page.tsx`
+- `src/app/page.tsx`, `register/page.tsx`
+- `src/app/employer/jobs/[id]/candidates/[candidateId]/page.tsx`
+
+---
+
+## [2026-03-12] Auditoría Extensiva del Monorepo
+
+### Audited
+- **Monorepo completo**: 4 apps + 1 service, 208+ archivos de código
+- **50 rutas frontend**: Todas funcionales, 0 redundantes
+- **90+ endpoints API**: Todos implementados (excepto avatar stubs)
+- **29 modelos DB**: Completos con RLS habilitado
+- **AI Pipeline**: CV Analysis, Video Interviews, Matching, Shortlisting - todos operativos
+
+### Found
+- **2 items deuda técnica crítica**: 30+ `any` types + 34 try/except silenciosos
+- **5 componentes sin uso**: activity-feed, dialog, tooltip, kanban-board, VideoAvatar
+- **1 hook sin integrar**: use-feature (feature gating)
+- **2 páginas index faltantes**: `/employer/interviews`, `/employer/settings`
+- **NIT placeholder** en contract_generator.py
+
+### Generated
+- `AUDIT_REPORTS/AUDIT_REPORT_2026-03-12.md` - Reporte ejecutivo completo
+- Actualizado `tasks/todo.md` con backlog consolidado
+- Actualizado `tasks/lessons.md` con 7 lecciones nuevas
+
+---
+
 ## [2026-02-21] EOR Production Bug Fixes
 
 **Branch:** `claude/ai-recruitment-mvp-dJKyh`

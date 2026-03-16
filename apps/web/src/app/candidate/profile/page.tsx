@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/lib/auth'
 import { candidateApi, applicationsApi } from '@/lib/api'
 import { MapPin, Briefcase, GraduationCap, Star, AlertCircle, FileText, MessageSquare, Upload, ArrowRight, CheckCircle, Play, Clock, Sparkles, PenLine } from 'lucide-react'
+import type { CandidateProfile, CandidateReport, Experience, Education, Language } from '@/types'
 
 interface ApplicationForGating {
   id: string
@@ -27,8 +28,8 @@ interface ApplicationForGating {
 export default function CandidateProfilePage() {
   const router = useRouter()
   const { accessToken, isAuthenticated, isHydrated, user } = useAuthStore()
-  const [profile, setProfile] = useState<any>(null)
-  const [report, setReport] = useState<any>(null)
+  const [profile, setProfile] = useState<CandidateProfile | null>(null)
+  const [report, setReport] = useState<CandidateReport | null>(null)
   const [applications, setApplications] = useState<ApplicationForGating[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -73,7 +74,7 @@ export default function CandidateProfilePage() {
     )
   }
 
-  const hasCV = profile?.skills?.length > 0 || profile?.experience?.length > 0
+  const hasCV = (profile?.skills?.length ?? 0) > 0 || (profile?.experience?.length ?? 0) > 0
 
   // Check for actual completed interview session (from backend, not just report scores)
   const hasCompletedInterview = profile?.has_completed_interview === true
@@ -105,8 +106,8 @@ export default function CandidateProfilePage() {
     })
   }
 
-  const sourceBadge = getSourceBadge(profile?.resume_source)
-  const resumeUpdatedAt = formatDate(profile?.resume_updated_at)
+  const sourceBadge = getSourceBadge(profile?.resume_source ?? null)
+  const resumeUpdatedAt = formatDate(profile?.resume_updated_at ?? null)
 
   // Gating: Check if candidate has an approved application to enable interview
   const approvedStatuses = ['MATCH_PASSED', 'INTERVIEW_STARTED', 'INTERVIEW_COMPLETED']
@@ -297,11 +298,11 @@ export default function CandidateProfilePage() {
           )}
 
           {/* Skills */}
-          {profile?.skills?.length > 0 && (
+          {(profile?.skills?.length ?? 0) > 0 && (
             <BrandCard>
               <BrandCardHeader title="Habilidades" />
               <div className="flex flex-wrap gap-2">
-                {profile.skills.map((skill: string, idx: number) => (
+                {profile?.skills?.map((skill: string, idx: number) => (
                   <Badge key={idx} variant="outline">
                     {skill}
                   </Badge>
@@ -311,11 +312,11 @@ export default function CandidateProfilePage() {
           )}
 
           {/* Experience */}
-          {profile?.experience?.length > 0 && (
+          {(profile?.experience?.length ?? 0) > 0 && (
             <BrandCard>
               <BrandCardHeader title="Experiencia" />
               <div className="space-y-4">
-                {profile.experience.map((exp: any, idx: number) => (
+                {profile?.experience?.map((exp: Experience, idx: number) => (
                   <div key={idx} className="flex gap-4">
                     <div className="p-2 bg-bloque-gray50 rounded h-fit">
                       <Briefcase className="h-5 w-5 text-bloque-navy900" />
@@ -337,11 +338,11 @@ export default function CandidateProfilePage() {
           )}
 
           {/* Education */}
-          {profile?.education?.length > 0 && (
+          {(profile?.education?.length ?? 0) > 0 && (
             <BrandCard>
               <BrandCardHeader title="Educacion" />
               <div className="space-y-4">
-                {profile.education.map((edu: any, idx: number) => (
+                {profile?.education?.map((edu: Education, idx: number) => (
                   <div key={idx} className="flex gap-4">
                     <div className="p-2 bg-bloque-gray50 rounded h-fit">
                       <GraduationCap className="h-5 w-5 text-bloque-navy900" />
@@ -366,7 +367,7 @@ export default function CandidateProfilePage() {
               <h3 className="text-lg font-semibold text-bloque-navy900 mb-4">
                 Puntuacion General
               </h3>
-              <ScoreDisplay score={report.overall_score} size="lg" />
+              <ScoreDisplay score={report!.overall_score} size="lg" />
               <p className="text-sm text-muted-foreground mt-2">
                 de 5.0 puntos
               </p>
@@ -410,17 +411,17 @@ export default function CandidateProfilePage() {
             <BrandCard>
               <BrandCardHeader title="Competencias" />
               <CompetencyScores
-                scores={report.competency_scores}
+                scores={report!.competency_scores!}
               />
             </BrandCard>
           )}
 
           {/* Strengths */}
-          {report?.strengths?.length > 0 && (
+          {(report?.strengths?.length ?? 0) > 0 && (
             <BrandCard>
               <BrandCardHeader title="Fortalezas" />
               <ul className="space-y-2">
-                {report.strengths.map((strength: string, idx: number) => (
+                {report?.strengths?.map((strength: string, idx: number) => (
                   <li key={idx} className="flex gap-2 text-sm">
                     <Star className="h-4 w-4 text-bloque-gold500 shrink-0 mt-0.5" />
                     <span>{strength}</span>
@@ -431,11 +432,11 @@ export default function CandidateProfilePage() {
           )}
 
           {/* Areas for improvement */}
-          {report?.weaknesses?.length > 0 && (
+          {(report?.weaknesses?.length ?? 0) > 0 && (
             <BrandCard>
               <BrandCardHeader title="Areas de mejora" />
               <ul className="space-y-2">
-                {report.weaknesses.map((weakness: string, idx: number) => (
+                {report?.weaknesses?.map((weakness: string, idx: number) => (
                   <li key={idx} className="flex gap-2 text-sm">
                     <AlertCircle className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
                     <span>{weakness}</span>
@@ -456,11 +457,11 @@ export default function CandidateProfilePage() {
           )}
 
           {/* Languages */}
-          {profile?.languages?.length > 0 && (
+          {(profile?.languages?.length ?? 0) > 0 && (
             <BrandCard>
               <BrandCardHeader title="Idiomas" />
               <div className="space-y-2">
-                {profile.languages.map((lang: any, idx: number) => (
+                {profile?.languages?.map((lang: Language, idx: number) => (
                   <div key={idx} className="flex justify-between text-sm">
                     <span>{lang.language}</span>
                     <Badge variant="outline">{lang.level}</Badge>

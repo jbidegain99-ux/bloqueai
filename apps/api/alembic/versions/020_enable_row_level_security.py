@@ -32,11 +32,20 @@ def upgrade() -> None:
     )
     migration_path = os.path.normpath(migration_path)
 
+    if not os.path.exists(migration_path):
+        print("  [SKIP] RLS SQL file not found — skipping (non-Supabase environment)")
+        return
+
     with open(migration_path) as f:
         sql = f.read()
 
-    # Execute the entire SQL file as a single statement
+    # Skip RLS on local dev (requires Supabase auth schema)
     conn = op.get_bind()
+    result = conn.execute(text("SELECT 1 FROM pg_namespace WHERE nspname = 'auth'"))
+    if not result.fetchone():
+        print("  [SKIP] auth schema not found — skipping RLS (local dev, not Supabase)")
+        return
+
     conn.execute(text(sql))
 
 

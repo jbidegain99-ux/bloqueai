@@ -23,7 +23,9 @@ class Settings(BaseSettings):
 
     # ElevenLabs (Text-to-Speech)
     elevenlabs_api_key: str = ""
-    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    # Sarah (premade) - Mature, Reassuring, Confident. Works on Free tier.
+    # Library voices (like Valentina xzWD1ftyNVsuUMY2ll3j) require a paid plan.
+    elevenlabs_voice_id: str = "EXAVITQu4vr4xnSDxMaL"
 
     # LLM (Anthropic Claude)
     llm_api_key: str = ""

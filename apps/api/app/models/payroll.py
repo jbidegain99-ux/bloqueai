@@ -3,7 +3,7 @@
 from enum import Enum as PyEnum
 
 from sqlalchemy import (
-    Column, String, Text, Date, DateTime, Integer, Float,
+    Column, String, Text, Date, DateTime, Integer, Float, Numeric,
     ForeignKey, Enum, Boolean, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -47,6 +47,50 @@ class DeductionCalcType(str, PyEnum):
     FIXED = "FIXED"
 
 
+class EmployeeStatus(str, PyEnum):
+    ACTIVE = "ACTIVE"
+    ON_LEAVE = "ON_LEAVE"
+    TERMINATED = "TERMINATED"
+    SUSPENDED = "SUSPENDED"
+
+
+class EmploymentType(str, PyEnum):
+    FULL_TIME = "FULL_TIME"
+    PART_TIME = "PART_TIME"
+    CONTRACT = "CONTRACT"
+    FREELANCE = "FREELANCE"
+
+
+class DocumentType(str, PyEnum):
+    DUI = "DUI"
+    NIT = "NIT"
+    PASSPORT = "PASSPORT"
+    CURP = "CURP"
+    CEDULA = "CEDULA"
+    OTHER = "OTHER"
+
+
+class PaymentMethod(str, PyEnum):
+    BANK_TRANSFER = "BANK_TRANSFER"
+    CHECK = "CHECK"
+    CASH = "CASH"
+
+
+class DeductionCategory(str, PyEnum):
+    ISSS = "ISSS"
+    AFP = "AFP"
+    INCOME_TAX = "INCOME_TAX"
+    LOAN = "LOAN"
+    OTHER = "OTHER"
+
+
+class ProvisionType(str, PyEnum):
+    AGUINALDO = "AGUINALDO"
+    VACACIONES = "VACACIONES"
+    BONUS = "BONUS"
+    INDEMNIZACION = "INDEMNIZACION"
+
+
 class Employee(BaseModel):
     """Payroll employee, optionally linked to a candidate/user."""
 
@@ -65,6 +109,20 @@ class Employee(BaseModel):
     hire_date = Column(Date, nullable=True)
     termination_date = Column(Date, nullable=True)
 
+    # New payroll-specific fields
+    document_type = Column(Enum(DocumentType, name="document_type"), nullable=True)
+    document_id = Column(String(50), nullable=True)
+    salary = Column(Numeric(12, 2), nullable=True)
+    salary_currency = Column(String(10), default="USD", nullable=False)
+    employment_type = Column(Enum(EmploymentType, name="employment_type"), nullable=True)
+    status = Column(
+        Enum(EmployeeStatus, name="employee_status"),
+        default=EmployeeStatus.ACTIVE,
+        nullable=False,
+        index=True,
+    )
+    bank_account_number = Column(String(50), nullable=True)
+
     # Relationships
     client = relationship("Company", foreign_keys=[client_id])
     contracts = relationship("Contract", back_populates="employee", lazy="dynamic")
@@ -80,6 +138,7 @@ class Contract(BaseModel):
     employee_id = Column(UUID(as_uuid=True), ForeignKey("payroll_employees.id"), nullable=False, index=True)
     client_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False, index=True)
     contract_type = Column(Enum(ContractType, name="contract_type"), nullable=False)
+    position_title = Column(String(255), nullable=True)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=True)
     base_salary = Column(Float, nullable=False)
@@ -87,6 +146,9 @@ class Contract(BaseModel):
     pay_frequency = Column(Enum(PayFrequency, name="pay_frequency"), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     notes = Column(Text, nullable=True)
+    benefits = Column(JSONB, default=dict)
+    document_url = Column(String(500), nullable=True)
+    signed_by_employee_at = Column(DateTime, nullable=True)
 
     # Relationships
     employee = relationship("Employee", back_populates="contracts")
@@ -139,6 +201,7 @@ class PayrollRun(BaseModel):
     approved_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     approved_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
+    payment_method = Column(Enum(PaymentMethod, name="payment_method"), nullable=True)
 
     # Relationships
     client = relationship("Company", foreign_keys=[client_id])
@@ -153,6 +216,7 @@ class PayrollLine(BaseModel):
 
     payroll_run_id = Column(UUID(as_uuid=True), ForeignKey("payroll_runs.id"), nullable=False, index=True)
     employee_id = Column(UUID(as_uuid=True), ForeignKey("payroll_employees.id"), nullable=False, index=True)
+    contract_id = Column(UUID(as_uuid=True), ForeignKey("payroll_contracts.id"), nullable=True, index=True)
     base_salary = Column(Float, nullable=False)
     days_worked = Column(Float, nullable=True)
     hours_regular = Column(Float, default=0.0)
@@ -165,7 +229,10 @@ class PayrollLine(BaseModel):
     # Relationships
     payroll_run = relationship("PayrollRun", back_populates="lines")
     employee = relationship("Employee", back_populates="payroll_lines")
+    contract = relationship("Contract")
     payslip = relationship("Payslip", back_populates="payroll_line", uselist=False)
+    deduction_breakdowns = relationship("PayrollDeductionBreakdown", back_populates="payroll_line")
+    provisions = relationship("PayrollProvision", back_populates="payroll_line")
 
 
 class Payslip(BaseModel):
@@ -175,10 +242,44 @@ class Payslip(BaseModel):
 
     payroll_line_id = Column(UUID(as_uuid=True), ForeignKey("payroll_lines.id"), nullable=False, unique=True)
     html_content = Column(Text, nullable=True)
+    document_url = Column(String(500), nullable=True)
     generated_at = Column(DateTime, nullable=True)
 
     # Relationships
     payroll_line = relationship("PayrollLine", back_populates="payslip")
+
+
+class PayrollDeductionBreakdown(BaseModel):
+    """Individual deduction breakdown for a payroll line."""
+
+    __tablename__ = "payroll_deduction_breakdowns"
+
+    payroll_line_id = Column(UUID(as_uuid=True), ForeignKey("payroll_lines.id"), nullable=False, index=True)
+    deduction_type = Column(
+        Enum(DeductionCategory, name="deduction_category"),
+        nullable=False,
+    )
+    amount = Column(Numeric(12, 2), nullable=False)
+    description = Column(String(500), nullable=True)
+
+    # Relationships
+    payroll_line = relationship("PayrollLine", back_populates="deduction_breakdowns")
+
+
+class PayrollProvision(BaseModel):
+    """Provision accrual for a payroll line (aguinaldo, vacaciones, etc.)."""
+
+    __tablename__ = "payroll_provisions"
+
+    payroll_line_id = Column(UUID(as_uuid=True), ForeignKey("payroll_lines.id"), nullable=False, index=True)
+    provision_type = Column(
+        Enum(ProvisionType, name="provision_type"),
+        nullable=False,
+    )
+    amount = Column(Numeric(12, 2), nullable=False)
+
+    # Relationships
+    payroll_line = relationship("PayrollLine", back_populates="provisions")
 
 
 class DeductionType(BaseModel):

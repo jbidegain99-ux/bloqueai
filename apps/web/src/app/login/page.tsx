@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { authApi } from '@/lib/api'
+import { authApi, employeeApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/auth'
 import { fadeIn, staggerContainer, staggerItem } from '@/lib/animations'
 
@@ -51,8 +51,31 @@ export default function LoginPage() {
       const user = await authApi.me(tokens.access_token) as Parameters<typeof setAuth>[0]
       if (!user) throw new Error('No se pudo obtener el perfil del usuario')
       setAuth(user, tokens.access_token, tokens.refresh_token)
-      toast.success('¡Bienvenido!', { description: 'Redirigiendo al dashboard...' })
-      router.push('/dashboard')
+      toast.success('¡Bienvenido!', { description: 'Redirigiendo...' })
+
+      // Role-based redirect
+      // Check if user is a payroll employee (has Employee record linked)
+      let isPayrollEmployee = false
+      try {
+        await employeeApi.getProfile(tokens.access_token)
+        isPayrollEmployee = true
+      } catch {
+        // Not a payroll employee — that's fine
+      }
+
+      if (isPayrollEmployee) {
+        router.push('/portal')
+      } else if (user.role === 'ADMIN') {
+        router.push('/admin/payroll/dashboard')
+      } else if (user.role === 'RECRUITER') {
+        router.push('/admin/dashboard')
+      } else if (user.role === 'EMPLOYER') {
+        router.push('/employer/dashboard')
+      } else if (user.role === 'CANDIDATE') {
+        router.push('/dashboard')
+      } else {
+        router.push('/dashboard')
+      }
     } catch (err: unknown) {
       let message = 'Error al iniciar sesión. Intente de nuevo.'
       if (err instanceof Error) {
@@ -203,10 +226,12 @@ export default function LoginPage() {
                   Cuentas de prueba:
                 </p>
                 <div className="text-xs text-neutral-500 space-y-1">
-                  <p><strong>Admin:</strong> admin@example.com / Admin123!</p>
-                  <p><strong>Recruiter:</strong> recruiter@example.com / Recruiter123!</p>
+                  <p><strong>Admin (Nomina):</strong> admin@example.com / Admin123!</p>
+                  <p><strong>Recruiter (Talento):</strong> recruiter@example.com / Recruiter123!</p>
                   <p><strong>Employer:</strong> employer@example.com / Employer123!</p>
-                  <p><strong>Candidate:</strong> candidate1@example.com / Candidate123!</p>
+                  <p><strong>Empleado 1:</strong> employee1@example.com / Employee123!</p>
+                  <p><strong>Empleado 2:</strong> employee2@example.com / Employee123!</p>
+                  <p><strong>Candidato:</strong> candidate1@example.com / Candidate123!</p>
                 </div>
               </div>
             </CardContent>

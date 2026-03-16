@@ -155,7 +155,7 @@ async def list_jobs(
             cat_enum = JobCategory(category.upper())
             base_filter = base_filter.filter(Job.category == cat_enum)
         except ValueError:
-            pass  # Invalid category, ignore
+            logger.debug("invalid_filter_param", param="category", value=category)
 
     # Apply seniority filter
     if seniority:
@@ -163,7 +163,7 @@ async def list_jobs(
             sen_enum = SeniorityLevel(seniority.upper())
             base_filter = base_filter.filter(Job.seniority == sen_enum)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="seniority", value=seniority)
 
     # Apply modality filter
     if modality:
@@ -171,7 +171,7 @@ async def list_jobs(
             mod_enum = JobModality(modality.upper())
             base_filter = base_filter.filter(Job.modality == mod_enum)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="modality", value=modality)
 
     # Apply location filter
     if location:

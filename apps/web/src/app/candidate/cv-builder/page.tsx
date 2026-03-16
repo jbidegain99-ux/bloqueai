@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { candidateApi } from '@/lib/api'
+import { getErrorMessage } from '@/types'
 import { useAuthStore } from '@/lib/auth'
 import {
   ArrowLeft,
@@ -429,9 +430,9 @@ export default function CVBuilderPage() {
       const result = await candidateApi.generateCV(accessToken, payload)
       setGeneratedCV(result)
       clearDraft()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error generating CV:', err)
-      setError(err?.message || 'Error al generar el CV. Intenta de nuevo.')
+      setError(getErrorMessage(err) || 'Error al generar el CV. Intenta de nuevo.')
     } finally {
       setGenerating(false)
     }

@@ -20,16 +20,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Create ENUM types
-    op.execute("CREATE TYPE user_role AS ENUM ('CANDIDATE', 'EMPLOYER', 'RECRUITER', 'ADMIN')")
-    op.execute("CREATE TYPE resume_status AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')")
-    op.execute("CREATE TYPE job_status AS ENUM ('DRAFT', 'ACTIVE', 'PAUSED', 'CLOSED')")
-    op.execute("CREATE TYPE job_modality AS ENUM ('REMOTE', 'HYBRID', 'ONSITE')")
-    op.execute("CREATE TYPE seniority_level AS ENUM ('INTERN', 'JUNIOR', 'MID', 'SENIOR', 'LEAD', 'MANAGER', 'DIRECTOR', 'VP', 'C_LEVEL')")
-    op.execute("CREATE TYPE interview_status AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ABANDONED')")
-    op.execute("CREATE TYPE message_role AS ENUM ('SYSTEM', 'AI', 'CANDIDATE')")
-    op.execute("CREATE TYPE report_status AS ENUM ('PENDING', 'GENERATING', 'COMPLETED', 'FAILED')")
-    op.execute("CREATE TYPE shortlist_status AS ENUM ('PENDING', 'REVIEWED', 'CONTACTED', 'INTERVIEW_SCHEDULED', 'REJECTED', 'HIRED')")
-
     # Companies table
     op.create_table(
         "companies",

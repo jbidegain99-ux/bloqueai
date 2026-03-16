@@ -17,7 +17,9 @@ import {
 } from '@/components/ui/select'
 import { authApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/auth'
+import type { User } from '@/lib/auth'
 import { validators, validate } from '@/lib/validations'
+import { getErrorMessage } from '@/types'
 
 interface FieldErrors {
   full_name?: string
@@ -84,10 +86,10 @@ export default function RegisterPage() {
       // Auto-login after registration
       const tokens = await authApi.login(formData.email, formData.password)
       const user = await authApi.me(tokens.access_token)
-      setAuth(user as any, tokens.access_token, tokens.refresh_token)
+      setAuth(user as User, tokens.access_token, tokens.refresh_token)
       router.push('/dashboard')
-    } catch (err: any) {
-      setError(err.message || 'Error al registrarse')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Error al registrarse')
     } finally {
       setLoading(false)
     }

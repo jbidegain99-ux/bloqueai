@@ -145,6 +145,37 @@ export default function PayrollRunDetailPage() {
     }
   }
 
+  const handleDownloadSPU = async () => {
+    if (!accessToken || !runId) return
+    setActionLoading(true)
+    try {
+      await payrollApi.generateSPU(accessToken, runId)
+      setMessage({ type: 'success', text: 'SPU descargado exitosamente' })
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Error generando SPU. Verifique que todos los empleados tengan DUI.' })
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleCheckCompliance = async () => {
+    if (!accessToken || !runId) return
+    setActionLoading(true)
+    try {
+      const result = await payrollApi.getCompliance(accessToken, runId)
+      if (result.compliant) {
+        setMessage({ type: 'success', text: `Cumplimiento verificado: ${result.checks.length} validaciones pasaron` })
+      } else {
+        setMessage({ type: 'error', text: `Errores de cumplimiento: ${result.errors.join('; ')}` })
+      }
+      setWarnings(result.warnings)
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Error verificando cumplimiento' })
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const formatMoney = (amount: number, currency: string) =>
     `${currency} ${amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`
 
@@ -233,10 +264,20 @@ export default function PayrollRunDetailPage() {
                 </button>
               )}
               {['CALCULATED', 'APPROVED', 'PAID'].includes(run.status) && (
-                <button onClick={handleExport}
-                  className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200">
-                  <Download className="h-4 w-4" /> Exportar CSV
-                </button>
+                <>
+                  <button onClick={handleExport}
+                    className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200">
+                    <Download className="h-4 w-4" /> CSV
+                  </button>
+                  <button onClick={handleDownloadSPU} disabled={actionLoading}
+                    className="flex items-center gap-2 bg-blue-100 text-blue-700 px-4 py-2 rounded-lg hover:bg-blue-200 disabled:opacity-50">
+                    <FileText className="h-4 w-4" /> SPU
+                  </button>
+                  <button onClick={handleCheckCompliance} disabled={actionLoading}
+                    className="flex items-center gap-2 bg-yellow-100 text-yellow-700 px-4 py-2 rounded-lg hover:bg-yellow-200 disabled:opacity-50">
+                    <AlertTriangle className="h-4 w-4" /> Cumplimiento
+                  </button>
+                </>
               )}
             </div>
 

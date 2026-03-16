@@ -27,6 +27,7 @@ from app.routers import (
     embeddings_router,
     matching_router,
     interviews_router,
+    employee_portal_router,
 )
 
 # Configure structured logging
@@ -224,6 +225,8 @@ def run_seed_on_startup():
 
 def seed_plans(db):
     """Seed default billing plans if they don't exist."""
+    from uuid import uuid4
+    from datetime import datetime
     from app.models.billing import Plan, PlanTier
 
     existing = db.query(Plan).first()
@@ -478,6 +481,7 @@ app.include_router(billing_router)
 app.include_router(embeddings_router)
 app.include_router(matching_router)
 app.include_router(interviews_router)
+app.include_router(employee_portal_router)
 
 
 # Root endpoint

@@ -16,6 +16,8 @@ from app.models.interview import InterviewSession, InterviewStatus
 from app.models.report import CandidateReport, ReportStatus
 from app.models.shortlist import ShortlistItem, ShortlistStatus
 from app.models.audit import AuditLog
+from app.models.company import Company
+from app.models.payroll import PayrollRun, Employee as PayrollEmployee
 from app.schemas.rubric import (
     RubricCreate,
     RubricUpdate,
@@ -30,6 +32,9 @@ from app.schemas.dashboard import DashboardKPIs
 from app.services.ranking import rank_candidates_for_job
 from app.services.audit import log_rubric_change, log_score_override
 from app.utils.deps import get_current_user, require_recruiter, require_admin
+import structlog
+
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -934,12 +939,12 @@ async def get_dashboard_metrics(
         try:
             start_date = datetime.strptime(date_from, "%Y-%m-%d")
         except ValueError:
-            pass
+            logger.debug("invalid_date_param", param="date_from", value=date_from)
     if date_to:
         try:
             end_date = datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
         except ValueError:
-            pass
+            logger.debug("invalid_date_param", param="date_to", value=date_to)
 
     # Get system threshold
     system_threshold = SystemSettings.get_int(db, 'default_match_threshold', 70)
@@ -956,7 +961,7 @@ async def get_dashboard_metrics(
             cat_enum = JobCategory(category.upper())
             apps_query = apps_query.filter(Job.category == cat_enum)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="category", value=category)
     if location:
         apps_query = apps_query.filter(Job.location.ilike(f"%{location}%"))
     if start_date:
@@ -968,7 +973,7 @@ async def get_dashboard_metrics(
             status_enum = ApplicationStatus(status_filter)
             apps_query = apps_query.filter(Application.status == status_enum)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="status", value=status_filter)
 
     # Calculate metrics
     total_applications = apps_query.count()
@@ -1012,7 +1017,7 @@ async def get_dashboard_metrics(
             cat_enum = JobCategory(category.upper())
             jobs_query = jobs_query.filter(Job.category == cat_enum)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="category", value=category)
     active_jobs = jobs_query.count()
 
     # Applications by status
@@ -1096,12 +1101,12 @@ async def export_dashboard_csv(
         try:
             start_date = datetime.strptime(date_from, "%Y-%m-%d")
         except ValueError:
-            pass
+            logger.debug("invalid_date_param", param="date_from", value=date_from)
     if date_to:
         try:
             end_date = datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
         except ValueError:
-            pass
+            logger.debug("invalid_date_param", param="date_to", value=date_to)
 
     # Build query with filters
     query = db.query(Application).join(Job).join(Candidate)
@@ -1115,7 +1120,7 @@ async def export_dashboard_csv(
             cat_enum = JobCategory(category.upper())
             query = query.filter(Job.category == cat_enum)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="category", value=category)
     if start_date:
         query = query.filter(Application.created_at >= start_date)
     if end_date:
@@ -1125,7 +1130,7 @@ async def export_dashboard_csv(
             status_enum = ApplicationStatus(status_filter)
             query = query.filter(Application.status == status_enum)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="status", value=status_filter)
 
     applications = query.order_by(Application.created_at.desc()).limit(1000).all()
 
@@ -1213,13 +1218,13 @@ async def list_placements(
             status_enum = PlacementStatus(status_filter.upper())
             query = query.filter(Placement.status == status_enum)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="status", value=status_filter)
     if type_filter:
         try:
             type_enum = PlacementType(type_filter.upper())
             query = query.filter(Placement.placement_type == type_enum)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="type", value=type_filter)
 
     # Date filters
     if date_from:
@@ -1227,13 +1232,13 @@ async def list_placements(
             start_date = datetime.strptime(date_from, "%Y-%m-%d")
             query = query.filter(Placement.start_date >= start_date)
         except ValueError:
-            pass
+            logger.debug("invalid_date_param", param="date_from", value=date_from)
     if date_to:
         try:
             end_date = datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
             query = query.filter(Placement.start_date < end_date)
         except ValueError:
-            pass
+            logger.debug("invalid_date_param", param="date_to", value=date_to)
 
     total = query.count()
     placements = (
@@ -1305,12 +1310,12 @@ async def placements_report(
         try:
             start_date = datetime.strptime(date_from, "%Y-%m-%d")
         except ValueError:
-            pass
+            logger.debug("invalid_date_param", param="date_from", value=date_from)
     if date_to:
         try:
             end_date = datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
         except ValueError:
-            pass
+            logger.debug("invalid_date_param", param="date_to", value=date_to)
 
     # Build query
     query = db.query(Placement)
@@ -1972,7 +1977,7 @@ async def get_client_jobs(
             status_enum = JobStatus(status_filter.upper())
             query = query.filter(Job.status == status_enum)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="status", value=status_filter)
 
     total = query.count()
 
@@ -2003,3 +2008,134 @@ async def get_client_jobs(
         "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size,
     }
+
+
+# ============ Platform Management ============
+
+
+@router.get("/platform/stats")
+async def get_platform_stats(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Get platform-wide statistics."""
+    total_companies = db.query(func.count(Company.id)).scalar() or 0
+    active_companies = db.query(func.count(Company.id)).filter(Company.is_active == True).scalar() or 0
+    total_users = db.query(func.count(User.id)).scalar() or 0
+    total_employees = db.query(func.count(PayrollEmployee.id)).scalar() or 0
+    total_payroll_runs = db.query(func.count(PayrollRun.id)).scalar() or 0
+
+    return {
+        "total_companies": total_companies,
+        "active_companies": active_companies,
+        "total_users": total_users,
+        "total_employees": total_employees,
+        "total_payroll_runs": total_payroll_runs,
+    }
+
+
+@router.get("/platform/companies")
+async def list_platform_companies(
+    search: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """List all companies with user/employee/payroll counts."""
+    query = db.query(Company)
+    if search:
+        query = query.filter(Company.name.ilike(f"%{search}%"))
+    if is_active is not None:
+        query = query.filter(Company.is_active == is_active)
+
+    total = query.count()
+    companies = query.order_by(Company.created_at.desc()).offset(
+        (page - 1) * page_size
+    ).limit(page_size).all()
+
+    items = []
+    for c in companies:
+        user_count = db.query(func.count(User.id)).filter(User.company_id == c.id).scalar() or 0
+        emp_count = db.query(func.count(PayrollEmployee.id)).filter(
+            PayrollEmployee.client_id == c.id
+        ).scalar() or 0
+        run_count = db.query(func.count(PayrollRun.id)).filter(
+            PayrollRun.client_id == c.id
+        ).scalar() or 0
+        items.append({
+            "id": str(c.id),
+            "name": c.name,
+            "slug": c.slug,
+            "industry": c.industry,
+            "size": c.size,
+            "is_active": c.is_active,
+            "is_client": c.is_client,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+            "user_count": user_count,
+            "employee_count": emp_count,
+            "payroll_run_count": run_count,
+        })
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+    }
+
+
+@router.get("/platform/companies/{company_id}")
+async def get_platform_company(
+    company_id: UUID,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Get company detail with stats."""
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    user_count = db.query(func.count(User.id)).filter(User.company_id == company_id).scalar() or 0
+    emp_count = db.query(func.count(PayrollEmployee.id)).filter(
+        PayrollEmployee.client_id == company_id
+    ).scalar() or 0
+    run_count = db.query(func.count(PayrollRun.id)).filter(
+        PayrollRun.client_id == company_id
+    ).scalar() or 0
+
+    return {
+        "id": str(company.id),
+        "name": company.name,
+        "slug": company.slug,
+        "industry": company.industry,
+        "size": company.size,
+        "is_active": company.is_active,
+        "is_client": company.is_client,
+        "website": company.website,
+        "description": company.description,
+        "created_at": company.created_at.isoformat() if company.created_at else None,
+        "user_count": user_count,
+        "employee_count": emp_count,
+        "payroll_run_count": run_count,
+    }
+
+
+@router.patch("/platform/companies/{company_id}/status")
+async def toggle_company_status(
+    company_id: UUID,
+    data: dict,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Activate or suspend a company."""
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    company.is_active = data.get("is_active", company.is_active)
+    db.commit()
+
+    return {"id": str(company.id), "is_active": company.is_active, "message": "Estado actualizado"}

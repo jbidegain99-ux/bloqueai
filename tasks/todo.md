@@ -1,8 +1,56 @@
 # TalentOS Platform Stabilization - Task Plan
 
-**Date:** 2026-02-02 (Updated)
-**Branch:** `claude/fix-cv-pre-step-dx5aR`
+**Date:** 2026-02-02 (Updated 2026-03-12)
+**Branch:** `claude/ai-recruitment-mvp-dJKyh`
 **Goal:** Fix all issues from latest QA report + complete missing features
+
+---
+
+## AUDITORÍA 2026-03-12
+
+### Completadas durante auditoría
+- [x] Mapeo completo del monorepo (4 apps, 1 service, 208+ archivos)
+- [x] Páginas redundantes identificadas: **0 encontradas**
+- [x] Features por módulo auditadas: **85% completado**
+- [x] Backlog consolidado de todas las conversaciones
+- [x] Deuda técnica inventariada: 2 críticos, 8 medios, 6 bajos
+- [x] Reporte ejecutivo generado: `AUDIT_REPORTS/AUDIT_REPORT_2026-03-12.md`
+
+### Pendientes post-auditoría
+- [x] DEBT-01: Eliminar 30+ usos de `any` type (4h) ✅ Completado 2026-03-15
+- [x] DEBT-02: Fix 34 try/except silenciosos en admin.py (4h) ✅ Completado 2026-03-15
+- [x] PAYROLL-01: Extender schema payroll con modelos LATAM (Employee, Contract, DeductionBreakdown, Provision) ✅ Completado 2026-03-15
+- [x] DOCS-01: Crear docs/SETUP.md con guía de desarrollo local, seed data, reset DB ✅ Completado 2026-03-15
+- [x] AUTH-VERIFY: Verificar auth + multi-tenancy + RBAC (37 integration tests passing) ✅ Completado 2026-03-15
+- [x] MIGRATION-FIX: Fix sa.Enum duplicate type bug in 6 migrations (001,004,007,008,009,011) ✅ Completado 2026-03-15
+- [x] TEST-INFRA: Switch test DB from SQLite to PostgreSQL (JSONB/UUID compat) ✅ Completado 2026-03-15
+- [x] CRUD-01: Employee CRUD completo (create, list, get, update, terminate) + DUI validation ✅ Completado 2026-03-15
+- [x] CRUD-02: Contract CRUD completo (create, list, get, update, sign, terminate) + immutability ✅ Completado 2026-03-15
+- [x] TESTS-02: 30 integration tests for employee + contract endpoints ✅ Completado 2026-03-15
+- [x] PAYROLL-ENGINE: Refactor payroll calculation to use PayrollCalculatorSV + DeductionBreakdown + Provisions ✅ Completado 2026-03-15
+- [x] TESTS-03: 31 payroll engine accuracy tests (10 scenarios, edge cases, inverse, provisions) ✅ Completado 2026-03-15
+- [x] COMPLIANCE-01: SPU generator service (CSV format, validation, download endpoint) ✅ Completado 2026-03-15
+- [x] COMPLIANCE-02: Compliance validation service (8-point check) + ISSS/AFP/ISR reports ✅ Completado 2026-03-15
+- [x] TESTS-04: 18 compliance + SPU tests (format, validation, endpoints, workflow) ✅ Completado 2026-03-15
+- [x] PLATFORM-01: Admin platform dashboard + tenants + audit logs UI (4 pages) ✅ Completado 2026-03-15
+- [x] PLATFORM-02: Backend platform endpoints (stats, companies, status toggle) ✅ Completado 2026-03-15
+- [x] TENANT-01: Employee detail page with contracts, edit, terminate, sign ✅ Completado 2026-03-16
+- [x] TENANT-02: Enhanced payroll run detail with SPU download + compliance check ✅ Completado 2026-03-16
+- [x] TENANT-03: Government reports (ISSS/AFP/ISR) on reports page + SPU download ✅ Completado 2026-03-16
+- [x] TENANT-04: 9 new payrollApi methods (employee detail, contracts, SPU, compliance, reports) ✅ Completado 2026-03-16
+- [ ] DEBT-03: Habilitar 36+ E2E tests skipped (8h)
+- [ ] EOR-01: Reemplazar NIT placeholder en contract_generator.py (2h)
+- [ ] AUTH-01: Implementar password reset flow (8h)
+- [ ] UI-01: Integrar KanbanBoard en employer pipeline (4h)
+- [ ] UI-02: Crear 2 páginas index faltantes (employer/interviews, employer/settings) (2h)
+- [ ] MON-01: Integrar pasarela de pago — **DECISIÓN PENDIENTE: Wompi vs Stripe** (24h)
+- [ ] MON-02: Activar use-feature hook para feature gating UI (4h)
+- [ ] MON-03: Billing portal funcional completo (16h)
+
+### Componentes sin uso detectados
+- [ ] Evaluar: activity-feed.tsx, dialog.tsx, tooltip.tsx (mantener o eliminar)
+- [ ] Evaluar: kanban-board.tsx (integrar en employer pipeline)
+- [ ] Evaluar: use-feature.ts hook (integrar con billing)
 
 ---
 

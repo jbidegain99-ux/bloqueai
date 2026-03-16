@@ -101,11 +101,11 @@ export default function ApplyPage() {
       try {
         // Load job details
         const jobData = await publicApi.getJob(jobId)
-        setJob(jobData)
+        setJob(jobData as unknown as Job)
 
         // Create or get existing application
         const appData = await applicationsApi.create(accessToken, jobId)
-        setApplication(appData as any)
+        setApplication(appData as unknown as Application)
 
         // Set step based on application status
         if (appData.status === 'CREATED') {
@@ -117,7 +117,7 @@ export default function ApplyPage() {
         } else if (['MATCH_PASSED', 'MATCH_BELOW_THRESHOLD'].includes(appData.status)) {
           // Already analyzed, show results
           const fullApp = await applicationsApi.get(accessToken, appData.id)
-          setApplication(fullApp as any)
+          setApplication(fullApp as unknown as Application)
           setStep('results')
         }
       } catch (err: unknown) {

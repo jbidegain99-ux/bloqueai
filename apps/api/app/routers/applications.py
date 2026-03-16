@@ -670,7 +670,8 @@ Proporciona tu analisis en formato JSON."""
         try:
             application.status = ApplicationStatus.CV_UPLOADED
             db.commit()
-        except Exception:
+        except Exception as revert_err:
+            logger.error("status_revert_failed", error=str(revert_err), application_id=str(application_id))
             db.rollback()
 
         # Log failed attempt
@@ -686,8 +687,8 @@ Proporciona tu analisis en formato JSON."""
             )
             db.add(llm_log)
             db.commit()
-        except Exception:
-            pass
+        except Exception as log_err:
+            logger.warning("llm_log_creation_failed", error=str(log_err), application_id=str(application_id))
 
         # Determine error message based on error type
         if error_class == "AuthenticationError" or "api_key" in error_msg.lower():
