@@ -237,6 +237,8 @@ def seed_database():
             industry="Tecnologia / Recursos Humanos",
             size="51-200",
             is_active=True,
+            is_client=True,
+            client_code="BLOQUE-001",
         )
         db.commit()
 
