@@ -163,7 +163,7 @@ export default function EmployerDashboardPage() {
     setLoading(true)
     setError(null)
     try {
-      const jobsData = await employerApi.getJobs(accessToken) as { items?: Record<string, unknown>[] }
+      const jobsData = await employerApi.getJobs(accessToken) as unknown as { items?: Record<string, unknown>[] }
       const jobList = jobsData.items ?? []
       setJobs(
         jobList.map((j) => ({

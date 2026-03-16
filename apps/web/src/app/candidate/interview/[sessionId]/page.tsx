@@ -21,6 +21,8 @@ import {
   ArrowLeft,
   Clock,
 } from 'lucide-react'
+import { getErrorMessage } from '@/types'
+import type { InterviewSessionMessage } from '@/types'
 
 interface InterviewMessage {
   role: 'assistant' | 'user'
@@ -87,14 +89,14 @@ export default function InterviewSessionPage() {
         setSession(sessionData)
 
         // Convert messages to chat format
-        const chatMessages: InterviewMessage[] = (sessionData.messages || []).map((msg: any) => ({
+        const chatMessages: InterviewMessage[] = (sessionData.messages || []).map((msg: InterviewSessionMessage) => ({
           role: msg.role === 'AI' || msg.role === 'SYSTEM' ? 'assistant' : 'user',
           content: msg.content,
         }))
         setMessages(chatMessages)
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Error loading session:', err)
-        setError(err?.message || 'Error al cargar la sesion de entrevista')
+        setError(getErrorMessage(err) || 'Error al cargar la sesion de entrevista')
       } finally {
         setLoading(false)
       }
@@ -122,7 +124,7 @@ export default function InterviewSessionPage() {
       setSession(response)
 
       // Get the new AI message from response
-      const newMessages: InterviewMessage[] = (response.messages || []).map((msg: any) => ({
+      const newMessages: InterviewMessage[] = (response.messages || []).map((msg: InterviewSessionMessage) => ({
         role: msg.role === 'AI' || msg.role === 'SYSTEM' ? 'assistant' : 'user',
         content: msg.content,
       }))
@@ -133,9 +135,9 @@ export default function InterviewSessionPage() {
         // Auto-complete the interview
         await handleComplete()
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error sending message:', err)
-      setError(err?.message || 'Error al enviar el mensaje')
+      setError(getErrorMessage(err) || 'Error al enviar el mensaje')
       // Remove the optimistic message on error
       setMessages(prev => prev.slice(0, -1))
     } finally {
@@ -153,9 +155,9 @@ export default function InterviewSessionPage() {
       await candidateApi.completeInterview(accessToken, sessionId)
       // Redirect to applications or profile
       router.push('/candidate/applications')
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error completing interview:', err)
-      setError(err?.message || 'Error al completar la entrevista')
+      setError(getErrorMessage(err) || 'Error al completar la entrevista')
     } finally {
       setCompleting(false)
     }

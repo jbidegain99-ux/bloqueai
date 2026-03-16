@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScoreDisplay } from '@/components/brand/ScoreDisplay'
 import { useAuthStore, isEmployer } from '@/lib/auth'
 import { employerApi } from '@/lib/api'
+import { getErrorMessage } from '@/types'
 import {
   ArrowLeft,
   User,
@@ -74,7 +75,7 @@ interface CandidateDetail {
     top_reasons?: string[]
     risks?: string[]
     recruiter_notes?: string
-    score_breakdown?: Record<string, any>
+    score_breakdown?: Record<string, number | string | undefined>
   }
   interview?: {
     id: string
@@ -144,9 +145,9 @@ export default function CandidateDetailPage() {
       const result = await employerApi.getCandidateDetail(accessToken, jobId, candidateId) as CandidateDetail
       setData(result)
       setNotes(result.shortlist?.recruiter_notes || '')
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading candidate:', err)
-      setError(err?.message || 'Error al cargar el candidato')
+      setError(getErrorMessage(err) || 'Error al cargar el candidato')
     } finally {
       setLoading(false)
     }

@@ -10,12 +10,13 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useAuthStore, isEmployer } from '@/lib/auth'
 import { employerApi } from '@/lib/api'
+import type { Job } from '@/types'
 import { Plus, Users, MapPin, DollarSign, Clock, ChevronRight } from 'lucide-react'
 
 export default function JobsPage() {
   const router = useRouter()
   const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
-  const [jobs, setJobs] = useState<any[]>([])
+  const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -37,7 +38,7 @@ export default function JobsPage() {
     if (!accessToken) return
     try {
       const data = await employerApi.getJobs(accessToken)
-      setJobs((data as any).items || [])
+      setJobs(data.items || [])
     } catch (err) {
       console.error('Error loading jobs:', err)
     } finally {
@@ -128,7 +129,7 @@ export default function JobsPage() {
                             ? `${job.salary_min.toLocaleString()} - ${job.salary_max.toLocaleString()} ${job.salary_currency}`
                             : job.salary_min
                             ? `Desde ${job.salary_min.toLocaleString()} ${job.salary_currency}`
-                            : `Hasta ${job.salary_max.toLocaleString()} ${job.salary_currency}`}
+                            : `Hasta ${job.salary_max!.toLocaleString()} ${job.salary_currency}`}
                         </span>
                       )}
                     </div>

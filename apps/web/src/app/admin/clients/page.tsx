@@ -7,6 +7,7 @@ import { BrandCard, BrandCardHeader } from '@/components/brand/BrandCard'
 import { BrandHero } from '@/components/brand/BrandHero'
 import { useAuthStore, isRecruiter } from '@/lib/auth'
 import { adminApi } from '@/lib/api'
+import { getErrorMessage } from '@/types'
 import {
   Building2,
   Plus,
@@ -220,9 +221,9 @@ export default function ClientsPage() {
       setMessage({ type: 'success', text: 'Cliente creado exitosamente' })
       setShowCreateModal(false)
       loadClients()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error creating client:', err)
-      setMessage({ type: 'error', text: err.message || 'Error al crear cliente' })
+      setMessage({ type: 'error', text: getErrorMessage(err) || 'Error al crear cliente' })
     } finally {
       setSaving(false)
     }
@@ -247,9 +248,9 @@ export default function ClientsPage() {
       setMessage({ type: 'success', text: 'Cliente actualizado exitosamente' })
       setShowEditModal(false)
       loadClients()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error updating client:', err)
-      setMessage({ type: 'error', text: err.message || 'Error al actualizar cliente' })
+      setMessage({ type: 'error', text: getErrorMessage(err) || 'Error al actualizar cliente' })
     } finally {
       setSaving(false)
     }
@@ -264,9 +265,9 @@ export default function ClientsPage() {
       })
       setMessage({ type: 'success', text: `${client.name} ${!client.is_client ? 'marcado como cliente' : 'desmarcado como cliente'}` })
       loadClients()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error toggling client status:', err)
-      setMessage({ type: 'error', text: err.message || 'Error al actualizar estado' })
+      setMessage({ type: 'error', text: getErrorMessage(err) || 'Error al actualizar estado' })
     }
   }
 
@@ -279,9 +280,9 @@ export default function ClientsPage() {
       })
       setMessage({ type: 'success', text: `${client.name} ${!client.is_active ? 'activado' : 'desactivado'}` })
       loadClients()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error toggling active status:', err)
-      setMessage({ type: 'error', text: err.message || 'Error al actualizar estado' })
+      setMessage({ type: 'error', text: getErrorMessage(err) || 'Error al actualizar estado' })
     }
   }
 

@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScoreDisplay } from '@/components/brand/ScoreDisplay'
 import { useAuthStore, isEmployer } from '@/lib/auth'
 import { employerApi } from '@/lib/api'
+import { getErrorMessage } from '@/types'
 import {
   Users,
   Briefcase,
@@ -86,19 +87,19 @@ export default function ShortlistsPage() {
     setError(null)
 
     try {
-      const jobsData = await employerApi.getJobs(accessToken) as any
-      const allJobs = jobsData.items || []
+      const jobsData = await employerApi.getJobs(accessToken)
+      const allJobs = (jobsData.items || []) as unknown as JobWithShortlist[]
       // Only show jobs that have shortlist candidates
-      const jobsWithShortlists = allJobs.filter((j: any) => j.shortlist_count > 0)
+      const jobsWithShortlists = allJobs.filter((j) => j.shortlist_count > 0)
       setJobs(jobsWithShortlists)
 
       // Auto-expand first job if available
       if (jobsWithShortlists.length > 0) {
         loadShortlistForJob(jobsWithShortlists[0].id)
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading jobs:', err)
-      setError(err?.message || 'Error al cargar las vacantes')
+      setError(getErrorMessage(err) || 'Error al cargar las vacantes')
     } finally {
       setLoading(false)
     }
@@ -110,13 +111,13 @@ export default function ShortlistsPage() {
     setExpandedJob(jobId)
 
     try {
-      const shortlistData = await employerApi.getShortlist(accessToken, jobId) as any
+      const shortlistData = await employerApi.getShortlist(accessToken, jobId)
       setJobs(prev => prev.map(job =>
         job.id === jobId
           ? { ...job, shortlist: shortlistData.items || [] }
           : job
       ))
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading shortlist:', err)
     } finally {
       setLoadingShortlist(null)

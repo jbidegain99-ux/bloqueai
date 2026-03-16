@@ -7,6 +7,8 @@ import { BrandCard, BrandCardHeader } from '@/components/brand/BrandCard'
 import { BrandHero } from '@/components/brand/BrandHero'
 import { useAuthStore, isRecruiter } from '@/lib/auth'
 import { adminApi } from '@/lib/api'
+import { getErrorMessage } from '@/types'
+import type { PlacementUpdate } from '@/types'
 import {
   Users,
   Building2,
@@ -280,9 +282,9 @@ export default function PlacementsPage() {
       setShowCreateModal(false)
       loadPlacements()
       loadReport()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error creating placement:', err)
-      setMessage({ type: 'error', text: err.message || 'Error al crear placement' })
+      setMessage({ type: 'error', text: getErrorMessage(err) || 'Error al crear placement' })
     } finally {
       setSaving(false)
     }
@@ -295,7 +297,7 @@ export default function PlacementsPage() {
     setMessage(null)
 
     try {
-      const updateData: any = {}
+      const updateData: PlacementUpdate = {}
       if (newStatus) {
         updateData.status = newStatus
       } else {
@@ -316,9 +318,9 @@ export default function PlacementsPage() {
       setShowEditModal(false)
       loadPlacements()
       loadReport()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error updating placement:', err)
-      setMessage({ type: 'error', text: err.message || 'Error al actualizar placement' })
+      setMessage({ type: 'error', text: getErrorMessage(err) || 'Error al actualizar placement' })
     } finally {
       setSaving(false)
     }

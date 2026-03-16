@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/select'
 import { useAuthStore } from '@/lib/auth'
 import { employerApi } from '@/lib/api'
+import { getErrorMessage } from '@/types'
 import { Sparkles, Wand2, MessageSquare, Loader2, CheckCircle2, Video, MessageCircle } from 'lucide-react'
 
 // Category-aware placeholder templates for requirements
@@ -106,8 +107,8 @@ export default function NewJobPage() {
         setFormData({ ...formData, description: result.description })
         showSuccess('Descripcion generada exitosamente. Puedes editarla si lo deseas.')
       }
-    } catch (err: any) {
-      setError(err.message || 'Error al generar descripcion')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Error al generar descripcion')
     } finally {
       setCopilotLoading(null)
     }
@@ -138,8 +139,8 @@ export default function NewJobPage() {
         })
         showSuccess('Requisitos generados exitosamente. Puedes editarlos si lo deseas.')
       }
-    } catch (err: any) {
-      setError(err.message || 'Error al generar requisitos')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Error al generar requisitos')
     } finally {
       setCopilotLoading(null)
     }
@@ -168,8 +169,8 @@ export default function NewJobPage() {
         setFormData({ ...formData, custom_questions: questions })
         showSuccess('Preguntas generadas exitosamente. Puedes editarlas si lo deseas.')
       }
-    } catch (err: any) {
-      setError(err.message || 'Error al generar preguntas')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Error al generar preguntas')
     } finally {
       setCopilotLoading(null)
     }
@@ -204,9 +205,9 @@ export default function NewJobPage() {
       }
 
       const job = await employerApi.createJob(accessToken, jobData)
-      router.push(`/employer/jobs/${(job as any).id}`)
-    } catch (err: any) {
-      setError(err.message || 'Error al crear la vacante')
+      router.push(`/employer/jobs/${job.id}`)
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) || 'Error al crear la vacante')
     } finally {
       setLoading(false)
     }

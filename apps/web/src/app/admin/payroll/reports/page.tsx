@@ -13,6 +13,9 @@ import {
   ChevronRight,
   Download,
   FileText,
+  Shield,
+  Building2,
+  Landmark,
 } from 'lucide-react'
 
 interface SummaryData {
@@ -135,6 +138,30 @@ export default function PayrollReportsPage() {
       await payrollApi.exportRunCsv(accessToken, selectedRun)
     } catch (err) {
       console.error('Error exporting:', err)
+    }
+  }
+
+  const handleDownloadSPU = async () => {
+    if (!accessToken || !selectedRun) return
+    try {
+      await payrollApi.generateSPU(accessToken, selectedRun)
+    } catch (err) {
+      console.error('Error generating SPU:', err)
+    }
+  }
+
+  const [govReport, setGovReport] = useState<{ type: string; data: Record<string, unknown> } | null>(null)
+
+  const handleGovReport = async (type: 'isss' | 'afp' | 'isr') => {
+    if (!accessToken || !selectedRun) return
+    try {
+      let data: Record<string, unknown>
+      if (type === 'isss') data = await payrollApi.getISSReport(accessToken, selectedRun) as Record<string, unknown>
+      else if (type === 'afp') data = await payrollApi.getAFPReport(accessToken, selectedRun) as Record<string, unknown>
+      else data = await payrollApi.getISRReport(accessToken, selectedRun) as Record<string, unknown>
+      setGovReport({ type, data })
+    } catch (err) {
+      console.error(`Error loading ${type} report:`, err)
     }
   }
 
@@ -266,6 +293,111 @@ export default function PayrollReportsPage() {
             )}
           </div>
         </BrandCard>
+
+        {/* Government Reports */}
+        {selectedRun && (
+          <BrandCard>
+            <div className="px-6 pt-6 pb-2 flex items-center gap-2">
+              <Landmark className="h-5 w-5 text-bloque-navy900" />
+              <h3 className="text-lg font-semibold text-bloque-navy900">Reportes Gubernamentales</h3>
+            </div>
+            <div className="p-6">
+              <div className="flex flex-wrap gap-3 mb-4">
+                <button onClick={() => handleGovReport('isss')}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm hover:bg-blue-50 hover:border-blue-300 transition-colors">
+                  <Shield className="h-4 w-4 text-blue-600" /> Reporte ISSS
+                </button>
+                <button onClick={() => handleGovReport('afp')}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm hover:bg-purple-50 hover:border-purple-300 transition-colors">
+                  <Building2 className="h-4 w-4 text-purple-600" /> Reporte AFP
+                </button>
+                <button onClick={() => handleGovReport('isr')}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm hover:bg-orange-50 hover:border-orange-300 transition-colors">
+                  <Landmark className="h-4 w-4 text-orange-600" /> Reporte ISR
+                </button>
+                <button onClick={handleDownloadSPU}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 transition-colors">
+                  <Download className="h-4 w-4" /> Descargar SPU
+                </button>
+              </div>
+
+              {govReport && (
+                <div className="border rounded-lg p-4">
+                  <h4 className="font-medium text-sm mb-3">
+                    Reporte {govReport.type.toUpperCase()} — {(govReport.data as Record<string, unknown>).period as string || ''}
+                  </h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-gray-50">
+                          <th className="text-left p-2 font-medium text-gray-600">Empleado</th>
+                          <th className="text-left p-2 font-medium text-gray-600">DUI</th>
+                          <th className="text-right p-2 font-medium text-gray-600">Bruto</th>
+                          {govReport.type === 'isss' && (
+                            <>
+                              <th className="text-right p-2 font-medium text-gray-600">ISSS Emp.</th>
+                              <th className="text-right p-2 font-medium text-gray-600">ISSS Patr.</th>
+                            </>
+                          )}
+                          {govReport.type === 'afp' && (
+                            <>
+                              <th className="text-right p-2 font-medium text-gray-600">AFP Emp.</th>
+                              <th className="text-right p-2 font-medium text-gray-600">AFP Patr.</th>
+                            </>
+                          )}
+                          {govReport.type === 'isr' && (
+                            <>
+                              <th className="text-right p-2 font-medium text-gray-600">Base Gravable</th>
+                              <th className="text-right p-2 font-medium text-gray-600">ISR</th>
+                            </>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {((govReport.data as Record<string, unknown>).rows as Array<Record<string, unknown>>)?.map((row: Record<string, unknown>, i: number) => (
+                          <tr key={i} className="border-b hover:bg-gray-50">
+                            <td className="p-2">{row.employee_name as string}</td>
+                            <td className="p-2 text-gray-500 font-mono text-xs">{(row.dui as string) || '—'}</td>
+                            <td className="p-2 text-right">{formatMoney(row.gross_salary as number, summary?.currency || 'USD')}</td>
+                            {govReport.type === 'isss' && (
+                              <>
+                                <td className="p-2 text-right text-blue-600">{formatMoney(row.isss_employee as number, 'USD')}</td>
+                                <td className="p-2 text-right text-blue-600">{formatMoney(row.isss_employer as number, 'USD')}</td>
+                              </>
+                            )}
+                            {govReport.type === 'afp' && (
+                              <>
+                                <td className="p-2 text-right text-purple-600">{formatMoney(row.afp_employee as number, 'USD')}</td>
+                                <td className="p-2 text-right text-purple-600">{formatMoney(row.afp_employer as number, 'USD')}</td>
+                              </>
+                            )}
+                            {govReport.type === 'isr' && (
+                              <>
+                                <td className="p-2 text-right">{formatMoney(row.taxable_base as number, 'USD')}</td>
+                                <td className="p-2 text-right text-orange-600">{formatMoney(row.isr as number, 'USD')}</td>
+                              </>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-3 pt-3 border-t text-sm text-gray-600">
+                    {govReport.type === 'isss' && (
+                      <p>Total ISSS: {formatMoney((govReport.data as Record<string, unknown>).total_isss as number, 'USD')}</p>
+                    )}
+                    {govReport.type === 'afp' && (
+                      <p>Total AFP: {formatMoney((govReport.data as Record<string, unknown>).total_afp as number, 'USD')}</p>
+                    )}
+                    {govReport.type === 'isr' && (
+                      <p>Total ISR: {formatMoney((govReport.data as Record<string, unknown>).total_isr as number, 'USD')}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </BrandCard>
+        )}
       </div>
     </AppShell>
   )

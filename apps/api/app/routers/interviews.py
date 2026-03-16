@@ -514,8 +514,8 @@ def _build_analysis_response(interview: VideoInterview) -> InterviewAnalysisResp
         try:
             rec_data = json.loads(interview.ai_recommendation)
             recommendation = Recommendation(**rec_data)
-        except (json.JSONDecodeError, TypeError):
-            pass
+        except (json.JSONDecodeError, TypeError) as parse_err:
+            logger.warning("recommendation_json_parse_failed", error=str(parse_err), interview_id=str(interview.id))
 
     scores = None
     if interview.ai_scores and isinstance(interview.ai_scores, dict):
@@ -717,8 +717,8 @@ async def get_interview_results(
         if interview.ai_recommendation:
             try:
                 rec = json.loads(interview.ai_recommendation)
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as parse_err:
+                logger.warning("recommendation_json_parse_failed", error=str(parse_err), interview_id=str(interview.id))
 
         result["analysis"] = {
             "overall_score": interview.overall_score,

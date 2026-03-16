@@ -412,6 +412,7 @@ Cuando hayas hecho todas las preguntas, agradece al candidato y despídete natur
             logger.info("agent_openai_ok", has_key=bool(settings.llm_api_key))
 
             tts = ElevenLabsTTSService(
+                model="eleven_multilingual_v2",
                 api_key=settings.elevenlabs_api_key,
                 voice_id=settings.elevenlabs_voice_id,
                 # ElevenLabs Free tier TTFB can be 3-10s. Default timeout (2s)
@@ -425,7 +426,7 @@ Cuando hayas hecho todas las preguntas, agradece al candidato y despídete natur
                 "agent_elevenlabs_ok",
                 has_key=bool(settings.elevenlabs_api_key),
                 voice_id=settings.elevenlabs_voice_id,
-                model=tts.model_name,
+                model=getattr(tts, "model_name", getattr(tts, "_model", "eleven_multilingual_v2")),
             )
         except Exception as e:
             tb = traceback.format_exc()

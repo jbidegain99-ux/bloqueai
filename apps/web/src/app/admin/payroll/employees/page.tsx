@@ -199,7 +199,7 @@ export default function PayrollEmployeesPage() {
                   <tr><td colSpan={6} className="p-8 text-center text-gray-400">No hay empleados registrados</td></tr>
                 ) : (
                   employees.map((emp) => (
-                    <tr key={emp.id} className="border-b hover:bg-gray-50">
+                    <tr key={emp.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/admin/payroll/employees/${emp.id}`)}>
                       <td className="p-3">
                         <div className="font-medium text-gray-900">{emp.full_name}</div>
                         {emp.email && <div className="text-xs text-gray-500">{emp.email}</div>}

@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { publicApi } from '@/lib/api'
+import { getErrorMessage } from '@/types'
 import {
   Search,
   MapPin,
@@ -170,12 +171,12 @@ export default function CandidateJobsPage() {
         country: country || undefined,
       })
 
-      setJobs(response.items)
+      setJobs(response.items as unknown as Job[])
       setTotalJobs(response.total)
       setTotalPages(response.total_pages)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading jobs:', err)
-      setError(err?.message || 'Error al cargar los puestos')
+      setError(getErrorMessage(err) || 'Error al cargar los puestos')
     } finally {
       setLoading(false)
     }

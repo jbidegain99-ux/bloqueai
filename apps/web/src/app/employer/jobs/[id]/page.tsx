@@ -10,6 +10,8 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuthStore } from '@/lib/auth'
 import { employerApi } from '@/lib/api'
+import type { Job, ShortlistResponse, ShortlistItem } from '@/types'
+import { getErrorMessage } from '@/types'
 import { ArrowLeft, Users, Download, RefreshCw, MapPin, Star, AlertTriangle, CheckCircle, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import {
@@ -34,8 +36,8 @@ export default function JobDetailPage() {
   const params = useParams()
   const jobId = params.id as string
   const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
-  const [job, setJob] = useState<any>(null)
-  const [shortlist, setShortlist] = useState<any>(null)
+  const [job, setJob] = useState<Job | null>(null)
+  const [shortlist, setShortlist] = useState<ShortlistResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -72,7 +74,7 @@ export default function JobDetailPage() {
     if (!accessToken) return
     setGenerating(true)
     try {
-      const data = await employerApi.generateShortlist(accessToken, jobId) as any
+      const data = await employerApi.generateShortlist(accessToken, jobId)
       setShortlist(data)
     } catch (err) {
       console.error('Error generating shortlist:', err)
@@ -89,9 +91,9 @@ export default function JobDetailPage() {
       await employerApi.exportShortlist(accessToken, jobId)
       setStatusMessage({ type: 'success', text: 'CSV exportado correctamente' })
       setTimeout(() => setStatusMessage(null), 3000)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error exporting CSV:', err)
-      setStatusMessage({ type: 'error', text: err?.message || 'Error al exportar CSV' })
+      setStatusMessage({ type: 'error', text: getErrorMessage(err) || 'Error al exportar CSV' })
     } finally {
       setExporting(false)
     }
@@ -119,9 +121,9 @@ export default function JobDetailPage() {
       await loadData()
       // Clear success message after 3 seconds
       setTimeout(() => setStatusMessage(null), 3000)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error updating job status:', err)
-      setStatusMessage({ type: 'error', text: err?.message || 'Error al actualizar el estado' })
+      setStatusMessage({ type: 'error', text: getErrorMessage(err) || 'Error al actualizar el estado' })
     } finally {
       setUpdatingStatus(false)
     }
@@ -233,7 +235,7 @@ export default function JobDetailPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${generating ? 'animate-spin' : ''}`} />
             {generating ? 'Generando...' : 'Generar Shortlist'}
           </Button>
-          {shortlist?.items?.length > 0 && (
+          {(shortlist?.items?.length ?? 0) > 0 && (
             <Button variant="outline" onClick={exportCsv} disabled={exporting}>
               <Download className={`h-4 w-4 mr-2 ${exporting ? 'animate-pulse' : ''}`} />
               {exporting ? 'Exportando...' : 'Exportar CSV'}
@@ -265,7 +267,7 @@ export default function JobDetailPage() {
               </div>
             </BrandCard>
           ) : (
-            shortlist.items.map((item: any) => (
+            shortlist?.items?.map((item: ShortlistItem) => (
               <BrandCard key={item.id} hover>
                 <div className="flex gap-6">
                   {/* Score Section */}
@@ -311,7 +313,7 @@ export default function JobDetailPage() {
                           {item.interview_status === 'COMPLETED' ? 'Entrevista' : 'Sin entrevista'}
                         </Badge>
                         {/* Flags indicator */}
-                        {(item.flags_count > 0) && (
+                        {((item.flags_count ?? 0) > 0) && (
                           <Badge variant="destructive" className="flex items-center gap-1">
                             <AlertTriangle className="h-3 w-3" />
                             {item.flags_count}
@@ -322,9 +324,9 @@ export default function JobDetailPage() {
                     </div>
 
                     {/* Skills */}
-                    {item.candidate?.skills?.length > 0 && (
+                    {(item.candidate?.skills?.length ?? 0) > 0 && (
                       <div className="flex flex-wrap gap-1 mb-3">
-                        {item.candidate.skills.slice(0, 6).map((skill: string, idx: number) => (
+                        {item.candidate?.skills?.slice(0, 6).map((skill: string, idx: number) => (
                           <Badge key={idx} variant="outline" className="text-xs">
                             {skill}
                           </Badge>
@@ -341,13 +343,13 @@ export default function JobDetailPage() {
 
                     {/* Reasons and Risks */}
                     <div className="grid md:grid-cols-2 gap-4">
-                      {item.top_reasons?.length > 0 && (
+                      {(item.top_reasons?.length ?? 0) > 0 && (
                         <div>
                           <p className="text-xs font-medium text-bloque-navy900 mb-1">
                             Razones principales:
                           </p>
                           <ul className="space-y-1">
-                            {item.top_reasons.map((reason: string, idx: number) => (
+                            {item.top_reasons?.map((reason: string, idx: number) => (
                               <li key={idx} className="text-xs text-muted-foreground flex gap-1">
                                 <Star className="h-3 w-3 text-bloque-gold500 shrink-0 mt-0.5" />
                                 {reason}
@@ -357,13 +359,13 @@ export default function JobDetailPage() {
                         </div>
                       )}
 
-                      {item.risks?.length > 0 && (
+                      {(item.risks?.length ?? 0) > 0 && (
                         <div>
                           <p className="text-xs font-medium text-bloque-navy900 mb-1">
                             Riesgos potenciales:
                           </p>
                           <ul className="space-y-1">
-                            {item.risks.map((risk: string, idx: number) => (
+                            {item.risks?.map((risk: string, idx: number) => (
                               <li key={idx} className="text-xs text-muted-foreground flex gap-1">
                                 <AlertTriangle className="h-3 w-3 text-yellow-500 shrink-0 mt-0.5" />
                                 {risk}
@@ -375,13 +377,13 @@ export default function JobDetailPage() {
                     </div>
 
                     {/* Top Competencies from Shortlist */}
-                    {item.top_competencies?.length > 0 && (
+                    {(item.top_competencies?.length ?? 0) > 0 && (
                       <div className="mt-4 pt-4 border-t">
                         <p className="text-xs font-medium text-bloque-navy900 mb-2">
                           Top Competencias:
                         </p>
                         <div className="flex flex-wrap gap-2">
-                          {item.top_competencies.map((comp: { name: string; score: number }, idx: number) => {
+                          {item.top_competencies?.map((comp: { name: string; score: number }, idx: number) => {
                             const labels: Record<string, string> = {
                               technical_skills: 'Técnicas',
                               communication: 'Comunicación',
@@ -432,11 +434,11 @@ export default function JobDetailPage() {
             </BrandCard>
 
             <div className="space-y-6">
-              {job.must_haves?.length > 0 && (
+              {(job.must_haves?.length ?? 0) > 0 && (
                 <BrandCard>
                   <BrandCardHeader title="Requisitos obligatorios" />
                   <ul className="space-y-1">
-                    {job.must_haves.map((req: string, idx: number) => (
+                    {job.must_haves?.map((req: string, idx: number) => (
                       <li key={idx} className="text-sm text-muted-foreground">
                         • {req}
                       </li>
@@ -445,11 +447,11 @@ export default function JobDetailPage() {
                 </BrandCard>
               )}
 
-              {job.nice_to_haves?.length > 0 && (
+              {(job.nice_to_haves?.length ?? 0) > 0 && (
                 <BrandCard>
                   <BrandCardHeader title="Requisitos deseables" />
                   <ul className="space-y-1">
-                    {job.nice_to_haves.map((req: string, idx: number) => (
+                    {job.nice_to_haves?.map((req: string, idx: number) => (
                       <li key={idx} className="text-sm text-muted-foreground">
                         • {req}
                       </li>

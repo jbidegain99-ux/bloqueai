@@ -7,12 +7,13 @@ import { BrandCard, BrandCardHeader } from '@/components/brand/BrandCard'
 import { BrandHero } from '@/components/brand/BrandHero'
 import { useAuthStore, isRecruiter } from '@/lib/auth'
 import { adminApi } from '@/lib/api'
+import type { DashboardKpis } from '@/types'
 import { Users, Briefcase, MessageSquare, CheckCircle, TrendingUp, Clock, Star, AlertCircle } from 'lucide-react'
 
 export default function KpisPage() {
   const router = useRouter()
   const { accessToken, isAuthenticated, isHydrated } = useAuthStore()
-  const [kpis, setKpis] = useState<any>(null)
+  const [kpis, setKpis] = useState<DashboardKpis | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -139,7 +140,7 @@ export default function KpisPage() {
                 <TrendingUp className="h-6 w-6 text-green-600" />
               </div>
               <p className="text-3xl font-bold text-bloque-navy900">
-                {formatPercent(kpis?.interview_completion_rate)}
+                {formatPercent(kpis?.interview_completion_rate ?? null)}
               </p>
             </div>
           </BrandCard>
@@ -154,7 +155,7 @@ export default function KpisPage() {
                 <Users className="h-6 w-6 text-blue-600" />
               </div>
               <p className="text-3xl font-bold text-bloque-navy900">
-                {formatPercent(kpis?.shortlist_to_contact_rate)}
+                {formatPercent(kpis?.shortlist_to_contact_rate ?? null)}
               </p>
             </div>
           </BrandCard>
@@ -169,7 +170,7 @@ export default function KpisPage() {
                 <CheckCircle className="h-6 w-6 text-bloque-gold500" />
               </div>
               <p className="text-3xl font-bold text-bloque-navy900">
-                {formatPercent(kpis?.contact_to_hire_rate)}
+                {formatPercent(kpis?.contact_to_hire_rate ?? null)}
               </p>
             </div>
           </BrandCard>

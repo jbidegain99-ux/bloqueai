@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { publicApi, candidateApi } from '@/lib/api'
+import { getErrorMessage } from '@/types'
 import { useAuthStore } from '@/lib/auth'
 import {
   ArrowLeft,
@@ -123,10 +124,10 @@ export default function JobDetailPage() {
 
       try {
         const jobData = await publicApi.getJob(jobId)
-        setJob(jobData)
-      } catch (err: any) {
+        setJob(jobData as unknown as Job)
+      } catch (err: unknown) {
         console.error('Error loading job:', err)
-        setError(err?.message || 'Error al cargar el puesto')
+        setError(getErrorMessage(err) || 'Error al cargar el puesto')
       } finally {
         setLoading(false)
       }
@@ -142,7 +143,7 @@ export default function JobDetailPage() {
 
       setCheckingResume(true)
       try {
-        const resumes = await candidateApi.getResumes(accessToken) as any[]
+        const resumes = await candidateApi.getResumes(accessToken) as string[]
         setHasResume(resumes.length > 0)
       } catch (err) {
         console.error('Error checking resumes:', err)
@@ -177,9 +178,9 @@ export default function JobDetailPage() {
     try {
       await candidateApi.startInterview(accessToken!, jobId)
       router.push(`/candidate/interview?job_id=${jobId}`)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error starting application:', err)
-      setError(err?.message || 'Error al iniciar la aplicacion')
+      setError(getErrorMessage(err) || 'Error al iniciar la aplicacion')
       setApplying(false)
     }
   }

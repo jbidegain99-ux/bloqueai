@@ -198,7 +198,7 @@ async def list_employees(
             s = EOREmployeeStatus(status_filter)
             query = query.filter(EOREmployee.status == s)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="status", value=status_filter)
 
     if search:
         like = f"%{search}%"
@@ -517,7 +517,7 @@ async def list_payroll_runs(
             s = EORPayrollRunStatus(status_filter)
             query = query.filter(EORPayrollRun.status == s)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="status", value=status_filter)
 
     runs = query.order_by(EORPayrollRun.created_at.desc()).all()
     return [
@@ -854,7 +854,7 @@ async def list_vacation_requests(
             s = VacationRequestStatus(status_filter)
             query = query.filter(EORVacationRequest.status == s)
         except ValueError:
-            pass
+            logger.debug("invalid_filter_param", param="status", value=status_filter)
 
     requests = query.order_by(EORVacationRequest.created_at.desc()).all()
     result = []

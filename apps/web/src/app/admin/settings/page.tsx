@@ -7,6 +7,7 @@ import { BrandCard, BrandCardHeader } from '@/components/brand/BrandCard'
 import { BrandHero } from '@/components/brand/BrandHero'
 import { useAuthStore, isRecruiter } from '@/lib/auth'
 import { adminApi } from '@/lib/api'
+import { getErrorMessage } from '@/types'
 import { Settings, Save, AlertCircle, CheckCircle, Hash, ToggleLeft, Type, Braces } from 'lucide-react'
 
 interface SystemSetting {
@@ -126,9 +127,9 @@ export default function SettingsPage() {
       await adminApi.updateSetting(accessToken, setting.key, updateData)
       setMessage({ type: 'success', text: `Configuracion "${setting.key}" actualizada` })
       await loadSettings()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error saving setting:', err)
-      setMessage({ type: 'error', text: err.message || 'Error al guardar' })
+      setMessage({ type: 'error', text: getErrorMessage(err) || 'Error al guardar' })
     } finally {
       setSaving(null)
     }
