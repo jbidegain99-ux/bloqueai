@@ -34,7 +34,7 @@ def upgrade() -> None:
         'resumes',
         sa.Column(
             'source',
-            sa.Enum('UPLOADED', 'AI_BUILDER', 'MANUAL', name='resume_source'),
+            postgresql.ENUM('UPLOADED', 'AI_BUILDER', 'MANUAL', name='resume_source', create_type=False),
             nullable=False,
             server_default='UPLOADED'
         )

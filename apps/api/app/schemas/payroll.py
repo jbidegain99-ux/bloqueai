@@ -1,12 +1,27 @@
 """Pydantic schemas for Payroll module."""
 
+import re
 from datetime import date, datetime
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.schemas.base import BaseSchema
+
+
+# === DUI Validation ===
+
+DUI_PATTERN = re.compile(r"^\d{8}-\d$")
+
+
+def validate_dui_format(value: str) -> str:
+    """Validate El Salvador DUI format: 00000000-0 (8 digits, dash, 1 digit)."""
+    if not DUI_PATTERN.match(value):
+        raise ValueError(
+            "Formato de DUI inválido. Esperado: 00000000-0 (8 dígitos, guión, 1 dígito)"
+        )
+    return value
 
 
 # === Employees ===
@@ -22,6 +37,22 @@ class EmployeeCreate(BaseSchema):
     hire_date: Optional[date] = None
     candidate_id: Optional[UUID] = None
     user_id: Optional[UUID] = None
+    document_type: Optional[str] = None
+    document_id: Optional[str] = None
+    salary: Optional[float] = Field(None, ge=0)
+    salary_currency: str = "USD"
+    employment_type: Optional[str] = None
+    bank_account_number: Optional[str] = None
+
+    @field_validator("document_id")
+    @classmethod
+    def validate_document_id(cls, v: Optional[str], info) -> Optional[str]:
+        if v is None:
+            return v
+        doc_type = info.data.get("document_type")
+        if doc_type == "DUI":
+            return validate_dui_format(v)
+        return v
 
 
 class EmployeeUpdate(BaseSchema):
@@ -34,6 +65,22 @@ class EmployeeUpdate(BaseSchema):
     is_active: Optional[bool] = None
     hire_date: Optional[date] = None
     termination_date: Optional[date] = None
+    document_type: Optional[str] = None
+    document_id: Optional[str] = None
+    salary: Optional[float] = Field(None, ge=0)
+    salary_currency: Optional[str] = None
+    employment_type: Optional[str] = None
+    bank_account_number: Optional[str] = None
+
+    @field_validator("document_id")
+    @classmethod
+    def validate_document_id(cls, v: Optional[str], info) -> Optional[str]:
+        if v is None:
+            return v
+        doc_type = info.data.get("document_type")
+        if doc_type == "DUI":
+            return validate_dui_format(v)
+        return v
 
 
 class EmployeeResponse(BaseSchema):
@@ -49,6 +96,13 @@ class EmployeeResponse(BaseSchema):
     is_active: bool
     hire_date: Optional[date] = None
     termination_date: Optional[date] = None
+    document_type: Optional[str] = None
+    document_id: Optional[str] = None
+    salary: Optional[float] = None
+    salary_currency: Optional[str] = None
+    employment_type: Optional[str] = None
+    status: Optional[str] = None
+    bank_account_number: Optional[str] = None
     active_contract: Optional[dict] = None
     created_at: Optional[datetime] = None
 
@@ -65,17 +119,52 @@ class ContractCreate(BaseSchema):
     pay_frequency: str
     end_date: Optional[date] = None
     notes: Optional[str] = None
+    position_title: Optional[str] = None
+    benefits: Optional[dict] = None
+    document_url: Optional[str] = None
+
+    @field_validator("end_date")
+    @classmethod
+    def end_after_start(cls, v: Optional[date], info) -> Optional[date]:
+        if v is not None:
+            start = info.data.get("start_date")
+            if start and v <= start:
+                raise ValueError("end_date debe ser posterior a start_date")
+        return v
 
 
 class ContractUpdate(BaseSchema):
     contract_type: Optional[str] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
-    base_salary: Optional[float] = None
+    base_salary: Optional[float] = Field(None, gt=0)
     currency: Optional[str] = None
     pay_frequency: Optional[str] = None
     is_active: Optional[bool] = None
     notes: Optional[str] = None
+    position_title: Optional[str] = None
+    benefits: Optional[dict] = None
+    document_url: Optional[str] = None
+
+
+class ContractResponse(BaseSchema):
+    id: UUID
+    employee_id: UUID
+    employee_name: Optional[str] = None
+    client_id: UUID
+    contract_type: str
+    position_title: Optional[str] = None
+    start_date: date
+    end_date: Optional[date] = None
+    base_salary: float
+    currency: str
+    pay_frequency: str
+    is_active: bool
+    notes: Optional[str] = None
+    benefits: Optional[dict] = None
+    document_url: Optional[str] = None
+    signed_by_employee_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
 
 
 # === Attendance ===

@@ -1,5 +1,132 @@
 # TalentOS Lessons Learned
 
+## Session: 2026-03-15 - Government Compliance + SPU Generation
+
+### SPU File Format Patterns
+
+1. **UTF-8 BOM for Excel** — SPU files start with `\ufeff` (UTF-8 Byte Order Mark). Without this, Excel on Windows opens the CSV with garbled characters for Spanish text (á, é, ñ, etc.).
+
+2. **Pipe delimiter, not comma** — Government CSV formats in LATAM often use `|` (pipe) instead of `,` (comma) to avoid conflicts with thousand separators (e.g., `1,000.00`). The SPU uses pipe-delimited fields.
+
+3. **Amounts as zero-padded integers** — Monetary values are stored as cents without decimal point, zero-padded to fixed width. `$1,000.50` becomes `000100050`. This prevents parsing ambiguity across locales.
+
+4. **Header/Detail/Trailer pattern** — Government batch files use E/D/T record types. The trailer includes a checksum and totals that must match the sum of all detail records. This enables validation without re-processing all rows.
+
+### Compliance Validation Patterns
+
+1. **8-point checklist** — Before government submission, validate: DUI present, bank accounts, no negatives, ISSS cap, ISR non-negative, net non-negative, active contracts, totals consistency.
+
+2. **Tolerance for rounding** — Use $0.50 tolerance when comparing calculated totals vs stored values. Decimal→float→Decimal round-trips can introduce sub-cent differences that shouldn't fail compliance.
+
+3. **Defensive Decimal conversion** — Always wrap values in `Decimal(str(value))` when receiving from SQLAlchemy. Database `Numeric` columns may return `float` or `int` depending on the driver, and calling `.quantize()` on a plain `int` raises `AttributeError`.
+
+---
+
+## Session: 2026-03-15 - Payroll Calculation Engine
+
+### Payroll Calculation Patterns
+
+1. **Decimal, not float** — All monetary calculations use `Decimal` with `ROUND_HALF_UP` to 2 places. This prevents floating-point drift that accumulates across thousands of employees. The `_r()` helper standardizes rounding.
+
+2. **ISR excedente method** — SV ISR uses the "excedente" formula: `tax = (amount - bracket_start) × marginal_rate + fixed_tax`. This is NOT the same as simply multiplying the full amount by the rate. The fixed_tax absorbs the tax from lower brackets.
+
+3. **ISSS cap vs AFP uncapped** — ISSS contributions cap at $1,000 gross/month (both employee and employer). AFP has NO cap — applied to full gross. This means high earners pay disproportionately more AFP than ISSS.
+
+4. **Provisions are monthly accruals** — Aguinaldo (annual) and vacaciones (annual) are divided by 12 for monthly provisioning. This spreads the cost evenly and prevents cash flow surprises in December.
+
+### Test Fixture Design
+
+1. **Parametrized scenarios** — Use `@pytest.mark.parametrize` with named tuples for salary scenarios. Each scenario documents the hand calculation as a comment. This makes test failures immediately debuggable.
+
+2. **Test the engine, not the router** — The `PayrollCalculatorSV` is a pure function with no DB dependencies. Test it directly (0.07s for 31 tests) rather than through HTTP endpoints (which add 20+ seconds of setup/teardown).
+
+3. **Inverse calculator verification** — The bisection-based net-to-gross calculator is verified by checking that `|actual_net - desired_net| < $0.05`. The tolerance exists because rounding makes exact inversion impossible.
+
+---
+
+## Session: 2026-03-15 - Employees + Contracts CRUD
+
+### Business Logic Patterns
+
+1. **Signed contract immutability** — Once `signed_by_employee_at` is set, the contract PATCH endpoint rejects all updates with 400. To change terms, create a new contract (which auto-deactivates the previous one).
+
+2. **Employee termination cascade** — Terminating an employee sets `status=TERMINATED`, `is_active=False`, `termination_date=today`, AND deactivates all active contracts with `end_date=today`. This is a soft delete — no records are deleted.
+
+3. **One active contract per employee** — Creating a new contract automatically deactivates all previous active contracts for the same employee. This provides implicit salary history (query `payroll_contracts WHERE employee_id=X ORDER BY start_date DESC`).
+
+4. **DUI uniqueness is per-tenant** — The same DUI can exist in different tenants (companies), but not within the same one. This handles the case where the same person could work for multiple companies on the platform.
+
+### Validation Patterns
+
+1. **Pydantic field_validator for DUI** — DUI format validation uses `@field_validator("document_id")` that checks `info.data.get("document_type")`. Only validates format when `document_type == "DUI"`.
+
+2. **DB-level uniqueness check** — DUI uniqueness is checked via DB query before insert (not a unique constraint) because the constraint needs to be scoped to `client_id + document_id + document_type`.
+
+3. **Contract date validation** — `end_date > start_date` is validated at schema level via `@field_validator("end_date")` that accesses `info.data.get("start_date")`.
+
+---
+
+## Session: 2026-03-15 - Auth & Multi-Tenancy Verification
+
+### Multi-Tenancy Security Patterns
+
+1. **company_id NOT in JWT** — Unlike many multi-tenant systems, TalentOS does NOT include `company_id` (tenantId) in the JWT payload. Instead, `company_id` is fetched from the database on every request via `get_current_user()`. This means role/company changes take effect immediately without waiting for token expiry.
+
+2. **ADMIN bypasses tenant filtering** — The `get_job_or_404()` helper only filters by `company_id` for non-ADMIN users. ADMIN role has cross-tenant visibility by design. This is intentional for platform operators but should be documented clearly.
+
+3. **Application-level + RLS defense-in-depth** — Tenant isolation is enforced at two levels: application queries filter by `company_id`, and PostgreSQL RLS policies (Supabase) provide database-level enforcement. Neither alone is sufficient.
+
+### JWT Best Practices Learned
+
+1. **Separate access/refresh tokens with type field** — Both tokens contain a `"type"` field ("access" or "refresh"). The `get_current_user` dependency checks `type == "access"`, preventing refresh tokens from being used as access tokens.
+
+2. **Stateless but with DB validation** — Every request hits the DB to verify the user exists and `is_active == True`. This means deactivating a user takes effect immediately, at the cost of one DB query per request.
+
+3. **No token blacklist** — Logout is client-side only. A stolen access token is valid for 30 minutes. Mitigation: short access token TTL + refresh rotation.
+
+### Role-Based Access Control
+
+1. **FastAPI dependency injection for RBAC** — Roles are enforced via `Depends(require_role(UserRole.ADMIN))` in endpoint signatures. This is clean but means role checks happen BEFORE endpoint code runs.
+
+2. **Four roles, linear hierarchy** — CANDIDATE < EMPLOYER < RECRUITER < ADMIN. Each higher role includes access to all lower-role endpoints.
+
+### Testing Patterns
+
+1. **SQLite cannot be used for tests** — Models use JSONB, UUID, and PostgreSQL-specific enums. Tests MUST use PostgreSQL (`talentos_test` database on localhost:5433).
+
+2. **sa.Enum vs postgresql.ENUM in Alembic** — `sa.Enum(name='x')` in `create_table()` always tries to CREATE TYPE, ignoring `create_type=False`. Must use `postgresql.ENUM(name='x', create_type=False)` to prevent duplicate type errors when the type was already created via `.create(checkfirst=True)`.
+
+---
+
+## Session: 2026-03-15 - Payroll Schema Extension
+
+### Database Schema Design
+
+1. **Non-destructive migrations** — All new columns added as nullable or with `server_default` to avoid breaking existing data. Never ALTER a column type in place; add a new column and migrate data.
+
+2. **Numeric vs Float for money** — Use `Numeric(12, 2)` for all monetary fields (salary, deductions, provisions). `Float` causes rounding errors. Legacy payroll tables still use Float; new tables use Numeric.
+
+3. **JSONB + relational hybrid** — Keep `deductions_detail` JSONB on PayrollLine for backward compat, but also store in `payroll_deduction_breakdowns` relational table for queryability. Gradual migration path.
+
+4. **Benefits JSON schema** — Structure JSONB with known top-level keys (`health_insurance`, `life_insurance`, `meal_allowance`, `transport_allowance`) plus a `custom` array for extensibility. This enables partial GIN indexing while keeping flexibility.
+
+### Multi-Tenant Filtering Patterns
+
+1. **client_id on every table** — Every payroll table has `client_id` FK to `companies.id`. All queries MUST filter by `client_id` to prevent data leakage between tenants.
+
+2. **RLS as defense-in-depth** — Row Level Security policies exist on all public tables (migration 020). Application-level filtering is still required; RLS is a safety net.
+
+3. **Multi-currency strategy** — Currency stored at 3 levels:
+   - Employee: `salary_currency` (display preference)
+   - Contract: `currency` (legal/contractual)
+   - PayrollRun: `currency` (settlement/payment)
+   - Future: add exchange rate table for cross-currency payroll runs.
+
+### Prisma vs SQLAlchemy Note
+This project uses SQLAlchemy + Alembic, NOT Prisma. When planning tasks, always reference Alembic for migrations and SQLAlchemy for ORM operations.
+
+---
+
 ## Session: 2026-02-02 - Platform Stabilization
 
 ### Patterns to Avoid
@@ -768,3 +895,167 @@
    - `/analyze` endpoint checks if `ai_scores` and `ai_summary` already exist
    - If so, returns cached result immediately (no re-analysis, no extra LLM cost)
    - Pattern: idempotent analysis — calling twice is safe and cheap
+
+---
+
+## Session: 2026-03-04 - AI Video Interview TTS Audio Truncation Fix
+
+### Root Cause
+
+**ElevenLabs Free tier cannot use library voices via API (HTTP 402).**
+
+The voice ID `xzWD1ftyNVsuUMY2ll3j` (Valentina) is a **library voice** that requires a paid ElevenLabs plan. The API returns:
+```
+{"detail":{"type":"payment_required","message":"Free users cannot use library voices via the API. Please upgrade your subscription to use this voice."}}
+```
+
+This caused the symptom: `diag_tts_audio bytes=24000 dur_ms=500.0 gap_ms=10001.5 n=1` — only 1 tiny audio chunk (0.5s) instead of the expected 15-20s greeting.
+
+### How to Debug TTS Issues (diag_tts_audio metrics)
+
+| Metric | Meaning | Healthy Value |
+|--------|---------|---------------|
+| `n` | Number of audio chunks received from ElevenLabs | >> 1 (typically 20-100) |
+| `bytes` | Size of individual audio chunk | 4000-24000 per chunk |
+| `dur_ms` | Duration of individual chunk in ms | ~500ms per chunk |
+| `gap_ms` | Time since previous chunk arrived | < 500ms normally |
+| `total_bytes` | Cumulative bytes for this TTS utterance | 300,000-500,000 for 15-20s |
+| `sr` | Sample rate (Hz) | 24000 (default ElevenLabs PCM) |
+
+**Red flags:**
+- `n=1` with large `gap_ms` → TTS stream dying after first chunk (API error, timeout, or billing issue)
+- `gap_ms > 10000` → Matches `AUDIO_CONTEXT_TIMEOUT` monkey-patch (10s) — audio context gave up waiting
+- `total_frames=1` in `diag_tts_stopped` → Confirms only 1 chunk ever arrived
+
+### Fix Applied
+
+1. Changed voice from library voice (Valentina `xzWD1ftyNVsuUMY2ll3j`) to premade voice (Sarah `EXAVITQu4vr4xnSDxMaL`)
+   - Sarah: "Mature, Reassuring, Confident" — premade voices work on Free tier
+   - With `eleven_multilingual_v2` model, English voices speak Spanish fluently
+   - Tested: full greeting generates 18.16 seconds / 290KB of audio
+2. Updated `pipecat-ai` from 0.0.103 → 0.0.104 (latest)
+3. Updated `ELEVENLABS_VOICE_ID` env var on Cloud Run
+4. Deployed as image v4, revision `interview-agent-00046-kr8`
+
+### Secondary Issue Found
+
+pipecat 0.0.103 logs warning: `Language code [es] not applied. Language codes can only be used with multilingual models: eleven_flash_v2_5, eleven_turbo_v2_5`
+- This means pipecat didn't recognize `eleven_multilingual_v2` as a multilingual model
+- The language code `es` was NOT being sent to ElevenLabs websocket
+- With 0.0.104 this may be fixed; if not, the multilingual v2 model auto-detects language from text
+
+### Patterns to Remember
+
+1. **ElevenLabs Voice Tiers**
+   - Premade voices: work on Free tier API
+   - Library voices: require paid plan (Starter $5/mo+)
+   - Cloned voices: work on Free tier (your own clones only)
+   - Always test voice accessibility with `curl` before deploying
+
+2. **Monkey-patches Are Fragile**
+   - Three monkey-patches applied to pipecat internals: BOT_VAD_STOP_SECS, AUDIO_CONTEXT_TIMEOUT, _handle_audio_context
+   - These can break silently on version upgrades
+   - Prefer upgrading pipecat version over patching internals
+   - The `_receive_messages` patch was already removed because it "likely broke the audio flow"
+
+3. **Cloud Run + Long-Running Interviews**
+   - `/start` endpoint blocks for full interview duration (10-30 min)
+   - Cloud Run allocates CPU only while HTTP request is active
+   - Main API fires request with short read-timeout, treats ReadTimeout as "launched successfully"
+
+---
+
+## Session: 2026-03-12 - Auditoría Extensiva del Monorepo
+
+### Auditoría & Arquitectura
+
+1. **Componentes sin uso acumulan dead code silenciosamente**
+   - Auditoría encontró 5 componentes completos (activity-feed, dialog, tooltip, kanban-board, VideoAvatar) que nunca se importan
+   - Lesson: Revisar periódicamente imports con grep antes de que se acumule
+   - Herramienta: `grep -r "from.*component-name" src/` para verificar uso
+
+2. **El hook use-feature es clave para monetización**
+   - Implementado completo pero nunca integrado en la app
+   - Exports: `useFeature()`, `useLimit()`, `FeatureGate`, `UpgradePrompt`
+   - Debe activarse ANTES de lanzar pasarela de pago
+
+3. **Los try/except con `pass` ocultan bugs en producción**
+   - admin.py tiene 34 instancias de exception handling que silencian errores
+   - Patrón correcto: log.error() + re-raise o return error response
+   - Nunca usar `pass` en catch blocks de endpoints API
+
+4. **`any` type se propaga rápido si no se controla**
+   - 30+ instancias encontradas, mayormente en `catch (err: any)` y `useState<any[]>`
+   - Patrón correcto: `catch (err: unknown)` + `err instanceof Error`
+   - Patrón correcto: `useState<SpecificType[]>([])` con interface definida
+
+5. **Las páginas index faltantes rompen navegación directa**
+   - `/employer/interviews` y `/employer/settings` no tienen page.tsx
+   - Solo las sub-rutas (`/[id]`, `/billing`) funcionan
+   - Siempre crear page.tsx para directorios con sub-rutas
+
+6. **pgvector + embeddings están production-ready**
+   - Cosine similarity con Vector(1536) funciona correctamente
+   - Bulk generation endpoint permite backfill
+   - Stats endpoint muestra coverage % - útil para monitoreo
+
+7. **Video interviews completamente operativas**
+   - LiveKit + Pipecat + Deepgram + ElevenLabs integrados y funcionando
+   - Voice: usar premade voices en Free tier (library voices requieren plan paid)
+   - Diagnóstico: métricas diag_tts_audio son clave para debugging audio
+
+---
+
+## Session: 2026-03-15 - Refactor TypeScript: Eliminar any Types
+
+### Lección 24: Central types file vs local types — know when each is appropriate
+- Created `src/types/index.ts` for shared domain types (Job, CandidateProfile, ShortlistItem, etc.)
+- Local page types (e.g., `Job` in candidate/jobs/) represent different API shapes (public vs employer)
+- When API returns different shapes for the same concept, use local types; central types are for shared shapes
+- `publicApi.getJob()` returns more fields (company, slug, is_featured) than `employerApi.getJob()`
+
+### Lección 25: `catch (err: any)` → `catch (err: unknown)` + helper function
+- Created `getErrorMessage(err: unknown)` utility that safely extracts message from any error type
+- Pattern: check `err instanceof Error` first, then fallback to string coercion
+- This was 22 of the 55 `any` instances — the most common category
+- The helper avoids repeating the same pattern in every catch block
+
+### Lección 26: Removing `any` from `useState` reveals hidden null-safety bugs
+- `useState<any>(null)` hides that code accesses `profile.skills.length` without null checks
+- After typing as `useState<CandidateProfile | null>(null)`, TS exposes 30+ optional chaining gaps
+- Fix: `(value?.length ?? 0) > 0` for conditionals, `value?.map()` for iterations
+- These are bugs that `any` was hiding — runtime crashes possible on null data
+
+### Lección 27: Add generic type params to API methods for type-safe returns
+- `fetchApi<Job>(...)` makes the return type flow through to consumers
+- Without generic params, `fetchApi(...)` returns `unknown`, forcing casts everywhere
+- Add generics at the API layer to eliminate casts at the consumer layer
+- For employer API: typed centrally. For public API: let pages cast to local types
+
+---
+
+## Session: 2026-03-15 - Fix Silent Exceptions in Python Routers (DEBT-02)
+
+### Lección 28: Silent `except ValueError: pass` on query filters is reasonable but must log
+- 23 of 26 silent exceptions were `except ValueError: pass` for optional query filter parsing (dates, enums)
+- These are NOT bugs — ignoring invalid optional filters is correct API behavior (don't 400 for bad filter values)
+- But `pass` makes debugging impossible: "why didn't my filter work?" has no answer in logs
+- Fix: `logger.debug("invalid_filter_param", param=name, value=value)` — visible when needed, not noisy
+
+### Lección 29: Error handling DURING error handling needs extra care
+- `applications.py` had `except Exception: db.rollback()` when reverting status after CV analysis failure
+- If the rollback itself fails, you lose both the original error context AND the rollback failure
+- Pattern: always log the secondary failure with the original context (application_id, original error)
+- Same applies to LLMLog creation during error flow — audit trail loss must be visible
+
+### Lección 30: Use structlog's structured params, not f-strings, for log context
+- `logger.debug("invalid_filter_param", param="category", value=category)` — structured, searchable
+- NOT `logger.debug(f"Invalid category: {category}")` — harder to query, grep, aggregate
+- Structured logging lets you filter by `param=category` across all endpoints in one query
+- This is especially important with Sentry/Datadog where structured fields become searchable dimensions
+
+### Lección 31: Module-level logger vs function-scoped logger
+- admin.py had loggers created inside specific functions (`logger = structlog.get_logger()` at line 363, 640)
+- This meant other functions had NO logger available
+- Fix: add module-level `logger = structlog.get_logger()` so ALL functions can log
+- Function-scoped loggers can still be used for binding extra context (e.g., `logger.bind(user_id=...)`)

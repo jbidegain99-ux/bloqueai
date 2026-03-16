@@ -7,6 +7,7 @@ Create Date: 2025-01-13
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers
 revision = "004"
@@ -17,22 +18,16 @@ depends_on = None
 
 def upgrade() -> None:
     # Create the enum type
-    job_category = sa.Enum(
+    job_category = postgresql.ENUM(
         'TECHNOLOGY', 'ENGINEERING', 'HEALTHCARE', 'LEGAL', 'FINANCE',
         'MANUFACTURING', 'ADMINISTRATION', 'SALES', 'MARKETING',
         'HUMAN_RESOURCES', 'CUSTOMER_SERVICE', 'LOGISTICS', 'EDUCATION',
         'RESEARCH', 'DENTAL', 'CONSTRUCTION', 'HOSPITALITY', 'RETAIL', 'OTHER',
-        name='job_category'
+        name='job_category', create_type=False,
     )
+    job_category.create(op.get_bind(), checkfirst=True)
 
     conn = op.get_bind()
-
-    # Create enum type if it doesn't exist
-    result = conn.execute(sa.text(
-        "SELECT 1 FROM pg_type WHERE typname = 'job_category'"
-    ))
-    if not result.fetchone():
-        job_category.create(op.get_bind())
 
     # Check if column exists
     result = conn.execute(sa.text(
@@ -40,7 +35,6 @@ def upgrade() -> None:
         "WHERE table_name = 'jobs' AND column_name = 'category'"
     ))
     if not result.fetchone():
-        # Add column without index=True to avoid duplicate index creation
         op.add_column(
             'jobs',
             sa.Column('category', job_category, nullable=True)
