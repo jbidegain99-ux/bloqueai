@@ -3,6 +3,7 @@
 import io
 import csv
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -21,14 +22,22 @@ from app.models.payroll import (
     Payslip, DeductionType, TaxConfig,
     PayFrequency, ContractType, AttendanceType, PayrollRunStatus, DeductionCalcType,
 )
+from app.models.payroll import (
+    EmployeeStatus, DocumentType, EmploymentType,
+    PayrollDeductionBreakdown, PayrollProvision,
+    DeductionCategory, ProvisionType,
+)
 from app.schemas.payroll import (
     EmployeeCreate, EmployeeUpdate, EmployeeResponse,
-    ContractCreate, ContractUpdate,
+    ContractCreate, ContractUpdate, ContractResponse,
     AttendanceCreate, AttendanceCsvRow, AttendanceCsvPreview,
     PayrollRunCreate, PayrollRunResponse, PayrollLineResponse,
     DeductionTypeCreate, DeductionTypeResponse,
     PayrollSummaryReport, PayrollDetailLine,
 )
+from app.services.payroll_sv import PayrollCalculatorSV
+from app.services.spu_generator import SPUGenerator
+from app.services.compliance_service import validate_payroll_compliance
 from app.services.payslip_generator import generate_payslip_html
 from app.services.audit import create_audit_log
 from app.utils.deps import get_current_user, require_recruiter
@@ -83,6 +92,13 @@ def _employee_to_response(emp: Employee, db: Session) -> dict:
         "is_active": emp.is_active,
         "hire_date": emp.hire_date,
         "termination_date": emp.termination_date,
+        "document_type": emp.document_type.value if emp.document_type else None,
+        "document_id": emp.document_id,
+        "salary": float(emp.salary) if emp.salary is not None else None,
+        "salary_currency": emp.salary_currency,
+        "employment_type": emp.employment_type.value if emp.employment_type else None,
+        "status": emp.status.value if emp.status else None,
+        "bank_account_number": emp.bank_account_number,
         "active_contract": {
             "contract_type": active_contract.contract_type.value if active_contract else None,
             "base_salary": active_contract.base_salary if active_contract else None,
@@ -90,6 +106,30 @@ def _employee_to_response(emp: Employee, db: Session) -> dict:
             "pay_frequency": active_contract.pay_frequency.value if active_contract else None,
         } if active_contract else None,
         "created_at": emp.created_at,
+    }
+
+
+def _contract_to_response(c: Contract, db: Session) -> dict:
+    """Convert Contract model to response dict."""
+    emp = db.query(Employee).filter(Employee.id == c.employee_id).first()
+    return {
+        "id": c.id,
+        "employee_id": c.employee_id,
+        "employee_name": emp.full_name if emp else "N/A",
+        "client_id": c.client_id,
+        "contract_type": c.contract_type.value,
+        "position_title": c.position_title,
+        "start_date": c.start_date,
+        "end_date": c.end_date,
+        "base_salary": c.base_salary,
+        "currency": c.currency,
+        "pay_frequency": c.pay_frequency.value,
+        "is_active": c.is_active,
+        "notes": c.notes,
+        "benefits": c.benefits,
+        "document_url": c.document_url,
+        "signed_by_employee_at": c.signed_by_employee_at,
+        "created_at": c.created_at,
     }
 
 
@@ -127,6 +167,20 @@ async def create_employee(
 ):
     """Create a new payroll employee."""
     _get_client_or_404(db, data.client_id)
+
+    # Validate DUI uniqueness per tenant
+    if data.document_type == "DUI" and data.document_id:
+        existing = db.query(Employee).filter(
+            Employee.client_id == data.client_id,
+            Employee.document_id == data.document_id,
+            Employee.document_type == DocumentType.DUI,
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ya existe un empleado con DUI {data.document_id} en este cliente",
+            )
+
     emp = Employee(
         id=uuid4(),
         client_id=data.client_id,
@@ -139,6 +193,13 @@ async def create_employee(
         hire_date=data.hire_date,
         candidate_id=data.candidate_id,
         user_id=data.user_id,
+        document_type=DocumentType(data.document_type) if data.document_type else None,
+        document_id=data.document_id,
+        salary=data.salary,
+        salary_currency=data.salary_currency,
+        employment_type=EmploymentType(data.employment_type) if data.employment_type else None,
+        bank_account_number=data.bank_account_number,
+        status=EmployeeStatus.ACTIVE,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -182,10 +243,58 @@ async def update_employee(
     return _employee_to_response(emp, db)
 
 
+@router.get("/employees/{employee_id}", response_model=EmployeeResponse)
+async def get_employee(
+    employee_id: UUID,
+    current_user: User = Depends(require_recruiter),
+    db: Session = Depends(get_db),
+):
+    """Get a single employee by ID."""
+    emp = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Empleado no encontrado")
+    return _employee_to_response(emp, db)
+
+
+@router.post("/employees/{employee_id}/terminate", response_model=EmployeeResponse)
+async def terminate_employee(
+    employee_id: UUID,
+    current_user: User = Depends(require_recruiter),
+    db: Session = Depends(get_db),
+):
+    """Terminate an employee (soft delete)."""
+    emp = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Empleado no encontrado")
+    if emp.status == EmployeeStatus.TERMINATED:
+        raise HTTPException(status_code=400, detail="El empleado ya está terminado")
+
+    emp.status = EmployeeStatus.TERMINATED
+    emp.is_active = False
+    emp.termination_date = datetime.utcnow().date()
+    emp.updated_at = datetime.utcnow()
+
+    # Deactivate all contracts
+    db.query(Contract).filter(
+        Contract.employee_id == employee_id,
+        Contract.is_active == True,
+    ).update({"is_active": False, "end_date": emp.termination_date, "updated_at": datetime.utcnow()})
+
+    db.commit()
+    db.refresh(emp)
+
+    create_audit_log(
+        db=db, user_id=current_user.id,
+        entity_type="payroll_employee", entity_id=emp.id,
+        action="terminate", description=f"Empleado terminado: {emp.full_name}",
+    )
+    return _employee_to_response(emp, db)
+
+
 # ============ Contracts ============
 
 
-@router.get("/contracts")
+@router.get("/contracts", response_model=list[ContractResponse])
 async def list_contracts(
     client_id: Optional[UUID] = None,
     employee_id: Optional[UUID] = None,
@@ -204,29 +313,23 @@ async def list_contracts(
     if is_active is not None:
         query = query.filter(Contract.is_active == is_active)
     contracts = query.order_by(Contract.start_date.desc()).offset(skip).limit(limit).all()
-
-    result = []
-    for c in contracts:
-        emp = db.query(Employee).filter(Employee.id == c.employee_id).first()
-        result.append({
-            "id": c.id,
-            "employee_id": c.employee_id,
-            "employee_name": emp.full_name if emp else "N/A",
-            "client_id": c.client_id,
-            "contract_type": c.contract_type.value,
-            "start_date": c.start_date,
-            "end_date": c.end_date,
-            "base_salary": c.base_salary,
-            "currency": c.currency,
-            "pay_frequency": c.pay_frequency.value,
-            "is_active": c.is_active,
-            "notes": c.notes,
-            "created_at": c.created_at,
-        })
-    return result
+    return [_contract_to_response(c, db) for c in contracts]
 
 
-@router.post("/contracts", status_code=status.HTTP_201_CREATED)
+@router.get("/contracts/{contract_id}", response_model=ContractResponse)
+async def get_contract(
+    contract_id: UUID,
+    current_user: User = Depends(require_recruiter),
+    db: Session = Depends(get_db),
+):
+    """Get a single contract by ID."""
+    contract = db.query(Contract).filter(Contract.id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contrato no encontrado")
+    return _contract_to_response(contract, db)
+
+
+@router.post("/contracts", response_model=ContractResponse, status_code=status.HTTP_201_CREATED)
 async def create_contract(
     data: ContractCreate,
     current_user: User = Depends(require_recruiter),
@@ -255,6 +358,9 @@ async def create_contract(
         currency=data.currency,
         pay_frequency=data.pay_frequency,
         notes=data.notes,
+        position_title=data.position_title,
+        benefits=data.benefits or {},
+        document_url=data.document_url,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -267,27 +373,91 @@ async def create_contract(
         entity_type="payroll_contract", entity_id=contract.id,
         action="create", description=f"Contrato creado para {emp.full_name}",
     )
-    return {"id": contract.id, "message": "Contrato creado exitosamente"}
+    return _contract_to_response(contract, db)
 
 
-@router.patch("/contracts/{contract_id}")
+@router.patch("/contracts/{contract_id}", response_model=ContractResponse)
 async def update_contract(
     contract_id: UUID,
     data: ContractUpdate,
     current_user: User = Depends(require_recruiter),
     db: Session = Depends(get_db),
 ):
-    """Update a contract."""
+    """Update a contract. Signed contracts cannot be modified."""
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
+
+    if contract.signed_by_employee_at is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede modificar un contrato firmado. Cree uno nuevo.",
+        )
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(contract, field, value)
     contract.updated_at = datetime.utcnow()
     db.commit()
-    return {"id": contract.id, "message": "Contrato actualizado"}
+    db.refresh(contract)
+    return _contract_to_response(contract, db)
+
+
+@router.post("/contracts/{contract_id}/sign", response_model=ContractResponse)
+async def sign_contract(
+    contract_id: UUID,
+    current_user: User = Depends(require_recruiter),
+    db: Session = Depends(get_db),
+):
+    """Sign a contract (records timestamp)."""
+    contract = db.query(Contract).filter(Contract.id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contrato no encontrado")
+
+    if contract.signed_by_employee_at is not None:
+        raise HTTPException(status_code=400, detail="El contrato ya fue firmado")
+
+    contract.signed_by_employee_at = datetime.utcnow()
+    contract.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(contract)
+
+    emp = db.query(Employee).filter(Employee.id == contract.employee_id).first()
+    create_audit_log(
+        db=db, user_id=current_user.id,
+        entity_type="payroll_contract", entity_id=contract.id,
+        action="sign", description=f"Contrato firmado para {emp.full_name if emp else 'N/A'}",
+    )
+    return _contract_to_response(contract, db)
+
+
+@router.post("/contracts/{contract_id}/terminate", response_model=ContractResponse)
+async def terminate_contract(
+    contract_id: UUID,
+    current_user: User = Depends(require_recruiter),
+    db: Session = Depends(get_db),
+):
+    """Terminate a contract (sets end_date and deactivates)."""
+    contract = db.query(Contract).filter(Contract.id == contract_id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contrato no encontrado")
+
+    if not contract.is_active:
+        raise HTTPException(status_code=400, detail="El contrato ya está inactivo")
+
+    contract.is_active = False
+    contract.end_date = datetime.utcnow().date()
+    contract.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(contract)
+
+    emp = db.query(Employee).filter(Employee.id == contract.employee_id).first()
+    create_audit_log(
+        db=db, user_id=current_user.id,
+        entity_type="payroll_contract", entity_id=contract.id,
+        action="terminate", description=f"Contrato terminado para {emp.full_name if emp else 'N/A'}",
+    )
+    return _contract_to_response(contract, db)
 
 
 # ============ Attendance ============
@@ -640,7 +810,12 @@ async def calculate_payroll_run(
     if run.status != PayrollRunStatus.VALIDATED:
         raise HTTPException(status_code=400, detail="Solo se puede calcular una nomina VALIDADA")
 
-    # Delete previous lines if recalculating
+    # Delete previous lines + breakdowns + provisions if recalculating
+    existing_lines = db.query(PayrollLine).filter(PayrollLine.payroll_run_id == run.id).all()
+    for line in existing_lines:
+        db.query(PayrollDeductionBreakdown).filter(PayrollDeductionBreakdown.payroll_line_id == line.id).delete()
+        db.query(PayrollProvision).filter(PayrollProvision.payroll_line_id == line.id).delete()
+        db.query(Payslip).filter(Payslip.payroll_line_id == line.id).delete()
     db.query(PayrollLine).filter(PayrollLine.payroll_run_id == run.id).delete()
 
     # Get active employees with matching contracts
@@ -656,16 +831,11 @@ async def calculate_payroll_run(
         .all()
     )
 
-    # Get active deduction types for this client
-    deduction_types = (
-        db.query(DeductionType)
-        .filter(DeductionType.client_id == run.client_id, DeductionType.is_active == True)
-        .all()
-    )
+    calculator = PayrollCalculatorSV()
 
-    total_gross = 0.0
-    total_deductions_sum = 0.0
-    total_net = 0.0
+    total_gross = Decimal("0")
+    total_deductions_sum = Decimal("0")
+    total_net = Decimal("0")
     client = db.query(Company).filter(Company.id == run.client_id).first()
 
     for emp, contract in employees_with_contracts:
@@ -682,48 +852,74 @@ async def calculate_payroll_run(
 
         hours_regular = sum(a.hours for a in attendance if a.attendance_type == AttendanceType.REGULAR)
         hours_overtime = sum(a.hours for a in attendance if a.attendance_type == AttendanceType.OVERTIME)
-
-        # Calculate days worked (unique dates with REGULAR attendance)
         days_worked = len(set(a.date for a in attendance if a.attendance_type == AttendanceType.REGULAR))
 
-        # Gross pay = base salary (prorated if needed)
-        gross_pay = round(contract.base_salary, 2)
+        # Use PayrollCalculatorSV for accurate SV calculations
+        salary = Decimal(str(contract.base_salary))
+        result = calculator.calcular_planilla(salary)
 
-        # Apply deductions
-        deductions_detail = []
-        line_deductions = 0.0
-        for dt in deduction_types:
-            if dt.calc_type == DeductionCalcType.PERCENTAGE:
-                amount = round(gross_pay * dt.value / 100, 2)
-            else:
-                amount = round(dt.value, 2)
-            deductions_detail.append({
-                "name": dt.name,
-                "type": dt.calc_type.value,
-                "amount": amount,
-            })
-            line_deductions += amount
-
-        line_deductions = round(line_deductions, 2)
-        net_pay = round(gross_pay - line_deductions, 2)
+        # Build JSONB deductions detail (legacy compat)
+        deductions_detail = [
+            {"name": "ISSS", "type": "PERCENTAGE", "amount": float(result.isss_employee)},
+            {"name": "AFP", "type": "PERCENTAGE", "amount": float(result.afp_employee)},
+            {"name": "ISR", "type": "PERCENTAGE", "amount": float(result.isr)},
+        ]
 
         line = PayrollLine(
             id=uuid4(),
             payroll_run_id=run.id,
             employee_id=emp.id,
-            base_salary=contract.base_salary,
+            contract_id=contract.id,
+            base_salary=float(salary),
             days_worked=days_worked,
             hours_regular=hours_regular,
             hours_overtime=hours_overtime,
-            gross_pay=gross_pay,
-            total_deductions=line_deductions,
-            net_pay=net_pay,
+            gross_pay=float(result.gross_salary),
+            total_deductions=float(result.total_deductions),
+            net_pay=float(result.net_salary),
             deductions_detail=deductions_detail,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
         db.add(line)
         db.flush()
+
+        # Create PayrollDeductionBreakdown records
+        breakdowns = [
+            (DeductionCategory.ISSS, result.isss_employee, "ISSS empleado (3%)"),
+            (DeductionCategory.AFP, result.afp_employee, "AFP empleado (7.25%)"),
+            (DeductionCategory.INCOME_TAX, result.isr, "ISR"),
+        ]
+        for cat, amount, desc in breakdowns:
+            if amount > 0:
+                db.add(PayrollDeductionBreakdown(
+                    id=uuid4(),
+                    payroll_line_id=line.id,
+                    deduction_type=cat,
+                    amount=amount,
+                    description=desc,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                ))
+
+        # Create PayrollProvision records (monthly accrual)
+        hire_date = emp.hire_date or run.period_start
+        aguinaldo_monthly = calculator.calcular_aguinaldo(salary, hire_date) / Decimal("12")
+        vacaciones_monthly = calculator.calcular_vacaciones(salary) / Decimal("12")
+
+        for ptype, amount in [
+            (ProvisionType.AGUINALDO, aguinaldo_monthly),
+            (ProvisionType.VACACIONES, vacaciones_monthly),
+        ]:
+            if amount > 0:
+                db.add(PayrollProvision(
+                    id=uuid4(),
+                    payroll_line_id=line.id,
+                    provision_type=ptype,
+                    amount=amount,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                ))
 
         # Generate payslip HTML
         html = generate_payslip_html(
@@ -734,13 +930,13 @@ async def calculate_payroll_run(
             client_name=client.name if client else "N/A",
             period_start=str(run.period_start),
             period_end=str(run.period_end),
-            base_salary=contract.base_salary,
+            base_salary=float(salary),
             hours_regular=hours_regular,
             hours_overtime=hours_overtime,
-            gross_pay=gross_pay,
+            gross_pay=float(result.gross_salary),
             deductions=deductions_detail,
-            total_deductions=line_deductions,
-            net_pay=net_pay,
+            total_deductions=float(result.total_deductions),
+            net_pay=float(result.net_salary),
             currency=contract.currency,
         )
         payslip = Payslip(
@@ -753,14 +949,14 @@ async def calculate_payroll_run(
         )
         db.add(payslip)
 
-        total_gross += gross_pay
-        total_deductions_sum += line_deductions
-        total_net += net_pay
+        total_gross += result.gross_salary
+        total_deductions_sum += result.total_deductions
+        total_net += result.net_salary
 
     # Update run totals
-    run.total_gross = round(total_gross, 2)
-    run.total_deductions = round(total_deductions_sum, 2)
-    run.total_net = round(total_net, 2)
+    run.total_gross = float(total_gross)
+    run.total_deductions = float(total_deductions_sum)
+    run.total_net = float(total_net)
     run.employee_count = len(employees_with_contracts)
     run.status = PayrollRunStatus.CALCULATED
     run.updated_at = datetime.utcnow()
@@ -770,7 +966,7 @@ async def calculate_payroll_run(
         db=db, user_id=current_user.id,
         entity_type="payroll_run", entity_id=run.id,
         action="calculate",
-        description=f"Nomina calculada: {len(employees_with_contracts)} empleados, neto total {run.currency} {total_net:,.2f}",
+        description=f"Nomina calculada: {len(employees_with_contracts)} empleados, neto total {run.currency} {float(total_net):,.2f}",
     )
     return {
         "status": "CALCULATED",
@@ -1049,3 +1245,220 @@ async def payroll_detail_report(
             net_pay=line.net_pay,
         ))
     return result
+
+
+# ============ SPU Generation ============
+
+
+@router.post("/runs/{run_id}/spu")
+async def generate_spu_file(
+    run_id: UUID,
+    current_user: User = Depends(require_recruiter),
+    db: Session = Depends(get_db),
+):
+    """Generate SPU (Planilla Única) file for ISSS/AFP submission."""
+    run = db.query(PayrollRun).filter(PayrollRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Nómina no encontrada")
+    if run.status not in (PayrollRunStatus.CALCULATED, PayrollRunStatus.APPROVED, PayrollRunStatus.PAID):
+        raise HTTPException(status_code=400, detail="La nómina debe estar calculada para generar SPU")
+
+    generator = SPUGenerator()
+    content, validation = generator.generate(db, run_id)
+
+    if not validation.valid:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "No se puede generar SPU — errores de validación",
+                "errors": validation.errors,
+                "warnings": validation.warnings,
+            },
+        )
+
+    create_audit_log(
+        db=db, user_id=current_user.id,
+        entity_type="payroll_spu", entity_id=run_id,
+        action="generate_spu",
+        description=f"SPU generado: {validation.employee_count} empleados, ISSS ${validation.total_isss}, AFP ${validation.total_afp}",
+    )
+
+    filename = f"SPU_{run.period_start.strftime('%Y%m')}_{run.client_id}.csv"
+    return StreamingResponse(
+        iter([content]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/runs/{run_id}/compliance")
+async def check_compliance(
+    run_id: UUID,
+    current_user: User = Depends(require_recruiter),
+    db: Session = Depends(get_db),
+):
+    """Run compliance checks on a payroll run before government submission."""
+    run = db.query(PayrollRun).filter(PayrollRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Nómina no encontrada")
+
+    report = validate_payroll_compliance(db, run_id)
+
+    return {
+        "payroll_run_id": str(report.payroll_run_id),
+        "compliant": report.compliant,
+        "checks": [
+            {"name": c.name, "passed": c.passed, "detail": c.detail}
+            for c in report.checks
+        ],
+        "errors": report.errors,
+        "warnings": report.warnings,
+    }
+
+
+# ============ ISSS / AFP / ISR Reports ============
+
+
+@router.get("/runs/{run_id}/report/isss")
+async def isss_report(
+    run_id: UUID,
+    current_user: User = Depends(require_recruiter),
+    db: Session = Depends(get_db),
+):
+    """Generate ISSS contribution summary report."""
+    run = db.query(PayrollRun).filter(PayrollRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Nómina no encontrada")
+
+    client = db.query(Company).filter(Company.id == run.client_id).first()
+    lines_data = db.query(PayrollLine).filter(PayrollLine.payroll_run_id == run_id).all()
+
+    rows = []
+    total_isss_emp = Decimal("0")
+    total_isss_empr = Decimal("0")
+    for line in lines_data:
+        emp = db.query(Employee).filter(Employee.id == line.employee_id).first()
+        breakdowns = db.query(PayrollDeductionBreakdown).filter(
+            PayrollDeductionBreakdown.payroll_line_id == line.id,
+            PayrollDeductionBreakdown.deduction_type == DeductionCategory.ISSS,
+        ).all()
+        isss_emp = sum(Decimal(str(b.amount)) for b in breakdowns)
+        gross = Decimal(str(line.gross_pay))
+        isss_base = min(gross, Decimal("1000"))
+        isss_empr = (isss_base * Decimal("0.075")).quantize(Decimal("0.01"))
+
+        total_isss_emp += isss_emp
+        total_isss_empr += isss_empr
+        rows.append({
+            "employee_name": emp.full_name if emp else "N/A",
+            "dui": emp.document_id if emp else None,
+            "gross_salary": float(gross),
+            "isss_employee": float(isss_emp),
+            "isss_employer": float(isss_empr),
+        })
+
+    return {
+        "company_name": client.name if client else None,
+        "period": f"{run.period_start} — {run.period_end}",
+        "employee_count": len(rows),
+        "rows": rows,
+        "total_isss_employee": float(total_isss_emp),
+        "total_isss_employer": float(total_isss_empr),
+        "total_isss": float(total_isss_emp + total_isss_empr),
+    }
+
+
+@router.get("/runs/{run_id}/report/afp")
+async def afp_report(
+    run_id: UUID,
+    current_user: User = Depends(require_recruiter),
+    db: Session = Depends(get_db),
+):
+    """Generate AFP contribution summary report."""
+    run = db.query(PayrollRun).filter(PayrollRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Nómina no encontrada")
+
+    client = db.query(Company).filter(Company.id == run.client_id).first()
+    lines_data = db.query(PayrollLine).filter(PayrollLine.payroll_run_id == run_id).all()
+
+    rows = []
+    total_afp_emp = Decimal("0")
+    total_afp_empr = Decimal("0")
+    for line in lines_data:
+        emp = db.query(Employee).filter(Employee.id == line.employee_id).first()
+        breakdowns = db.query(PayrollDeductionBreakdown).filter(
+            PayrollDeductionBreakdown.payroll_line_id == line.id,
+            PayrollDeductionBreakdown.deduction_type == DeductionCategory.AFP,
+        ).all()
+        afp_emp = sum(Decimal(str(b.amount)) for b in breakdowns)
+        gross = Decimal(str(line.gross_pay))
+        afp_empr = (gross * Decimal("0.0775")).quantize(Decimal("0.01"))
+
+        total_afp_emp += afp_emp
+        total_afp_empr += afp_empr
+        rows.append({
+            "employee_name": emp.full_name if emp else "N/A",
+            "dui": emp.document_id if emp else None,
+            "gross_salary": float(gross),
+            "afp_employee": float(afp_emp),
+            "afp_employer": float(afp_empr),
+            "afp_provider": "CONFIA",  # Default, extend when EOR integration is done
+        })
+
+    return {
+        "company_name": client.name if client else None,
+        "period": f"{run.period_start} — {run.period_end}",
+        "employee_count": len(rows),
+        "rows": rows,
+        "total_afp_employee": float(total_afp_emp),
+        "total_afp_employer": float(total_afp_empr),
+        "total_afp": float(total_afp_emp + total_afp_empr),
+    }
+
+
+@router.get("/runs/{run_id}/report/isr")
+async def isr_report(
+    run_id: UUID,
+    current_user: User = Depends(require_recruiter),
+    db: Session = Depends(get_db),
+):
+    """Generate ISR (income tax) summary report."""
+    run = db.query(PayrollRun).filter(PayrollRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Nómina no encontrada")
+
+    client = db.query(Company).filter(Company.id == run.client_id).first()
+    lines_data = db.query(PayrollLine).filter(PayrollLine.payroll_run_id == run_id).all()
+
+    rows = []
+    total_isr = Decimal("0")
+    for line in lines_data:
+        emp = db.query(Employee).filter(Employee.id == line.employee_id).first()
+        breakdowns = db.query(PayrollDeductionBreakdown).filter(
+            PayrollDeductionBreakdown.payroll_line_id == line.id,
+            PayrollDeductionBreakdown.deduction_type == DeductionCategory.INCOME_TAX,
+        ).all()
+        isr = sum(Decimal(str(b.amount)) for b in breakdowns)
+        total_isr += isr
+
+        gross = Decimal(str(line.gross_pay))
+        isss_emp = Decimal(str(line.gross_pay)) * Decimal("0.03")
+        afp_emp = Decimal(str(line.gross_pay)) * Decimal("0.0725")
+        taxable_base = gross - min(isss_emp, Decimal("30")) - afp_emp
+
+        rows.append({
+            "employee_name": emp.full_name if emp else "N/A",
+            "dui": emp.document_id if emp else None,
+            "gross_salary": float(gross),
+            "taxable_base": float(taxable_base.quantize(Decimal("0.01"))),
+            "isr": float(isr),
+        })
+
+    return {
+        "company_name": client.name if client else None,
+        "period": f"{run.period_start} — {run.period_end}",
+        "employee_count": len(rows),
+        "rows": rows,
+        "total_isr": float(total_isr),
+    }
